@@ -41,6 +41,7 @@ from __future__ import annotations
 from elements import Element
 from layout import build_position_css
 from sdk import UiSdk
+from toml_util import override_attr
 
 DEFAULT_LABEL_SECTOR_PREFIX = "Default"  # button `type` attribute default is "default" -> "Default" (Ch5ElementDef's own convention, confirmed via componentButtonMixins.ts's firstLetterUpper(type))
 
@@ -108,16 +109,6 @@ def button_size_css_vars(sdk: UiSdk, *, width: int, height: int, orientation: st
     return css_vars
 
 
-def _override(attrs: list[tuple[str, str]], key: str, value: str) -> None:
-    """Replace an existing (key, value) tuple's value in place, preserving its position --
-    used for base defaults.attributes keys a variant needs to flip (e.g. checkboxshow)."""
-    for i, (k, _) in enumerate(attrs):
-        if k == key:
-            attrs[i] = (key, value)
-            return
-    raise KeyError(f"{key!r} not found in base attributes -- cannot override")
-
-
 def build_default_button_attributes(
     sdk: UiSdk,
     *,
@@ -153,9 +144,9 @@ def build_default_button_attributes(
     ctx = sdk.context_for("ch5-button")
 
     attrs: list[tuple[str, str]] = list(ctx["defaults"]["attributes"].items())
-    _override(attrs, "ccid_imageIconType", image_icon_type)
+    override_attr(attrs, "ccid_imageIconType", image_icon_type)
     if checkbox_show:
-        _override(attrs, "checkboxshow", "true")
+        override_attr(attrs, "checkboxshow", "true")
     # size="regular" (the raw schema default) renders the button at its theme's fixed
     # "regular" preset dimensions, ignoring whatever width/height CSS this module writes
     # (see build_default_button_element -- width/height are always required/explicit here)
@@ -167,7 +158,7 @@ def build_default_button_attributes(
     # them are size="custom" too (ccid_lastSizeSelected, unlike size, stays "regular" in
     # those real instances -- left untouched here, it's a separate "size to restore if
     # switched back" bookkeeping field, not the active render mode).
-    _override(attrs, "size", "custom")
+    override_attr(attrs, "size", "custom")
 
     common_wiring: list[tuple[str, str]] = [
         ("customvstheme", ctx["attributeProperties"]["customvstheme"]["default"]),

@@ -9,6 +9,16 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 5 — resolutions: catalog + add-resolutions-to-a-project DONE.** User chose the
+smaller first slice over bundling in full reflow math. Confirmed the real
+device/resolution catalog (74 entries, `resolutionData.json`), resolved both
+previously-flagged open questions (catalog-vs-per-project-selection, orientation enum
+semantics), corrected an unconfirmed guess in `project.py`'s own example (no real
+"TSW-1070 Portrait" catalog entry exists — TSW-1070 is landscape-only hardware), and built
+`generator/devices.py` + `generator/project.py::add_resolutions_to_project`. See
+`docs/architecture/05-resolutions.md`. **Next**: full multi-resolution reflow (deliberately
+deferred, bigger/separate slice), another component type, or user's direction.
+
 **Phase 4 — add a CH5 component: button DONE (plain + icon + image + checkbox
 variants).** A freshly-created "Ch5 Button" matches real Construct-authored buttons
 exactly for the plain and icon configurations, and produces a clean (intentionally
@@ -30,6 +40,37 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-08: **Phase 5 — device/resolution catalog + add-resolutions-to-a-project DONE.**
+  User asked whether the rest of the components or resolutions should come first;
+  recommended resolutions first since `generator/layout.py` (built in Phase 4) is now a
+  shared foundation every future component will call, and doing Phase 5 while only one
+  component type exists avoids rework across many later. User agreed, then chose the
+  smaller "catalog + add resolution" slice over bundling in full reflow math when asked.
+  Research resolved both Phase 2-flagged open questions: (1) `UiEditorResolutionDao.cs`
+  vs. inline `.cuip` `{DeviceResolutionSource}` are NOT overlapping — the DAO reads a
+  global, not-per-project catalog file, the `.cuip` section stores which catalog entries a
+  project has selected; (2) `DisplayOrientation` enum confirmed
+  (`None=0,Landscape=1,Portrait=2,Both=3`), serialized as int inside `.cuip` but as a
+  string in the global catalog file (two different JSON contexts for the same enum).
+  Found the real catalog on disk (`%APPDATA%\crestron-construct\AppStorage\data\ui\
+  resolution\resolutionData.json`, 74 entries) and confirmed/corrected a previously
+  fabricated example in `project.py`'s own `__main__` block: no "TSW-1070 Portrait" exists
+  in the real catalog (TSW-1070 is landscape-only hardware); TST-1080 genuinely supports
+  both orientations and is used instead. Built `generator/devices.py` (catalog reader —
+  found and worked around a real collision: this machine's own custom-resolutions file has
+  a personal entry also named "TSW-1070", so `include_custom` defaults to False; also
+  normalizes an orientation int-vs-string inconsistency between the two catalog files) and
+  `generator/project.py::read_cuip`/`add_resolutions_to_project` (extends an existing
+  project's resolutions, handles both the "already has resolutions" and "starts with zero"
+  cases, the latter correctly inserting `DeviceResolutionIds` at the confirmed key
+  position rather than just appending). Factored `override_attr` out of `ch5_button.py`
+  into `toml_util.py` since `project.py` needed the identical operation. All verified via
+  `generator/_test_output/phase5_smoke_test.py` (harness round-trip + structural checks;
+  no real multi-resolution `.cuip` exists in the reference project to diff against, so
+  verified against `build_project_attributes`' own confirmed shape instead, same standard
+  used for Phase 2). Full writeup in `docs/architecture/05-resolutions.md`. Full
+  multi-resolution reflow (the actual CSS math for non-primary resolutions) deliberately
+  NOT built this slice — flagged as a separate, bigger follow-up.
 - 2026-09-08: **`--ch5-button--regular-{width,height}` CSS var bug found and fixed.** User
   checked again after the `size="custom"` fix and the adorner still mismatched the actual
   button, asking directly: "are you 100% sure the CSS values match the property grid or

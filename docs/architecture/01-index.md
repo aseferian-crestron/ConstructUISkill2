@@ -15,8 +15,10 @@ to write generator code, not yet done for anything except the overview topics.
 | `[[Elements]]` nesting rules for widget containers vs. page components | **Done** — see `03-page-widget-creation.md` | 3 | `Models\ElementSource.cs` |
 | Create page / create widget / add widget to page | **Done** — see `03-page-widget-creation.md` | 3 | `CreateNewPageHandler.cs`, `CreateNewWidgetHandler.cs`, `AddHtmlViewDependencyHandler.cs`, `PersistenceHelper.CreatePageSource` |
 | CH5 component schema (`schema.json`/`component-context.json`/`sass-schema.json`) | **Done for Ch5 Button (default config)** — see `04-ch5-schema.md` | 4 | `PageDesigner.Server\Dao\UiSdkDao.cs`, `PageDesigner.Common\Models\Ch5ElementDef.cs`, `GetSdkHandler.cs`, `pd-ch5-components/mixins/common/commonButtonTraitsMixins.ts` |
-| Resolutions — `UiEditorResolutionDao.cs` vs. inline `.cuip` `{DeviceResolutionSource}` | Flagged as possibly overlapping/legacy, not resolved | 5 | `UiEditorResolutionDao.cs`, `UiEditorProjectDao.cs` |
-| Multi-resolution reflow / orientation-primary rule (spec §9) | Not started | 5 | — |
+| Resolutions — `UiEditorResolutionDao.cs` vs. inline `.cuip` `{DeviceResolutionSource}` | **Resolved** — see `05-resolutions.md`: not overlapping, two different concerns (global catalog vs. per-project selection) | 5 | `UiEditorResolutionDao.cs`, `DeviceResolutionDto.cs`, `DisplayOrientation.cs` |
+| Device/resolution catalog (74 real entries) + orientation enum semantics | **Confirmed** — see `05-resolutions.md` | 5 | `%APPDATA%\crestron-construct\AppStorage\data\ui\resolution\resolutionData.json`, `InitializeLibraryDeviceResolutionsHandler.cs` |
+| Add resolutions to a project | **Done** — see `05-resolutions.md` | 5 | `generator/devices.py`, `generator/project.py::add_resolutions_to_project` |
+| Multi-resolution reflow / orientation-primary rule (spec §9) | Deliberately deferred (user-scoped) — catalog/orientation confirmed, reflow math for non-primary resolutions not deep-dived | 5 | `05-resolutions.md` |
 | Contract generation (`.cuic`) — trigger flow | Mapped | 6 | `Behaviors\ContractGenerationBehavior.cs`, `Services\Contract\ContractGenerationService.cs`, `Dao\UiEditorContractDao.cs` |
 | Contract generation — per-component-type signal/join rules | Not deep-dived | 6 | `Services\Contract\ComponentStrategies\*` |
 | Themes — project attributes + registration | Mapped | 7 | `ServerThemeAndFontHelper.cs`, `PageDesigner.Server\Commands\Handler\StylingAssets\ThemeAndFontUpdateHandler.cs` |

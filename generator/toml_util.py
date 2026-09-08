@@ -38,3 +38,15 @@ def toml_escape(value: str) -> str:
 
 def toml_str(value: str) -> str:
     return f'"{toml_escape(value)}"'
+
+
+def override_attr(attrs: list[tuple[str, str]], key: str, value: str) -> None:
+    """Replace an existing (key, value) tuple's value in place, preserving position --
+    used whenever a caller needs to flip one already-present attribute's value without
+    disturbing the rest of an ordered attribute list (e.g. ch5_button.py forcing
+    size="custom", project.py updating DeviceResolutionIds on an existing project)."""
+    for i, (k, _) in enumerate(attrs):
+        if k == key:
+            attrs[i] = (key, value)
+            return
+    raise KeyError(f"{key!r} not found in attributes -- cannot override")

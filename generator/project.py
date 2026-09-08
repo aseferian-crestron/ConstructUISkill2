@@ -21,12 +21,14 @@ See docs/architecture/02-project-creation.md for the narrative writeup.
 from __future__ import annotations
 
 import json
+import re
+import tomllib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from toml_util import toml_str as _toml_str  # noqa: F401  (re-exported for page.py)
+from toml_util import toml_str as _toml_str, override_attr  # noqa: F401  (toml_str re-exported for page.py)
 
 # --- confirmed constants (UiEditor.Common\Constants.cs) -------------------------------
 
@@ -187,36 +189,80 @@ def write_cuip(
     path.write_text("".join(parts), encoding="utf-8")
 
 
+_HEADER_RE = re.compile(r"^\{(\w+)\}[ \t]*\r?\n?", re.MULTILINE)
+
+
+def read_cuip(path: Path) -> tuple[list[tuple[str, str]], list[dict], FileMetadata]:
+    """Read a .cuip back into the same shapes write_cuip/build_project_attributes use --
+    Phase 5 (resolutions): needed to add a resolution to an EXISTING project rather than
+    only ever writing one from scratch. Preserves the real `Created` timestamp; the caller
+    is expected to still hand a fresh `Modified` via a new FileMetadata if it wants one --
+    this just carries the file's own metadata through unchanged by default."""
+    raw = path.read_text(encoding="utf-8")
+    headers = list(_HEADER_RE.finditer(raw))
+    sections: dict[str, str] = {}
+    for i, m in enumerate(headers):
+        start = m.end()
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(raw)
+        sections[m.group(1)] = raw[start:end]
+
+    meta = tomllib.loads(sections["FileMetadata"])
+    metadata = FileMetadata(
+        schema=meta["Schema"], created_by_app_host=meta["CreatedByAppHost"], created=meta["Created"],
+        last_modified_by_app_host=meta["LastModifiedByAppHost"], modified=meta["Modified"],
+        created_by_project_app=meta["CreatedByProjectApp"], last_modified_by_project_app=meta["LastModifiedByProjectApp"],
+        minimum_project_app=meta["MinimumProjectApp"], minimum_app_host=meta["MinimumAppHost"],
+    )
+    device_resolution_source = json.loads(sections["DeviceResolutionSource"])
+    attrs = list(tomllib.loads(sections["ProjectAttributes"])["Attributes"].items())
+    return attrs, device_resolution_source, metadata
+
+
+def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> None:
+    """Add one or more already-shaped resolution dicts (see generator/devices.py::
+    to_project_resolution) to an existing project's .cuip, updating `DeviceResolutionIds`
+    and `{DeviceResolutionSource}` and marking `ContractIsStale`. Mirrors
+    build_project_attributes' own DeviceResolutionIds/DeviceResolutionSource wiring, so a
+    project ends up in the identical shape whether its resolutions were set at creation
+    time or added afterward.
+    """
+    attrs, device_resolution_source, metadata = read_cuip(cuip_path)
+    project_id = dict(attrs)["Id"]
+
+    for r in new_resolutions:
+        device_resolution_source.append({"ProjectId": project_id, **r})
+    ids_csv = ",".join(r["id"] for r in device_resolution_source)
+
+    keys = [k for k, _ in attrs]
+    if "DeviceResolutionIds" in keys:
+        override_attr(attrs, "DeviceResolutionIds", ids_csv)
+    else:
+        attrs.insert(keys.index("DefaultFontFamily") + 1, ("DeviceResolutionIds", ids_csv))
+    override_attr(attrs, "ContractIsStale", "true")
+
+    write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
+
+
 if __name__ == "__main__":
     import sys
 
+    from devices import read_catalog, to_project_resolution
+
+    # NOTE: a prior version of this example fabricated a "TSW-1070 Portrait" resolution
+    # that does not exist in the real catalog (TSW-1070 is landscape-only hardware) --
+    # see docs/architecture/05-resolutions.md. TST-1080 genuinely supports both
+    # orientations, so it's used here instead to demonstrate a real landscape+portrait pair.
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("TestProject.cuip")
+    catalog = read_catalog()
     attrs, device_resolution_source = build_project_attributes(
         name="TestProject",
         sdk_id="CH5:2.18.0",
         themes=["light-theme.css", "dark-theme.css"],
         default_theme="light-theme.css",
         resolutions=[
-            {
-                "IsCustom": True, "IsSelected": True, "VisitedName": "TSW-1070",
-                "id": "D-L-TSW1070-1280-0800", "idName": "TSW-1070",
-                "resolutionId": "L-1280-800", "resolutionName": "TSW-1070",
-                "resolutionType": "generic", "deviceSpecId": "TSW-1070",
-                "width": "1280px", "height": "800px", "widthMedia": "1280px",
-                "heightMedia": "800px", "orientation": 1, "supportedDevices": "",
-                "displayNameSuffix": "", "componentKeys": ["UiEditor"],
-                "modes": [], "IsMode": False,
-            },
-            {
-                "IsCustom": True, "IsSelected": True, "VisitedName": "TSW-1070 Portrait",
-                "id": "D-P-TSW1070-0800-1280", "idName": "TSW-1070 Portrait",
-                "resolutionId": "P-800-1280", "resolutionName": "TSW-1070 Portrait",
-                "resolutionType": "generic", "deviceSpecId": "TSW-1070",
-                "width": "800px", "height": "1280px", "widthMedia": "800px",
-                "heightMedia": "1280px", "orientation": 0, "supportedDevices": "",
-                "displayNameSuffix": "", "componentKeys": ["UiEditor"],
-                "modes": [], "IsMode": False,
-            },
+            to_project_resolution(catalog.by_id_name("TSW-1070")),
+            to_project_resolution(catalog.by_id_name("TST-1080", orientation="landscape")),
+            to_project_resolution(catalog.by_id_name("TST-1080", orientation="portrait")),
         ],
     )
     write_cuip(out, attrs, device_resolution_source)
