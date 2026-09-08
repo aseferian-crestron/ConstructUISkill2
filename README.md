@@ -9,12 +9,14 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 3 — Create page / create widget / add widget to page: DONE.** `[[Elements]]`
-nesting rules (including the trailing-attributes-after-children pattern) confirmed from
-`ElementSource.cs`'s field order and verified against real files (see Log). **Next:
-Phase 4 — add a CH5 component**, starting with a button, driven by the SDK's
-`schema.json`/`component-context.json`. See the plan file (this session) for the full
-phased roadmap.
+**Phase 4 — add a CH5 component: button DONE (plain + icon + image + checkbox
+variants).** A freshly-created "Ch5 Button" matches real Construct-authored buttons
+exactly for the plain and icon configurations, and produces a clean (intentionally
+edit-history-free) result for image; checkbox is sanity-checked only since no real sample
+exists to confirm against. All schema-driven from the installed SDK's
+`component-context.json` + `sass-schema.json` (see `docs/architecture/04-ch5-schema.md`).
+**Next**: multi-mode/advanced buttons, another component type, or Phase 5 (resolutions),
+per the user's direction.
 
 ## Approach
 
@@ -28,6 +30,120 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-08: **`--ch5-button--regular-{width,height}` CSS var bug found and fixed.** User
+  checked again after the `size="custom"` fix and the adorner still mismatched the actual
+  button, asking directly: "are you 100% sure the CSS values match the property grid or
+  vice versa and the TOML as well? check the sample project to be sure." Re-verified —
+  property grid/CSS/TOML DID all agree; the remaining issue was that `ch5-button`'s own
+  shadow-DOM rendering reads its visual size from CSS custom properties, not the plain
+  outer `width`/`height` the adorner uses. Found the exact mechanism in
+  `component-context.json`'s `classToVariableMapping` "idSelector" entry (already read
+  once for the sync-attribute work, but this entry unused until now): `width` ->
+  `--ch5-button--regular-width`, `height` -> `--ch5-button--regular-height` (swapped for
+  vertical orientation, unconfirmed — no vertical button in the reference project). New
+  `ch5_button.py::button_size_css_vars` derives these from that schema entry; wired into
+  `layout.py::build_position_css`'s new `extra_vars` param, written in both `@media`
+  blocks. Verified value-for-value against real ButtonWithIcon (190x58 ->
+  `--ch5-button--regular-width: 190px`/`-height: 58px`, exact match). Rebuilt
+  `MainPage.cuig`/`ButtonVariants.cuig` again for the user to re-check. Full writeup in
+  `docs/architecture/04-ch5-schema.md`.
+- 2026-09-08: **`size="custom"` bug found and fixed.** User checked the CSS fix in
+  Construct and caught a follow-on bug: the canvas selection adorner was visibly larger
+  than the button's actual rendered size. Cause: `size="regular"` (the raw SDK default,
+  used verbatim until now) renders the button at its theme's fixed preset dimensions,
+  ignoring whatever explicit width/height CSS is written — didn't show up in the earlier
+  "112/112 exact match" claim only because Button1's chosen size (84x42) happened to equal
+  that preset exactly. Fixed at the user's direction: `size` is now always forced to
+  `"custom"` in `ch5_button.py::build_default_button_attributes` (`ccid_lastSizeSelected`
+  left untouched, a separate "restore" bookkeeping field, confirmed distinct from `size`
+  in the real file's own resized instances) — also consistent with every real button
+  instance in the reference file that had actually been resized. Smoke test's plain-button
+  comparison updated to exclude `size` from the exact-match assertion (documented as
+  intentional). Rebuilt `MainPage.cuig`/`ButtonVariants.cuig` again for the user to
+  re-check. Full writeup in `docs/architecture/04-ch5-schema.md`.
+- 2026-09-08: **Position/size CSS bug found and fixed.** User checked the icon/checkbox
+  button variants in Construct and reported "size can never be auto, even when you are
+  using a fixed size" — the Properties panel showed Left/Top/Width/Height as "auto" for
+  every generated button. Root cause: `build_default_button_element` never wrote any
+  `{Css}` rule at all, only `[[Elements]]` TOML attributes — position/size lives entirely
+  in CSS. Fixed with new `generator/layout.py::build_position_css`, confirmed against real
+  Button1's CSS rule in `Component - Button.cuig` (two `@media` blocks: 99999px catch-all
+  + device-specific landscape breakpoint; theme-selector child rule sourced from the SDK's
+  own `componentProperties.customThemeRequiredSelectors`, schema-driven not hardcoded).
+  While fixing this, **also found and fixed a related Phase 3 gap**: widget's default CSS
+  (`page.py::default_widget_html_css`) always used a hardcoded 2560x1440 "no devices yet"
+  fallback breakpoint, flagged unconfirmed at the time — now confirmed wrong by direct
+  inspection of a real widget in a project WITH a device defined (`Widget.cuiw`, which
+  contains a button): it uses the real device breakpoint, not the fallback. Both now share
+  one confirmed formula (`layout.py::landscape_media_query`, matched against two
+  independent real files at two different widths/heights). `x`/`y`/`width`/`height`/
+  `z_index`/`resolution` are now required parameters on `build_default_button_element`
+  (matches the widget function's existing "explicit size, no invented default"
+  precedent). All Phase 3/4 smoke tests updated with position-CSS regression checks (`"auto"
+  not in css`). Rebuilt `MyWidget.cuiw`/`MainPage.cuig`/`ButtonVariants.cuig` in the real
+  on-disk verification project with correct CSS for the user to re-check. Full writeup in
+  `docs/architecture/04-ch5-schema.md`.
+- 2026-09-08: **Phase 4 — button icon/image/checkbox variants added.** User confirmed the
+  plain button looked correct on the canvas in Construct, then asked to cover the
+  variants. Turned out nearly free once the sync-attribute derivation existed:
+  `build_sync_attributes` already selects sectors purely from `showWhen` matching on
+  current attribute values, so a variant is just different input values, not new logic.
+  **Icon** (`icon_class`/`icon_library` params): exact match against the real
+  "ButtonWithIcon" instance, excluding 2 confirmed UI-state artifacts (`oldID`,
+  `ccid_customSizeSet`) and 1 independent `size` customization. **Image**
+  (`image_icon_type="imageasset"`): found and deliberately did NOT reproduce a real
+  discrepancy — the reference file's image-type button also carries a stale, unused Icon
+  sync sector (16 keys), traced to `setSyncData`'s "only add, never remove" attribute
+  guard combined with that specific instance's edit history (authored as icon-type, later
+  switched to image-type); a single fresh "add as image button" would never produce that,
+  so the generator emits the clean result instead (sanity-checked: exactly 16 new
+  `imagesector` keys). **Checkbox** (`checkbox_show=True`): same mechanism, but no real
+  checkbox-enabled button exists anywhere in the reference project, so this one is
+  sanity-checked only, not confirmed — flagged as needing a real reference file the same
+  way the user added one for background-color in Phase 3, if/when it matters. All 4
+  configurations round-trip clean in `generator/_test_output/phase4_smoke_test.py`.
+  `docs/architecture/04-ch5-schema.md` updated with the full derivation writeup.
+- 2026-09-08: **Phase 4 (add a CH5 component) — "Ch5 Button", default configuration,
+  DONE.** User asked "if you do not address the 90 additional attributes how can I fully
+  test component integration?" after an initial pass found a real button carries ~112
+  attributes from 3 different sources, not 1 — pushed the research further rather than
+  shipping a partial slice. Findings: `schema.json` (the ch5-button web component's own 60
+  runtime attributes) is NOT what a freshly-dropped button's `[Elements.Attributes]` looks
+  like; `component-context.json`'s `ch5-button.defaults.attributes` (24 keys) IS the real
+  base payload (confirmed order-for-order against a real button); the ~80
+  `ccid_sync_{state}_{sector}sector_{property}` "Advanced Style Manager" attributes are
+  generated by **client-side TypeScript**
+  (`pd-ch5-components/mixins/common/commonButtonTraitsMixins.ts::setSyncData`, real source
+  present in `C:\Git\CCIDE`, not compiled/obfuscated) — traced the exact algorithm and
+  found its authoritative data source is `sass-schema.json`'s per-tag sector list (NOT
+  `component-context.json`'s `classToVariableMapping`, which has a different, over-broad
+  property shape). Built `generator/sdk.py` (locates and reads an installed SDK's
+  `schema.json`/`component-context.json`/`sass-schema.json` from
+  `%APPDATA%\crestron-construct\AppStorage\data\ui\sdk\<version>\data\`) and
+  `generator/ch5_button.py` (`build_default_button_element` /
+  `build_sync_attributes` — the sync-attribute derivation is written generically off
+  `sass-schema.json`'s shape, not button-specific, so should carry over to other component
+  types). Verified: `generator/_test_output/phase4_smoke_test.py` — page-with-button
+  round-trips byte-identical, AND the generated button's 112 attributes match a real
+  Construct-authored plain button (`Component - Button.cuig`'s "Button1", id `i9nb`)
+  **exactly** — same 112 keys in the same order, 0 value mismatches. Written up in
+  `docs/architecture/04-ch5-schema.md` (includes the full derivation + flagged gaps: only
+  the plain/default button variant is covered, not icon/image/checkbox/advanced-mode
+  buttons; common wiring keys' universality across component types is unconfirmed beyond
+  button). `01-index.md` updated. Also generated one into the real on-disk verification
+  project (`C:\Solutions\ClaudeGenTest\GenTestProject\MainPage.cuig`) for the user to
+  check in Construct.
+- 2026-09-08: **End-to-end manual verification project generated in Construct's own
+  Solutions folder**, at the user's request, to sanity-check Phases 1-3 outside the
+  harness before starting Phase 4: `C:\Solutions\ClaudeGenTest\ClaudeGenTest.csln` ->
+  project `GenTestProject` (CH5:2.18.0 SDK, light theme, TSW-1070 landscape resolution,
+  matching real `Components.cuip` values) -> page `MainPage.cuig` (start page) -> widget
+  `MyWidget.cuiw` (400x300) added to the page via the real `<ch5-template>` reference.
+  Every step passed `harness/compare.py`'s round-trip check. User confirmed it looks good
+  after opening in Construct. User also asked about adding multiple landscape/portrait
+  resolutions to a project; deferred to Phase 5 (device catalog / orientation semantics
+  are explicitly out of scope until then) at the user's direction, rather than guessing at
+  unconfirmed device dimensions.
 - 2026-09-03: **Background color verification against user-added reference files.**
   User added `Page with Bkd Color.cuig` / `Widget with Bkd Color.cuiw` to
   `C:\Solutions\ClaudeSamples\Components` specifically to test this. Confirmed

@@ -120,12 +120,26 @@ def build_widget_attributes(
     return attrs
 
 
-def default_widget_html_css(element_id: str, width: int, height: int) -> tuple[str, str, Element]:
-    """CreateNewWidgetHandler.cs's default payload for a brand-new, empty widget."""
+def default_widget_html_css(
+    element_id: str, width: int, height: int, resolution: tuple[int, int] | None = None,
+) -> tuple[str, str, Element]:
+    """CreateNewWidgetHandler.cs's default payload for a brand-new, empty widget.
+
+    `resolution`: the project's primary landscape (width, height) in px, used for the
+    second @media block's breakpoint -- omit (None) for the pre-existing no-devices-yet
+    2560x1440 fallback. Originally always used that fallback regardless of the project's
+    real devices (Phase 3 flagged this, unconfirmed); confirmed wrong and fixed in Phase 4
+    after finding a real widget (Widget.cuiw, which contains a button) uses its project's
+    actual TSW-1070 breakpoint here, not the fallback -- see generator/layout.py's
+    landscape_media_query, same confirmed formula.
+    """
+    from layout import landscape_media_query
+
     html = f'<div id="{element_id}"></div>'
+    w, h = resolution if resolution else (2560, 1440)
     css = (
         f"@media (max-width: 99999px){{#{element_id}{{width: {width}px;height: {height}px; left: 0; top: 0; position: absolute;}}}}"
-        f"@media (orientation: landscape) and (max-width: 2561px) and (max-height: 1441px), (orientation: landscape) and (max-width: 2559px)"
+        f"@media {landscape_media_query(w, h)}"
         f"{{#{element_id}{{ width: {width}px; height: {height}px; left: 0; top: 0; position: absolute; }}}}"
     )
     element = Element(

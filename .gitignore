@@ -9,3 +9,4 @@ generator/_test_output/*.cuig
 generator/_test_output/*.cuiw
 generator/_test_output/Phase2Smoke/
 generator/_test_output/Phase3Smoke/
+generator/_test_output/Phase4Smoke/
