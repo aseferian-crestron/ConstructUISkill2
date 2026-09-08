@@ -9,6 +9,13 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 9 (assets) pulled forward — local image import DONE.** User caught that the
+Phase 4 image-button variant couldn't actually be verified in Construct without a real
+asset behind it. Built `generator/assets.py`, confirmed exactly against the real
+`CrimsonSilk.cuia`/`.jpg` (which is also the exact asset the reference project's own
+image-type button already references). See `docs/architecture/09-assets.md`. **Next**:
+back to Phase 5 (full reflow) or another component type, per user direction.
+
 **Phase 5 — resolutions: catalog + add-resolutions-to-a-project DONE.** User chose the
 smaller first slice over bundling in full reflow math. Confirmed the real
 device/resolution catalog (74 entries, `resolutionData.json`), resolved both
@@ -40,6 +47,29 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-08: **Phase 9 (assets) pulled forward — local image import DONE.** User was
+  checking the image-button variant in the generated project and pointed out it couldn't
+  really be called verified without an actual image asset imported and referenced —
+  correctly identified that no asset-import code existed yet (it's Phase 9, unstarted).
+  Found the real reference project's image-type button already references a specific real
+  asset (`C:\Solutions\ClaudeSamples\Components\assets\CrimsonSilk.cuia`/`.jpg`, Id
+  `498f8b9e-eade-4d9d-9475-49bb03d4324b`) — about as strong a ground truth as this project
+  has had. Confirmed the `.cuia` format (`{FileMetadata}` + `{AssetAttributes}`, the
+  latter a plain `Dictionary<string,string>` whose real key-insertion order — Id, Name,
+  SourceUri, AspectRatio, AssetSourceType, Username, Password — was found in
+  `SaveAssetMetadataHandler.cs`, confirmed 7/7 against the real file), that
+  `MinimumProjectApp=""` for assets specifically (not a typo, a genuinely different
+  default than every other file type), and that `AspectRatio` (`width/height` as a
+  double) computed independently in Python via Pillow matches C#'s ImageSharp-computed
+  value byte-for-byte (`1.588550983899821`) for the real file. Also confirmed no new code
+  was needed to reference an asset from a button — `ch5_button.py`'s existing `asset_id`
+  param already does the right thing (the real button has no static `iconurl` attribute at
+  all; Construct resolves it dynamically from `assetid`). Built `generator/assets.py`
+  (`import_asset`), verified via `phase9_assets_smoke_test.py` (imports the real
+  CrimsonSilk.jpg, diffs the generated `.cuia` against the real one — exact match) plus a
+  new dependency on Pillow. Imported the same real asset into the on-disk verification
+  project and rewired `ButtonVariants.cuig`'s image button to use it, for the user to
+  check in Construct. Full writeup in `docs/architecture/09-assets.md`.
 - 2026-09-08: **Phase 5 — device/resolution catalog + add-resolutions-to-a-project DONE.**
   User asked whether the rest of the components or resolutions should come first;
   recommended resolutions first since `generator/layout.py` (built in Phase 4) is now a

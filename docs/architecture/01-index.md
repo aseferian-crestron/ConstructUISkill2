@@ -24,7 +24,7 @@ to write generator code, not yet done for anything except the overview topics.
 | Themes — project attributes + registration | Mapped | 7 | `ServerThemeAndFontHelper.cs`, `PageDesigner.Server\Commands\Handler\StylingAssets\ThemeAndFontUpdateHandler.cs` |
 | Themes — `customvstheme` per-component-type rules | Mapped at a summary level | 7 | `SUpgV1CustomVsThemeUpgradeHandler.cs:528-666` |
 | Fonts — project/element attributes + webfont import | Mapped | 8 | `ServerThemeAndFontHelper.cs`, `FontUpgradeHelper.cs`, `ThemeAndFontUpdateHandler.cs:124-166` |
-| Assets (`.cuia`) — import + `assetid` linking | Mapped | 9 | `UiEditorAssetDao.cs`, `Helpers\AssetHelper.cs`, `Commands\AssetManagement\Utilities\AssetUtilities.cs` |
+| Assets (`.cuia`) — import + `assetid` linking | **Done for local image import** — see `09-assets.md` (pulled forward out of order to verify Phase 4's image-button variant) | 9 | `UiEditorAssetDao.cs`, `Helpers\AssetHelper.cs`, `Commands\AssetManagement\Utilities\AssetUtilities.cs`, `Handlers\SaveAssetMetadataHandler.cs` |
 | Language files — filename discovery | Mapped | 10 | `LanguageFileDao.cs` |
 | Language files — per-file content schema | **Not found** — only filename discovery was traced; the actual JSON shape of a language file's contents is unknown | 10 | `LabelEditor\LabelEditor.Common\Models\LanguageKeyJoin.cs` (candidate, unconfirmed) |
 | Hard buttons (`.cuib`) — format + Project→Device→Page cascade | Mapped | 11 | `UiEditorHardButtonDao.cs`, `Helpers\HardButtonHelper.cs`, `Models\HardButtonMapping.cs` |
