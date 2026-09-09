@@ -148,4 +148,55 @@ except ValueError:
     pass
 print("Case F (invalid mode always raises, independent of target-block emptiness): OK")
 
+# --- Case G (added 2026-09-09, final whole-branch review): the single most important
+#     regression guard in this file. Every case above hand-authors ONE @media block
+#     containing every element's #id{} rule together -- a shape the real generator
+#     NEVER produces. layout.py::build_position_css is called once per element, so a
+#     real 3-button page has THREE separate `@media (max-width: 99999px){...}` blocks
+#     (one per button), all with the byte-identical query string -- confirmed against
+#     a real ButtonVariants.cuig. The old find_media_block/find_media_block_span
+#     (single-match) silently found only the FIRST element and produced zero
+#     warnings; this case would have failed loudly against that bug.
+path_g = OUT / "CaseG.cuig"
+buttons = [("ibtnicon", 10), ("ibtnimage", 200), ("ibtncheck", 400)]
+per_element_css = "".join(
+    f"@media (max-width: 99999px){{#{bid}{{display: block; left: {left}px; top: 10px; position: absolute; z-index: 1; width: 100px; height: 50px;}}}}"
+    f"@media {primary_query}{{#{bid}{{display: block; left: {left}px; top: 10px; position: absolute; width: 100px; height: 50px;}}}}"
+    for bid, left in buttons
+)
+make_file(path_g, per_element_css)
+result_g = reflow_file(path_g, target_resolution=smaller, source_resolution=primary, mode="pin_existing")
+assert result_g.warnings == [], f"expected no warnings, got {result_g.warnings}"
+assert compare.round_trip_check(path_g)
+css_g = compare.parse_file(path_g).sections[2][2]
+elements_g = layout.parse_all_position_rules(css_g, smaller_query)
+assert set(elements_g) == {"ibtnicon", "ibtnimage", "ibtncheck"}, (
+    f"expected all 3 real-shape elements to be found and fit, got {set(elements_g)} -- "
+    "this is exactly the multi-block-per-query bug if it regresses"
+)
+for eid, e in elements_g.items():
+    assert e["left"] + e["width"] <= 640, f"{eid} must be on-canvas (right edge)"
+    assert e["top"] + e["height"] <= 400, f"{eid} must be on-canvas (bottom edge)"
+print("Case G (real per-element-block CSS shape, all 3 elements found and fit): OK")
+
+# --- Case H (added 2026-09-09, final whole-branch review): the write-path mirror of
+#     Case G -- a TARGET resolution that already has multiple per-element blocks
+#     (e.g. from an earlier reflow run under the old bug) must consolidate down to
+#     exactly one block for that query, never leave duplicate #id{} rules under the
+#     same query with a stale one silently winning the CSS cascade.
+path_h = OUT / "CaseH.cuig"
+stale_target_blocks = "".join(
+    f"@media {smaller_query}{{#{bid}{{display: block; left: 0px; top: 0px; position: absolute; width: 40px; height: 20px;}}}}"
+    for bid, _ in buttons[:2]  # only 2 of the 3 already (mis-)reflowed, one per stale block
+)
+make_file(path_h, per_element_css + stale_target_blocks)
+result_h = reflow_file(path_h, target_resolution=smaller, source_resolution=primary, mode="full_refit")
+assert compare.round_trip_check(path_h)
+css_h = compare.parse_file(path_h).sections[2][2]
+target_spans_h = layout.find_media_block_spans(css_h, smaller_query)
+assert len(target_spans_h) == 1, f"expected exactly one consolidated block for the target query, found {len(target_spans_h)}"
+elements_h = layout.parse_all_position_rules(css_h, smaller_query)
+assert set(elements_h) == {"ibtnicon", "ibtnimage", "ibtncheck"}, "consolidation must not lose or duplicate any element"
+print("Case H (multiple stale target blocks for one query consolidate to exactly one, no duplicates/losses): OK")
+
 print("\nTASK 9: reflow_file -- ALL CHECKS PASSED")

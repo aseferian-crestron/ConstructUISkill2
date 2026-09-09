@@ -125,15 +125,23 @@ def build_position_css(
 _FLAT_RULE_RE = re.compile(r"#(?P<id>[A-Za-z0-9_]+)\{(?P<decls>[^{}]*)\}")
 
 
-def find_media_block_span(css_text: str, query: str) -> tuple[int, int] | None:
+def find_media_block_span(css_text: str, query: str, start: int = 0) -> tuple[int, int] | None:
     """(start, end) char indices of the whole `@media {query}{...}` block, brace-depth
     matched since the inner rules themselves contain braces (a plain regex can't find
-    the correct closing brace). None if no block with this exact query exists."""
+    the correct closing brace). Searches from `start` onward (default: the beginning).
+    None if no block with this exact query exists from `start` onward.
+
+    ADDED the `start` parameter 2026-09-09 (final whole-branch review): confirmed
+    against a real 3-button page that the generator emits ONE @media block PER
+    ELEMENT even when several elements share the identical query string, not one
+    block containing every element's rule -- so a query can legitimately match more
+    than once. `start` lets a caller walk forward past a match to find the next one
+    (see find_media_block_spans, and the Data model section of the spec)."""
     needle = f"@media {query}{{"
-    start = css_text.find(needle)
-    if start == -1:
+    idx = css_text.find(needle, start)
+    if idx == -1:
         return None
-    open_brace = start + len(needle) - 1
+    open_brace = idx + len(needle) - 1
     depth = 0
     for i in range(open_brace, len(css_text)):
         if css_text[i] == "{":
@@ -141,12 +149,31 @@ def find_media_block_span(css_text: str, query: str) -> tuple[int, int] | None:
         elif css_text[i] == "}":
             depth -= 1
             if depth == 0:
-                return start, i + 1
+                return idx, i + 1
     raise ValueError(f"unterminated @media block for query {query!r}")
 
 
+def find_media_block_spans(css_text: str, query: str) -> list[tuple[int, int]]:
+    """ADDED 2026-09-09 (final whole-branch review). ALL (start, end) spans of `@media
+    {query}{...}` blocks matching this exact query string, in document order -- see
+    find_media_block_span's note above for why a query can match more than once.
+    Callers that need every element for a query (almost every reflow caller) must use
+    this, not find_media_block_span, which only finds the first."""
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while True:
+        span = find_media_block_span(css_text, query, start=pos)
+        if span is None:
+            break
+        spans.append(span)
+        pos = span[1]
+    return spans
+
+
 def find_media_block(css_text: str, query: str) -> str | None:
-    """Inner content of the `@media {query}{...}` block (between its outer braces)."""
+    """Inner content of the FIRST `@media {query}{...}` block (between its outer
+    braces). Only the first -- see find_media_block_span's note; callers needing every
+    element for a query must use parse_all_position_rules instead."""
     span = find_media_block_span(css_text, query)
     if span is None:
         return None
@@ -180,6 +207,20 @@ def parse_position_rules(block_css: str) -> dict[str, dict]:
             "z_index": int(decls["z-index"]) if "z-index" in decls else None,
             "extra_vars": extra_vars,
         }
+    return elements
+
+
+def parse_all_position_rules(css_text: str, query: str) -> dict[str, dict]:
+    """ADDED 2026-09-09 (final whole-branch review). Parse EVERY element's flat
+    `#id{...}` rule for `query`, merging across however many separate @media blocks
+    the real generator split them into (see find_media_block_spans). Later blocks win
+    on a duplicate id, matching normal CSS cascade order -- in practice no id should
+    ever appear in more than one block for the same query."""
+    elements: dict[str, dict] = {}
+    for start, end in find_media_block_spans(css_text, query):
+        open_brace = css_text.index("{", start)
+        block = css_text[open_brace + 1:end - 1]
+        elements.update(parse_position_rules(block))
     return elements
 
 
