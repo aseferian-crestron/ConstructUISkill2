@@ -346,17 +346,19 @@ Error handling below.
 - **`generator/layout.py`** (extend, don't replace): add `parse_position_rules(css_text)
   -> dict[element_id, ParsedElement]` (the flat-rule parser described above) and
   `build_reflow_block(elements, resolution) -> str` (the N-element `@media` block
-  builder, factored so `build_position_css`'s device-block logic can share it for the
-  single-element case it already handles — this factoring, called for here since the
-  spec's first draft, was actually done as part of the final-review fix, 2026-09-09,
-  see `_device_rule_decls` below). Also add `find_media_block_spans(css_text, query) ->
-  list[tuple[int, int]]` and `parse_all_position_rules(css_text, query) -> dict[element_id,
-  ParsedElement]` (added 2026-09-09, final whole-branch review): per the Data model
-  note above, a query can match more than one block, so every reflow caller that needs
-  "every element for this query" must use these, not the single-match
-  `find_media_block_span`/`find_media_block`, which remain for callers that
-  deliberately want only the first (none currently do, post-fix, but the distinction
-  is kept explicit rather than removing the single-match functions).
+  builder). The factoring so `build_position_css`'s device-block logic shares this
+  same template, called for here since the spec's first draft, remains **deliberately
+  deferred**: the final-review fix (2026-09-09) explicitly chose not to touch
+  `build_position_css` (already byte-exact-verified against real Construct files from
+  Phase 4), to keep that fix's blast radius scoped to the actual bug. Also add
+  `find_media_block_spans(css_text, query) -> list[tuple[int, int]]` and
+  `parse_all_position_rules(css_text, query) -> dict[element_id, ParsedElement]`
+  (added 2026-09-09, final whole-branch review): per the Data model note above, a
+  query can match more than one block, so every reflow caller that needs "every
+  element for this query" must use these, not the single-match
+  `find_media_block_span`/`find_media_block`, which are no longer called by any
+  reflow code post-fix but are kept rather than removed, in case a future caller
+  deliberately wants only the first match.
 - **`generator/reflow.py`** (new):
   - `reflow_file(path, target_resolution, source_resolution, mode="pin_existing") ->
     ReflowResult` — the general entry point for both triggers. Reads the file's

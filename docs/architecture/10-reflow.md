@@ -81,7 +81,9 @@ Full design: `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.m
 Implementation: `generator/reflow.py` (fit_axis, detect_rows, wrap_rows, stack_rows,
 find_new_elements, check_overlaps, pick_primary, choose_source_resolution, reflow_file,
 ReflowResult) plus new CSS parsing/building helpers in `generator/layout.py`
-(find_media_block_span, find_media_block, parse_position_rules, build_reflow_block).
+(find_media_block_span, find_media_block, find_media_block_spans,
+parse_position_rules, parse_all_position_rules, build_reflow_block — the plural pair
+added by the final-review fix below, since a query can match more than one block).
 Wired into `generator/project.py::add_resolutions_to_project`, which now also returns
 the aggregated list of any reflow warnings (previously returned None).
 
