@@ -247,7 +247,14 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     resolution gets a correctly-fitted @media block for whatever elements already exist
     (see generator/reflow.py and docs/superpowers/specs/2026-09-08-multi-resolution-
     reflow-design.md) -- returns the aggregated list of any reflow warnings (e.g. a new
-    element flagged as possibly overlapping a pinned one), never raises for them.
+    element flagged as possibly overlapping a pinned one), never raises for them. This
+    includes an unhandled I/O failure on any single page/widget file (e.g. Construct
+    itself holding the file open) -- ADDED 2026-09-09 (task review): reflow_file only
+    guards against parse failures, not OS-level file errors, but the spec's own
+    contract ("never a hard crash that aborts reflowing the rest of the project's
+    files") applies to every failure class, not just parse ones -- a raised OSError
+    here would leave the .cuip write below never happening while some page files had
+    already been rewritten, a silently inconsistent project. Wrapped per-file.
     """
     import reflow
 
@@ -273,7 +280,11 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
         if source is not None:
             page_files = list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw"))
             for page_path in page_files:
-                result = reflow.reflow_file(page_path, target_resolution=numeric_r, source_resolution=source, mode="pin_existing")
+                try:
+                    result = reflow.reflow_file(page_path, target_resolution=numeric_r, source_resolution=source, mode="pin_existing")
+                except OSError as e:
+                    warnings.append(f"{page_path.name}: {e} -- skipped")
+                    continue
                 warnings.extend(result.warnings)
 
     ids_csv = ",".join(r["id"] for r in device_resolution_source)
