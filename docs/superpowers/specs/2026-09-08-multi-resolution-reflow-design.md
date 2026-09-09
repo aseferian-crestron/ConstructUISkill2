@@ -50,8 +50,12 @@ same file — not a one-shot side effect tied only to the moment a resolution is
   in an orientation the project didn't have yet — fit from the *other* orientation's
   primary).
 - Both `.cuig` (pages) and `.cuiw` (widgets) — same CSS shape, same reflow logic.
-- Fitting via a 3-tier fallback per axis: move, then compact whitespace, then scale
-  down as a last resort (see Algorithm).
+- Fitting is per-axis but no longer symmetric between axes: **X** gets a 4-tier
+  fallback — move, then **wrap** overflowing elements onto new rows below, then
+  compact whitespace, then scale down as a last resort; **Y** keeps the original
+  3-tier fallback (move, compact, scale) but operates on **rows** (inferred from
+  source Y-overlap) rather than individual elements once wrapping has run (see
+  Algorithm).
 - Best-effort overlap flagging between newly-fit elements and pinned pre-existing
   elements in `pin_existing` mode (see Algorithm and Error handling) — reported, not
   silently accepted, but not guaranteed avoided.
@@ -73,8 +77,13 @@ same file — not a one-shot side effect tied only to the moment a resolution is
   `Component - Button.cuig`, which has complex, manually-edited rules). Reflow only
   understands the flat, one-`#id{...}`-rule-per-component shape this generator itself
   produces (`layout.py::build_position_css`'s output).
-- 2D bin-packing/rearrangement — elements never change relative order (left-to-right,
-  top-to-bottom) on either axis; see Algorithm.
+- Full 2D bin-packing/rearrangement — reading order (top-to-bottom, then
+  left-to-right within a row) is always preserved; the one rearrangement this design
+  performs is row-wrap (an overflowing row's trailing elements move to a new row
+  directly below it, never reordered, never merged into an earlier or later row) —
+  see Algorithm.
+- Column-wrap (the height-constrained mirror of row-wrap: moving elements sideways
+  when horizontal room is available but vertical room isn't). Row-wrap only.
 
 ## Data model
 
@@ -112,9 +121,9 @@ current block (empty if the target is brand new, per Trigger 1):
   current block. Ids present in *both* are **pinned** — re-emitted into the new block
   with their existing target-resolution values completely unchanged, no tier logic
   applied. Ids present in source but *not* in the target's current block are **new** —
-  these are the only elements that go through the 3-tier fit (below), computed as
-  their own group against the target's canvas dimensions (the pinned elements' space
-  is not considered by the fit math). After fitting, a pairwise AABB overlap check runs
+  these are the only elements that go through row detection and fitting (below),
+  computed as their own group against the target's canvas dimensions (the pinned
+  elements' space is not considered by the fit math). After fitting, a pairwise AABB overlap check runs
   between every new element's fitted rectangle and every pinned element's rectangle;
   any conflicts are collected as warnings (see Error handling) but do not block writing
   the file. Adding a brand-new resolution (Trigger 1) is the degenerate case where the
@@ -122,64 +131,133 @@ current block (empty if the target is brand new, per Trigger 1):
   pinned elements to check against — no special-casing needed, the same function
   handles both triggers.
 - **`full_refit`**: the target's current block (if any) is ignored entirely; every
-  element in source is treated as one group and fit via the 3-tier algorithm, exactly
-  as `pin_existing` does for brand-new targets. Carries the same full overlap-safety
-  guarantee as before, since it's still "everyone moves together" with nothing pinned.
+  element in source is treated as one group and goes through row detection and
+  fitting, exactly as `pin_existing` does for brand-new targets. Carries the same full
+  overlap-safety guarantee as before, since it's still "everyone moves together" with
+  nothing pinned.
 
-### 3-tier fit (per axis)
+### Row detection
 
-Each axis (X: `left`/`width`; Y: `top`/`height`) is fit **independently**, in a 3-tier
-fallback, for whichever group of elements is being fit (all of source in `full_refit`,
-or just the new elements in `pin_existing`). Tiers are tried in order per axis; an axis
-stops at the first tier that fits. A minimum visual gap of **4px** applies between
-neighboring elements *within the group being fit* wherever gaps are involved (tiers 2
-and 3) — elements may end up exactly 4px apart but never closer, and never overlapping
-each other.
+Before any fitting, the group being fit (all of source in `full_refit`, or just the
+new elements in `pin_existing`) is partitioned into **rows**: sort the group by `top`,
+then greedily cluster — an element joins the current row if its `[top, top + height]`
+range overlaps the row's accumulated range so far; otherwise it starts a new row. Rows
+are ordered top-to-bottom; within a row, elements keep their original left-to-right
+order. This is the same "sort, preserve order" primitive the fit tiers already use,
+just applied once up front on the Y axis to establish row membership. Row detection
+looks only at the group's own source positions — pinned elements (in `pin_existing`
+mode) are never part of a row and never participate in wrapping (see the Scope note on
+2D obstacle avoidance).
+
+### `fit_axis` (the core per-axis 3-tier fitter, unchanged)
+
+The core fitter from the previous revision is unchanged in behavior, and is now reused
+in two places: fitting elements *within a row* on the X axis, and fitting the *row
+list itself* (rows treated as pseudo-elements) on the Y axis. Given a group of `(id,
+pos, size)` items and a `target_dim`, `fit_axis` tries three tiers in order, stopping
+at the first that fits, with a minimum visual gap of **4px** between neighbors wherever
+gaps are involved (tiers 2 and 3):
 
 **Tier 1 — Move (rigid group translate).** Compute the bounding-box span of the
-group's source positions on this axis: `span = max(pos_i + size_i) - min(pos_i)`. If
-`span <= target_dim`, shift every element in the group by one constant offset so the
-bounding box lands inside `[0, target_dim]` (clamp the low edge to 0, or the high edge
-to `target_dim`, whichever the offset requires). Every element's relative position to
-every other element *in the group* is preserved exactly — no resize, no gap change.
-This is the only tier that can leave original (non-4px-multiple) gaps untouched.
+group's source positions: `span = max(pos_i + size_i) - min(pos_i)`. If `span <=
+target_dim`, shift every item by one constant offset so the bounding box lands inside
+`[0, target_dim]` (clamp the low edge to 0, or the high edge to `target_dim`, whichever
+the offset requires). Every item's relative position to every other item is preserved
+exactly — no resize, no gap change. This is the only tier that can leave original
+(non-4px-multiple) gaps untouched.
 
 **Tier 2 — Reduce whitespace (order-preserving compaction).** If tier 1's span doesn't
-fit, sort the group by position on this axis and reduce the gaps between them (and the
-leading margin, if any) proportionally until the span fits — down to a floor of 4px
-between neighbors. Sizes and order are untouched. Concretely: with the group sorted and
-translated so the first element's leading edge is 0, `total_gap = span - sum(sizes)`;
-the amount that must be removed is `span - target_dim`; each internal gap is shrunk by
-the same proportion, clamped so no gap goes below 4px. If proportional shrinking to the
-4px floor on every gap is still not enough to fit, tier 2 does as much as it can (every
-gap at 4px) and hands off to tier 3.
+fit, sort by position and reduce the gaps between items (and the leading margin, if
+any) proportionally until the span fits — down to a floor of 4px between neighbors.
+Sizes and order are untouched. Concretely: with the group sorted and translated so the
+first item's leading edge is 0, `total_gap = span - sum(sizes)`; the amount that must
+be removed is `span - target_dim`; each internal gap is shrunk by the same proportion,
+clamped so no gap goes below 4px. If proportional shrinking to the 4px floor on every
+gap is still not enough to fit, tier 2 does as much as it can (every gap at 4px) and
+hands off to tier 3.
 
 **Tier 3 — Scale down (uniform factor, last resort).** With every gap already at the
-4px floor, if the span still exceeds `target_dim`, the elements' own sizes are too big
+4px floor, if the span still exceeds `target_dim`, the items' own sizes are too big
 regardless of spacing. Reserve room for the mandatory gaps first:
-`available_for_sizes = target_dim - (n - 1) * 4`. Compute one scale factor for this
-axis: `scale = available_for_sizes / sum(sizes)`. Apply `scale` to every element's size
-on this axis (and to any `extra_vars` entry that mirrors this axis's size — see Data
-model) and re-pack them in original order with exactly 4px between neighbors:
-`new_pos[0] = 0`, `new_pos[i] = new_pos[i-1] + new_size[i-1] + 4`.
-
-**Why this can't introduce new overlaps within the fitted group:** two elements in the
-group that don't overlap at their source positions are guaranteed disjoint (non-
-touching or separated) on at least one axis. Tier 1 shifts every element by the same
-constant, so relative positions — and thus whichever axis was already the separating
-one for any given pair — are unchanged. Tiers 2 and 3 never reorder elements and never
-let a gap go negative (floor of 4px, or 0 only in the degenerate n=1 case where there
-is no neighbor) — a monotonically non-decreasing, order-preserving sequence of
-positions with non-negative gaps stays pairwise non-overlapping on that axis by
-construction. No 2D collision detection is needed *for the group being fit*. This
-guarantee does **not** extend to pinned elements in `pin_existing` mode — see the
-Out-of-scope note above and Error handling below.
+`available_for_sizes = target_dim - (n - 1) * 4`. Compute one scale factor:
+`scale = available_for_sizes / sum(sizes)`. Apply `scale` to every item's size (and,
+for elements specifically — not synthesized row pseudo-items — to any `extra_vars`
+entry that mirrors this axis's size, see Data model) and re-pack in original order with
+exactly 4px between neighbors: `new_pos[0] = 0`, `new_pos[i] = new_pos[i-1] +
+new_size[i-1] + 4`.
 
 **Insufficient-room edge case:** if `target_dim < (n - 1) * 4` (not even the mandatory
-4px floor gaps fit for this many elements), this axis cannot be reflowed at all. Handled
-by the same policy as other unparseable/unfittable cases (see Error handling) — skipped
-with a clear message identifying the file, axis, and element count; never a silent drop,
-never a hard crash.
+4px floor gaps fit for this many items), this call cannot fit at all. Handled by the
+same policy as other unparseable/unfittable cases (see Error handling) — skipped with a
+clear message identifying the file, axis, and item count; never a silent drop, never a
+hard crash.
+
+### X axis: wrap tier, inserted between move and compact
+
+The X axis runs one extra tier, **between** `fit_axis`'s Tier 1 and Tier 2, working on
+the *row list* rather than the whole group at once:
+
+**Tier 1 (per row) — Move.** For each row independently, check whether that row's own
+natural span (bounding box of just its own elements) fits `target_dim` via translate
+alone — the same test as `fit_axis` Tier 1, scoped to one row. A row that passes needs
+nothing further on X.
+
+**Tier 2 — Wrap (new).** A row that fails the per-row Tier 1 check splits: peel
+elements off its trailing end (rightmost, in original left-to-right order) one at a
+time onto a brand-new row inserted directly after it, until the elements remaining in
+the original row *do* pass the Tier 1 check. The peeled-off elements form a new row and
+recursively go through the same Tier-1-then-wrap check — a very crowded row can split
+into more than two. This terminates because peeling always shrinks the row by at least
+one element, down to a single-element row in the worst case.
+
+**Tiers 3/4 — Compact / scale.** A row that's down to a single element which *still*
+doesn't fit target_dim on its own cannot wrap further. This is the only case where a
+row falls through to `fit_axis`'s Tier 2/3 on the X axis — a no-op compaction (nothing
+to compact with `n=1`) followed by scale-down, exactly like today's last-resort
+behavior, scoped to that one element.
+
+In practice, X positions are finalized by calling `fit_axis` once per row (against
+`target_dim`) *after* wrapping has settled the row membership: every normal row
+resolves via its own Tier 1 (trivial move, already guaranteed to fit by construction),
+and the single-too-wide-element edge case resolves via `fit_axis`'s own Tier 2/3 — no
+separate code path is needed for "apply the tiers within a row."
+
+### Y axis: row-stacking
+
+Once X-axis wrapping has finalized row membership, each row gets a natural height,
+`max(top_i + height_i) - min(top_i)` over its own members, and an anchor,
+`min(top_i)`. The row list — ordered top-to-bottom, unchanged from Row detection except
+for any splits Tier 2 introduced — is fed to `fit_axis` as pseudo-items (`pos =
+anchor`, `size = natural height`) against `target_height`. This is the *only* Y-axis
+fitting that happens: no per-element Y tiers, no column-wrap (see Scope).
+
+Whatever `fit_axis` computes for a row (`new_pos`, and `scale` — 1.0 unless the row
+list needed Tier 3) is then applied to every element inside that row: `new_top =
+row_new_pos + (element.top - row_anchor) * scale`, and if `scale != 1.0`, `new_height =
+element.height * scale` (plus the matching `extra_vars` scaling, as in `fit_axis`
+Tier 3). A row is a rigid sub-group for this purpose — elements keep their relative
+vertical offsets within it, scaled uniformly if the row itself scales, since nothing
+splits vertically within a row.
+
+### Why this still can't introduce new overlaps within the fitted group
+
+Two elements in the **same row** are disjoint on X by the same argument as before:
+within-row X positions come from `fit_axis`, which never reorders and never lets a gap
+go negative, so a monotonically non-decreasing, order-preserving sequence of positions
+stays pairwise non-overlapping on X by construction.
+
+Two elements in **different rows** are disjoint on Y without needing any per-element Y
+check: each row's Y-extent is derived entirely from its own members (`anchor` to
+`anchor + height`), and rows themselves are pairwise non-overlapping on Y by the same
+non-negative-gap, order-preserving `fit_axis` argument, just applied one level up to
+the row list instead of individual elements. Since every element's `top`/`height`
+stays within its own row's Y-extent by definition, two elements in different rows
+inherit their rows' Y-separation.
+
+So every pair in the fitted group is separated on at least one axis — X within a row,
+Y across rows — with no 2D collision detection required. This guarantee does **not**
+extend to pinned elements in `pin_existing` mode — see the Out-of-scope note above and
+Error handling below.
 
 ## Choosing the source resolution
 
@@ -233,11 +311,27 @@ never a hard crash.
     block, writes back. `ReflowResult` carries `warnings: list[str]` (overlap
     conflicts, skipped-axis messages) so callers/the skill can surface them instead of
     assuming a silently clean result.
-  - `fit_axis(items, target_dim, min_gap=4) -> dict[element_id, {"pos": int, "size":
-    int, "scale": float}]` — the core 3-tier fitter described in Algorithm. `items` is
-    `[(element_id, pos, size)]` for one axis of the group being fit. `scale` is `1.0`
-    unless tier 3 applied, so callers know whether to also scale that element's
-    `extra_vars` entries for this axis.
+  - `fit_axis(items, target_dim, min_gap=4) -> dict[item_id, {"pos": int, "size":
+    int, "scale": float}]` — the core 3-tier fitter described in Algorithm
+    (`fit_axis` section). `items` is `[(item_id, pos, size)]` — either elements (X
+    axis, within one row) or row pseudo-items (Y axis, the row list). `scale` is `1.0`
+    unless tier 3 applied, so callers know whether to also scale that item's
+    `extra_vars`/height entries.
+  - `detect_rows(elements) -> list[list[element_id]]` — the row-detection primitive
+    described in Algorithm: sorts by `top` and greedily clusters by Y-overlap into
+    ordered rows.
+  - `wrap_rows(rows, target_width, min_gap=4) -> list[list[element_id]]` — the X-axis
+    wrap tier: for each row, checks the per-row Tier-1 move test and, if it fails,
+    peels trailing elements onto new rows (recursively) until every row either passes
+    Tier 1 or is down to a single still-too-wide element. Returns the finalized
+    (possibly longer) row list; actual positions are then computed by calling
+    `fit_axis` once per row.
+  - `stack_rows(rows, target_height, min_gap=4) -> dict[element_id, {"top": int,
+    "height": int, "scale": float}]` — the Y-axis row-stacking step: builds row
+    pseudo-items from `rows` (anchor/natural-height per row), calls `fit_axis` against
+    `target_height`, then maps each row's `(pos, scale)` back onto its elements
+    (`new_top = row_pos + (element.top - row_anchor) * scale`, `new_height =
+    element.height * scale` when `scale != 1.0`), per the Algorithm section.
   - `find_new_elements(source_elements, target_elements) -> tuple[set[str],
     set[str]]` — returns `(new_ids, pinned_ids)`, the id-set diff described above.
   - `check_overlaps(pinned_elements, new_elements) -> list[tuple[str, str]]` — pairwise
@@ -257,9 +351,12 @@ never a hard crash.
   component with no position rule at all) is skipped with a clear message identifying
   the file and element — never silently dropped, never a hard crash that aborts
   reflowing the *rest* of the project's files.
-- An axis that can't fit even the mandatory 4px-floor gaps for its element count (see
-  Algorithm's insufficient-room edge case) is skipped the same way — clear message
-  naming the file, axis, and element count, rest of the project's files still processed.
+- A `fit_axis` call that can't fit even the mandatory 4px-floor gaps for its item count
+  (see the `fit_axis` section's insufficient-room edge case) is skipped the same way —
+  clear message naming the file, axis, and item count, rest of the project's files
+  still processed. This applies both to a single-element row that's still too wide
+  after wrapping (X) and to the row list itself not fitting `target_height` even at
+  4px floor gaps between rows (Y) — same underlying check, two different callers.
 - In `pin_existing` mode, any new element whose fitted rectangle overlaps a pinned
   element's rectangle is reported in `ReflowResult.warnings` (file, both element ids,
   both rectangles) — the file is still written with the best-effort fit; this is a
@@ -282,18 +379,30 @@ never a hard crash.
   deliberately-overlapping pair and correctly reports no conflicts for a
   non-overlapping pair.
 - `fit_axis` unit tests, one per tier plus the edge case:
-  - Tier 1: elements whose bounding box already fits target_dim once translated —
-    confirm relative gaps between elements are byte-for-byte unchanged, only a constant
-    offset applied.
-  - Tier 2: elements whose bounding box needs gap compaction — confirm sizes/order
+  - Tier 1: items whose bounding box already fits target_dim once translated — confirm
+    relative gaps between items are byte-for-byte unchanged, only a constant offset
+    applied.
+  - Tier 2: items whose bounding box needs gap compaction — confirm sizes/order
     unchanged, gaps shrink proportionally, no gap ends up below 4px, final span equals
     target_dim.
-  - Tier 3: elements whose combined sizes exceed target_dim even at the 4px floor —
+  - Tier 3: items whose combined sizes exceed target_dim even at the 4px floor —
     confirm sizes scale down by one shared factor, final layout is packed at exactly
-    4px gaps, and `extra_vars` mirroring that axis scale identically.
-  - Edge case: element count large enough that `(n-1)*4 > target_dim` — confirm the
-    axis is skipped with a clear message, not a crash, and other elements/files still
-    process.
+    4px gaps, and `extra_vars` mirroring that axis scale identically (elements only —
+    row pseudo-items carry no `extra_vars`).
+  - Edge case: item count large enough that `(n-1)*4 > target_dim` — confirm the call
+    is skipped with a clear message, not a crash, and other items/files still process.
+- `detect_rows` unit tests: a single row (all elements' Y-ranges mutually overlap), two
+  cleanly separated rows, and a row containing elements with different (but
+  Y-overlapping) `top`/`height` values — confirm row membership and top-to-bottom,
+  left-to-right ordering.
+- `wrap_rows` unit tests: a row that already fits (no split), a row that needs exactly
+  one split, a row dense enough to need multiple splits, and a single element wider
+  than `target_width` on its own (confirm it's left as a one-element row rather than
+  looping forever).
+- `stack_rows` unit tests: multiple rows that fit via row-level Tier 1 (move) —
+  confirm each element's offset from its row's anchor is preserved exactly; a row list
+  needing Tier 3 (scale) — confirm every element in a scaled row has its `top` offset
+  and `height` scaled by the same factor as its row.
 - Mode scenario tests:
   - `pin_existing` with an empty target block (Trigger 1's case) — confirm identical
     output to fitting the whole source group fresh (proves the unification claim).
@@ -314,6 +423,15 @@ never a hard crash.
   trust-the-math assertion) in every scenario. Also add a portrait resolution to a
   landscape-only project and confirm the bootstrap case produces sane on-canvas
   coordinates.
+- Wrap scenario test: build a synthetic single-row source layout (e.g. 4 buttons side
+  by side on a 1280px-wide canvas) that fits comfortably at the source width but
+  doesn't fit a much narrower target width via translate alone (i.e. a case that would
+  previously have fallen through to compaction/scaling); reflow to that narrower
+  target and confirm the row actually splits (more than one
+  row in the output), the split-off elements land below the original row with at least
+  a 4px vertical gap, no element is scaled down (proving wrap was preferred over
+  scale, per the approved tier order), and a direct pairwise AABB check across every
+  element (not just within a row) confirms no overlaps anywhere in the result.
 - Round-trip every produced file through `harness/compare.py`, per this project's
   standing verification requirement.
 - Manual Construct verification: (1) add a real second (smaller or portrait) resolution
