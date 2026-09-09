@@ -230,16 +230,32 @@ Once X-axis wrapping has finalized row membership, each row gets a natural heigh
 A row's **anchor** is *not* simply its own `min(top_i)` — a row created by an X-axis
 wrap split shares the exact same source `top` values as the row it split from
 (splitting rearranges which elements belong to which row, but doesn't move anything
-vertically by itself), so two sibling rows can tie on raw `min(top)` even though they
-must end up on different lines. To keep the row sequence meaningfully ordered before
-`fit_axis`'s own tiers run, rows are pre-stacked sequentially: row 0's anchor is its own
-`min(top_i)`; each later row's anchor is `max(its own min(top_i), previous row's anchor
-+ previous row's natural height + 4px)`. For rows that already came from distinct
-source Y-positions (the ordinary, non-wrap-split case), this is a no-op — `detect_rows`
-already guarantees strictly increasing, non-overlapping natural positions, so the `max`
-always picks the row's own anchor. It only changes anything for wrap-created siblings,
-placing a split-off row naturally just below the row it split from instead of tied with
-it.
+vertically by itself), so two sibling rows can tie (or, more generally, land at a
+non-increasing gap) on raw `min(top)` even though they must end up on different lines.
+To keep the row sequence valid before `fit_axis`'s own tiers run, rows are pre-stacked
+sequentially: row 0's anchor is its own `min(top_i)`; each later row's anchor is its
+predecessor's anchor plus the predecessor's natural height, plus that pair's own
+**original** gap (`this row's min(top_i) - (previous row's min(top_i) + previous row's
+natural height)`) when that gap is non-negative, or the 4px floor when it isn't
+(covering both the wrap-split tie, gap exactly 0, and any other degenerate case where a
+row's natural position would otherwise overlap or precede its predecessor).
+
+This distinction matters: an earlier revision of this section used `max(its own
+min(top_i), previous anchor + previous height + 4px)`, i.e. unconditionally forcing
+*every* inter-row gap up to at least 4px — found and fixed during implementation
+(2026-09-09) to be a real behavioral regression, not the harmless "no-op for ordinary
+rows" it was assumed to be. `detect_rows` only guarantees a *non-negative* inter-row
+gap (`top >= row_bottom`, not `top >= row_bottom + 4px`), so two rows separated by, say,
+2px in the source — an entirely ordinary case, not a wrap-split artifact — would be
+pushed 2px further apart than the source ever had them, contradicting the same
+"preserve original gaps exactly, only enforce the 4px floor where compaction is
+actually needed" principle `fit_axis`'s own Tier 1 already establishes (see the 3-tier
+fit above: "the only tier that can leave original (non-4px-multiple) gaps untouched").
+Worse, that injected spacing can push a row list that fit `target_height` perfectly
+into needing Tier 2/3 compaction or scaling it never needed. The corrected formula
+preserves the original gap exactly whenever it's already non-negative (a true no-op for
+every ordinary row, matching Tier 1's own philosophy) and clamps only the genuinely
+degenerate case (a non-positive or tied gap) to the 4px floor.
 
 The row list — ordered top-to-bottom, unchanged from Row detection except for any
 splits the wrap tier introduced — is fed to `fit_axis` as pseudo-items (`pos = anchor`
@@ -263,12 +279,17 @@ stays pairwise non-overlapping on X by construction.
 
 Two elements in **different rows** are disjoint on Y without needing any per-element Y
 check: the pre-stacking step guarantees rows enter `fit_axis` already in a valid,
-non-decreasing, non-overlapping order (`anchor_i >= anchor_{i-1} + height_{i-1} + 4px`
-by construction), and `fit_axis` itself never reorders or lets a gap go negative — so
-rows stay pairwise non-overlapping on Y by the same argument as any other group it
-fits, just applied one level up to the row list. Every element's `top`/`height` stays
-within its own row's Y-extent (`anchor` to `anchor + height`) by definition, so two
-elements in different rows inherit their rows' Y-separation.
+non-decreasing, non-overlapping order — `anchor_i >= anchor_{i-1} + height_{i-1}`
+always (the pair's own original, non-negative gap when there was one, else the 4px
+floor; either way the next anchor never lands before the previous row's bottom) — and
+`fit_axis` itself never reorders or lets a gap go negative, so rows stay pairwise
+non-overlapping on Y by the same argument as any other group it fits, just applied one
+level up to the row list. (The 4px *minimum visual gap* is guaranteed only where
+`fit_axis`'s own tiers actually introduce or adjust a gap — Tier 1's rigid translate
+still preserves whatever original gap a row list had, exactly like it does for
+elements, per the "no-op" note above.) Every element's `top`/`height` stays within its
+own row's Y-extent (`anchor` to `anchor + height`) by definition, so two elements in
+different rows inherit their rows' Y-separation.
 
 So every pair in the fitted group is separated on at least one axis — X within a row,
 Y across rows — with no 2D collision detection required. This guarantee does **not**
@@ -345,13 +366,18 @@ Error handling below.
   - `stack_rows(rows, target_height, min_gap=4) -> dict[element_id, {"top": int,
     "height": int, "scale": float}]` — the Y-axis row-stacking step: builds row
     pseudo-items from `rows` (natural height per row, plus the pre-stacked anchor —
-    `max(own min(top), previous row's anchor + previous row's height + min_gap)` — that
-    keeps wrap-created sibling rows from tying on Y, see Algorithm), calls `fit_axis`
-    against `target_height`, then maps each row's `(pos, scale)` back onto its elements
-    (`new_top = row_pos + (element.top - row's_own_min_top) * scale`, `new_height =
-    element.height * scale` when `scale != 1.0`) — note the per-element offset is taken
-    from the row's *own* raw `min(top)`, not its pre-stacked anchor, since that offset
-    only needs to preserve each element's position relative to its row's other members.
+    each row's own original inter-row gap when non-negative, else the `min_gap` floor;
+    a true no-op for ordinary rows, only clamping the degenerate wrap-created-sibling
+    tie, see Algorithm — corrected 2026-09-09 from an earlier, unconditional-4px-floor
+    version found to be a real behavioral regression during implementation), calls
+    `fit_axis` against `target_height`, then maps each row's `(pos, scale)` back onto
+    its elements (`new_top = row_pos + (element.top - row's_own_min_top) * scale`,
+    `new_height = int(element.height * scale)` when `scale != 1.0` — `int()`
+    truncation, not `round()`, matching `fit_axis`'s own Tier 3 convention exactly,
+    since the element spanning a row's full natural extent must equal that row's own
+    `fit_axis`-computed size bit-for-bit) — note the per-element offset is taken from
+    the row's *own* raw `min(top)`, not its pre-stacked anchor, since that offset only
+    needs to preserve each element's position relative to its row's other members.
   - `find_new_elements(source_elements, target_elements) -> tuple[set[str],
     set[str]]` — returns `(new_ids, pinned_ids)`, the id-set diff described above.
   - `check_overlaps(pinned_elements, new_elements) -> list[tuple[str, str]]` — pairwise
