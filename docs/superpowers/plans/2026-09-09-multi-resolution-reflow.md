@@ -1048,8 +1048,17 @@ assert result2["a"]["scale"] == scale0 and result2["b"]["scale"] == scale0
 assert result2["c"]["scale"] == scale1
 assert result2["a"]["top"] == expected2["__row0"]["pos"]
 assert result2["a"]["height"] == expected2["__row0"]["size"], "a alone determines row0's natural height, so a's scaled height must equal the row's own fitted size"
+# CORRECTED 2026-09-09 (Task 6's own TDD cycle caught this): "a"'s height above is
+# PROVABLY int()-based, not round()-based -- a's own top/height exactly span row0's
+# natural extent, so a's own height*scale is the identical expression to row0's own
+# fit_axis-computed size, which fit_axis's Tier 3 always computes via int() (never
+# round(), per Task 3's own fix). "b" must use the same int() convention for
+# consistency -- round() here (as an earlier draft of this test had it) is provably
+# inconsistent with the "a" assertion above for this exact scale0 (round(100*scale0)
+# == 26 but int(100*scale0) == 25; no single per-element rounding function satisfies
+# both assertions except int()).
 assert result2["b"]["top"] == round(expected2["__row0"]["pos"] + (20 - 0) * scale0)
-assert result2["b"]["height"] == round(30 * scale0)
+assert result2["b"]["height"] == max(1, int(30 * scale0))
 assert result2["c"]["top"] == expected2["__row1"]["pos"]
 assert result2["c"]["height"] == expected2["__row1"]["size"]
 print("row-level Tier 3 (scale), per-element scaling: OK")
@@ -1095,9 +1104,16 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
 
     Feeds the row pseudo-items to fit_axis against target_height, then maps each row's
     (pos, scale) back onto its own elements: new_top = row_pos + (element's own top -
-    the row's own raw min(top)) * scale, new_height = element.height * scale (only
-    when scale != 1.0, floored at 1px like fit_axis's own tier 3). Returns
-    {element_id: {"top": int, "height": int, "scale": float}}."""
+    the row's own raw min(top)) * scale, new_height = int(element.height * scale) --
+    int(), NOT round() -- (only when scale != 1.0, floored at 1px like fit_axis's own
+    tier 3). CORRECTED 2026-09-09 (found during this task's own TDD cycle): height
+    MUST use int() truncation, not round() -- the element that alone spans a row's
+    full natural extent has `own height * scale` as literally the same expression as
+    that row's own fit_axis-computed size, and fit_axis's Tier 3 always computes sizes
+    via int() (never round(), per Task 3's fix), so using round() here would make that
+    element's height mismatch its own row's fitted size. `top` keeps round() -- it has
+    no equivalent identity to preserve. Returns {element_id: {"top": int, "height":
+    int, "scale": float}}."""
     if not rows:
         return {}
     row_keys = [f"__row{i}" for i in range(len(rows))]
@@ -1122,7 +1138,7 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
             offset = (e["top"] - own_min_top[i]) * row_scale
             result[eid] = {
                 "top": round(row_pos + offset),
-                "height": max(1, round(e["height"] * row_scale)) if row_scale != 1.0 else e["height"],
+                "height": max(1, int(e["height"] * row_scale)) if row_scale != 1.0 else e["height"],
                 "scale": row_scale,
             }
     return result
