@@ -192,35 +192,42 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
 
 
 def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4) -> dict[str, dict]:
-    """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09).
+    """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09,
+    corrected again same-day after a task review caught a real bug -- see below).
     Builds one pseudo-item per row -- natural height `max(top+height) - min(top)` over
     the row's own members, and a PRE-STACKED anchor (not simply the row's own
     min(top): a row created by an X-axis wrap split shares its original top with the
-    row it split from, so raw min(top) can tie between sibling rows). Row i's anchor is
-    `max(its own min(top), row i-1's anchor + row i-1's natural height + min_gap)`; for
-    rows that already had distinct source Y-positions (the ordinary, non-wrap-split
-    case) this is a no-op, since detect_rows already guarantees strictly increasing,
-    non-overlapping natural positions.
+    row it split from, so raw min(top) can tie between sibling rows).
+
+    Row i's anchor is row i-1's anchor plus row i-1's natural height, plus that pair's
+    own ORIGINAL gap (`row i's own min(top) - (row i-1's own min(top) + row i-1's
+    natural height)`) when that gap is non-negative, or the min_gap floor when it
+    isn't. CORRECTED 2026-09-09 (task review): an earlier version used `max(its own
+    min(top), row i-1's anchor + row i-1's natural height + min_gap)` -- unconditionally
+    forcing EVERY inter-row gap up to at least min_gap, which is wrong: detect_rows
+    only guarantees a non-negative inter-row gap (`top >= row_bottom`), not a
+    >=min_gap one, so two ordinarily-adjacent rows separated by 1-3px in the source
+    would get pushed further apart than they ever were -- contradicting fit_axis's own
+    Tier 1 principle (rigid translate preserves original gaps exactly, even below
+    min_gap; the floor is only enforced where compaction/scaling actually happens).
+    Worse, that injected spacing could push a row list that fit target_height
+    perfectly into needing Tier 2/3 compaction/scaling it never needed. The corrected
+    formula is a true no-op for every ordinary row (original gap preserved exactly,
+    even 0px) and clamps only the genuinely degenerate case (a tied or negative gap --
+    the wrap-split sibling scenario this pre-stacking step exists for).
 
     Feeds the row pseudo-items to fit_axis against target_height, then maps each row's
     (pos, scale) back onto its own elements: new_top = row_pos + (element's own top -
-    the row's own raw min(top)) * scale, new_height = element.height * scale (only
-    when scale != 1.0, floored at 1px like fit_axis's own tier 3). Returns
-    {element_id: {"top": int, "height": int, "scale": float}}.
-
-    CORRECTED during this task's own TDD (test written first, caught by the RED->GREEN
-    cycle, not a prior task's bug): height uses int() truncation, matching fit_axis's
-    own Tier 3 convention (see fit_axis's Tier 3 comment -- int() never overshoots,
-    round() can), NOT round(). This matters concretely whenever a row has one element
-    that spans the row's exact natural extent (top == the row's own min(top) AND
-    top+height == the row's own max(top+height), e.g. a single-element row, or the
-    tallest element in a multi-element row): that element's own height times the row's
-    scale MUST equal fit_axis's own row-item size exactly, since both are the same
-    expression (int(natural_height * scale)) by construction -- round() would silently
-    diverge from the row's own fitted size whenever the fractional part is >= 0.5.
-    Using round() here was tried first and demonstrably breaks that invariant (a
-    100px-tall element scaled by ~0.2556 rounds to 26px but the row itself floors to
-    25px) -- caught before it shipped."""
+    the row's own raw min(top)) * scale, new_height = int(element.height * scale) --
+    int(), NOT round() -- (only when scale != 1.0, floored at 1px like fit_axis's own
+    tier 3). CORRECTED 2026-09-09 (found during this task's own TDD cycle): height
+    MUST use int() truncation, not round() -- the element that alone spans a row's
+    full natural extent has `own height * scale` as literally the same expression as
+    that row's own fit_axis-computed size, and fit_axis's Tier 3 always computes sizes
+    via int() (never round(), per Task 3's fix), so using round() here would make that
+    element's height mismatch its own row's fitted size. `top` keeps round() -- it has
+    no equivalent identity to preserve. Returns {element_id: {"top": int, "height":
+    int, "scale": float}}."""
     if not rows:
         return {}
     row_keys = [f"__row{i}" for i in range(len(rows))]
@@ -231,7 +238,8 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
     ]
     anchors = [own_min_top[0]]
     for i in range(1, len(rows)):
-        anchors.append(max(own_min_top[i], anchors[i - 1] + natural_height[i - 1] + min_gap))
+        original_gap = own_min_top[i] - (own_min_top[i - 1] + natural_height[i - 1])
+        anchors.append(anchors[i - 1] + natural_height[i - 1] + (original_gap if original_gap >= 0 else min_gap))
 
     row_items = list(zip(row_keys, anchors, natural_height))
     row_fit = fit_axis(row_items, target_height, min_gap=min_gap)

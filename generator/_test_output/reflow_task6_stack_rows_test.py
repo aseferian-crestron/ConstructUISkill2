@@ -1,3 +1,4 @@
+# generator/_test_output/reflow_task6_stack_rows_test.py
 """Task 6: stack_rows -- Y-axis row-stacking, including the pre-stacked-anchor fix for
 rows that share their original top (the wrap-split case)."""
 import sys
@@ -37,16 +38,16 @@ assert result2["a"]["scale"] == scale0 and result2["b"]["scale"] == scale0
 assert result2["c"]["scale"] == scale1
 assert result2["a"]["top"] == expected2["__row0"]["pos"]
 assert result2["a"]["height"] == expected2["__row0"]["size"], "a alone determines row0's natural height, so a's scaled height must equal the row's own fitted size"
+# CORRECTED 2026-09-09 (Task 6's own TDD cycle caught this): "a"'s height above is
+# PROVABLY int()-based, not round()-based -- a's own top/height exactly span row0's
+# natural extent, so a's own height*scale is the identical expression to row0's own
+# fit_axis-computed size, which fit_axis's Tier 3 always computes via int() (never
+# round(), per Task 3's own fix). "b" must use the same int() convention for
+# consistency -- round() here (as an earlier draft of this test had it) is provably
+# inconsistent with the "a" assertion above for this exact scale0 (round(100*scale0)
+# == 26 but int(100*scale0) == 25; no single per-element rounding function satisfies
+# both assertions except int()).
 assert result2["b"]["top"] == round(expected2["__row0"]["pos"] + (20 - 0) * scale0)
-# NOTE: int(), not round() -- corrected during this task's own RED/GREEN cycle. The
-# assertion above (a's height must equal expected2["__row0"]["size"]) is a hard
-# requirement: a spans row0's exact natural extent (its own top == row0's min(top) and
-# its own bottom == row0's max(top+height)), so a's own height * scale0 is the *same
-# expression* as fit_axis's row-item size (int(natural_height * scale)) by
-# construction. round() diverges from that whenever the fractional part is >= 0.5 (as
-# it is here: 100 * scale0 = 25.5555..., round -> 26, but the row itself floors to 25)
-# -- so height must use int() truncation throughout, matching fit_axis's own
-# documented Tier 3 rationale (int() never overshoots; round() can).
 assert result2["b"]["height"] == max(1, int(30 * scale0))
 assert result2["c"]["top"] == expected2["__row1"]["pos"]
 assert result2["c"]["height"] == expected2["__row1"]["size"]
@@ -62,6 +63,35 @@ assert result3["y"]["top"] >= result3["x"]["top"] + result3["x"]["height"] + 4, 
     f"non-overlapping on Y (min 4px gap), got x={result3['x']}, y={result3['y']}"
 )
 print("wrap-split sibling rows (tied source top) stack without overlap: OK")
+
+# --- Regression guard: ordinary (non-wrap-split) rows with a TIGHT natural gap must
+#     be a true no-op -- the original gap is preserved exactly, even below min_gap,
+#     never forced up to the floor. An earlier version of stack_rows unconditionally
+#     forced every inter-row gap to >=min_gap, which pushed rows with a genuinely tight
+#     (but non-degenerate) original gap further apart than they ever were.
+elements4 = make(("p", 0, 50), ("q", 52, 50), ("r", 104, 50))  # rows separated by 2px each
+rows4 = [["p"], ["q"], ["r"]]
+result4 = stack_rows(rows4, elements4, target_height=300)  # ample room -- pure Tier 1 (move)
+assert result4["p"]["scale"] == result4["q"]["scale"] == result4["r"]["scale"] == 1.0
+assert result4["q"]["top"] - (result4["p"]["top"] + result4["p"]["height"]) == 2, (
+    "ordinary rows' original 2px gap must be preserved exactly, not forced to the "
+    f"4px floor, got {result4}"
+)
+assert result4["r"]["top"] - (result4["q"]["top"] + result4["q"]["height"]) == 2
+print("ordinary rows with a tight original gap: true no-op regression guard: OK")
+
+# --- Same regression, but flush-stacked (0px gap) rows -- must also be preserved
+#     exactly, not forced to 4px, and must NOT be spuriously pushed into Tier 2/3.
+elements5 = make(("s", 0, 50), ("t", 50, 50), ("u", 100, 50))  # 0px gaps, span 150 exactly
+rows5 = [["s"], ["t"], ["u"]]
+result5 = stack_rows(rows5, elements5, target_height=150)  # exactly the natural span
+assert result5["s"]["scale"] == result5["t"]["scale"] == result5["u"]["scale"] == 1.0, (
+    "flush rows fitting target_height exactly must stay at Tier 1 (move); an "
+    f"unconditional 4px floor would force unnecessary Tier 3 scaling here: {result5}"
+)
+assert result5["t"]["top"] - (result5["s"]["top"] + result5["s"]["height"]) == 0
+assert result5["u"]["top"] - (result5["t"]["top"] + result5["t"]["height"]) == 0
+print("flush-stacked rows: true no-op, no spurious tier escalation: OK")
 
 # --- Empty input --------------------------------------------------------------------
 assert stack_rows([], {}, target_height=100) == {}

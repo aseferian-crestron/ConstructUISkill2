@@ -36,6 +36,27 @@ anything for wrap-created siblings, placing a split-off row naturally just below
 row it split from. See `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md`'s
 Y axis section and Task 6 of `docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md`.
 
+**CORRECTED same-day (2026-09-09, task review):** the `max(own min(top), previous
+anchor + previous height + min_gap)` formula written above is itself wrong -- it
+unconditionally forces EVERY inter-row gap up to at least `min_gap` (4px), even for
+ordinary (non-wrap-split) rows that never needed it. `detect_rows` only guarantees a
+*non-negative* inter-row gap, not a `>=4px` one, so two rows separated by, say, 2px in
+the source were getting silently pushed to 4px+ apart -- contradicting this codebase's
+own `fit_axis` Tier 1 principle (rigid translate preserves original gaps exactly, even
+below `min_gap`; the floor only applies where compaction actually happens). Verified
+repro: 3 rows flush-stacked at `top=0/50/100`, `target_height=150` (their exact natural
+span) -- the buggy formula drifted anchors to `[0, 54, 108]`, pushing the span to 158px
+and forcing an unnecessary Tier 3 scale-down on a layout that needed none. Fixed by
+preserving each row's own original gap when it's non-negative, clamping to `min_gap`
+only for the genuinely degenerate case (a tied or negative gap -- the wrap-split
+sibling scenario this pre-stacking exists for): `anchors[i-1] + natural_height[i-1] +
+(original_gap if original_gap >= 0 else min_gap)`. Both the design spec
+(`docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md`, Y axis section)
+and the plan (`docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md`, Task 6)
+were corrected first; `generator/reflow.py::stack_rows` and its test now match. Two
+regression tests guard this (tight 2px gap, and flush 0px gap) in
+`generator/_test_output/reflow_task6_stack_rows_test.py`.
+
 ### Second bug found by this task's own TDD cycle: per-element height must floor (int()), not round()
 
 Separately from the tied-anchor gap above, writing this task's Tier-3 (scale) test
