@@ -9,12 +9,30 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 9 (assets) pulled forward — local image import DONE.** User caught that the
-Phase 4 image-button variant couldn't actually be verified in Construct without a real
-asset behind it. Built `generator/assets.py`, confirmed exactly against the real
-`CrimsonSilk.cuia`/`.jpg` (which is also the exact asset the reference project's own
-image-type button already references). See `docs/architecture/09-assets.md`. **Next**:
-back to Phase 5 (full reflow) or another component type, per user direction.
+**Phase 5 continuation — multi-resolution reflow design spec REVISED (fit strategy
+changed to a 3-tier fallback), approved, ready for an implementation plan.** User
+changed direction on the original "scale first, clamp last" approach: fitting a smaller
+canvas now tries, per axis, in order — (1) move/rigid-translate the whole element group
+if its bounding box already fits, (2) reduce whitespace (order-preserving gap
+compaction, floor of 4px between neighbors) if moving alone isn't enough, (3) scale
+down by one shared factor as the last resort, only after gaps are already at the 4px
+floor. Elements never reorder and gaps never go negative, which is what guarantees no
+tier can introduce a new overlap between elements that didn't already overlap in the
+source layout (proof in the spec). See
+`docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` for the full
+design, including the insufficient-room edge case and updated scope boundaries
+(shrink-to-fit is now in scope as tier 3; resolution removal and hand-authored CSS are
+still out of scope). **Next**: write the implementation plan and build it.
+
+**Phase 9 (assets) pulled forward — local image import DONE, confirmed live in
+Construct.** User caught that the Phase 4 image-button variant couldn't actually be
+verified without a real asset behind it. Built `generator/assets.py`, confirmed exactly
+against the real `CrimsonSilk.cuia`/`.jpg` (which is also the exact asset the reference
+project's own image-type button already references), wired it into the on-disk
+verification project, and the user confirmed the image now renders correctly on the
+button in Construct. See `docs/architecture/09-assets.md`. Phase 4's button work (plain +
+icon + image + checkbox variants) is now fully closed out end-to-end. **Next**: back to
+Phase 5 (full reflow) or another component type, per user direction.
 
 **Phase 5 — resolutions: catalog + add-resolutions-to-a-project DONE.** User chose the
 smaller first slice over bundling in full reflow math. Confirmed the real
@@ -47,6 +65,43 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-08: **Multi-resolution reflow — fit-strategy redesigned to a 3-tier fallback
+  (move, then compact whitespace, then scale), at the user's direction.** The
+  just-approved spec (previous entry below) always scaled first and only repositioned
+  as a last-resort clamp; the user asked for the opposite priority — try repositioning
+  first, then reducing whitespace, and only scale down if neither works. Clarified two
+  ambiguities before rewriting: (1) the "move" tier must be collision-aware, not
+  independent per-element clamping — resolved by proving that rigid group translation
+  (tier 1) plus order-preserving, never-negative-gap compaction (tiers 2/3) can never
+  introduce a new overlap, since two elements non-overlapping in the source are always
+  disjoint on at least one axis and that disjointness survives any monotonic shrink; (2)
+  whitespace reduction preserves element order (no bin-packing/rearrangement) and the
+  final scale is one uniform factor per axis, both per the user's explicit choice. User
+  then set the minimum gap floor at 4px, applied through both tier 2 (compaction) and
+  tier 3 (scale-down reserves `(n-1)*4px` for mandatory gaps before scaling the
+  remainder) rather than allowing gaps to reach 0. Spec rewritten in place at
+  `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` (Algorithm,
+  Components, Error handling, and Testing sections all updated; new insufficient-room
+  edge case documented for when even 4px floor gaps don't fit the element count).
+  **Next**: user reviews the rewritten spec, then the implementation plan.
+- 2026-09-08: **Multi-resolution reflow — design spec written and approved.** Covers the
+  gap left by Phase 5's first slice: `add_resolutions_to_project` updates the `.cuip`'s
+  resolution list but does nothing to existing pages'/widgets' component
+  positions/sizes, so content near the edge of an original canvas can land off-canvas on
+  a newly-added smaller/differently-oriented resolution. Design: parse each file's
+  `99999px` catch-all CSS block (the confirmed single source of truth for current
+  position/size) into per-element `{left, top, width, height, extra_vars}`, scale
+  per-axis from a chosen source resolution (same-orientation primary, or the other
+  orientation's primary for the bootstrap case), then clamp any still-off-canvas element
+  by repositioning only (never resizing). Emits one new `@media` block per newly-added
+  resolution; the existing catch-all block is untouched. New components planned:
+  `layout.py::parse_position_rules`/`build_reflow_block` (extending, not replacing, the
+  existing single-element device-block logic) and a new `generator/reflow.py`
+  (`reflow_file`, `pick_primary`, `choose_source_resolution`), wired into
+  `add_resolutions_to_project`. Explicitly out of scope: resolution removal,
+  shrink-to-fit, and reflowing hand-authored non-generator CSS. Full spec at
+  `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md`. **Next**: write
+  the implementation plan.
 - 2026-09-08: **Phase 9 (assets) pulled forward — local image import DONE.** User was
   checking the image-button variant in the generated project and pointed out it couldn't
   really be called verified without an actual image asset imported and referenced —
