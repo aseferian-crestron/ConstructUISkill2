@@ -218,19 +218,64 @@ def read_cuip(path: Path) -> tuple[list[tuple[str, str]], list[dict], FileMetada
     return attrs, device_resolution_source, metadata
 
 
-def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> None:
+def _numeric_dim(value: int | str) -> int:
+    """A resolution's width/height as stored in {DeviceResolutionSource} may be a plain
+    int (hand-built/test resolutions) or the real catalog's confirmed 'Npx' string form
+    (devices.py::to_project_resolution -- confirmed against a real .cuip's own
+    {DeviceResolutionSource}, e.g. "1280px"). Coerce to int; used only for feeding
+    reflow.py's arithmetic, never for what's written back to disk."""
+    if isinstance(value, str):
+        return int(value[:-2]) if value.endswith("px") else int(value)
+    return value
+
+
+def _numeric_resolution(r: dict) -> dict:
+    """Shallow copy of a resolution dict with width/height coerced to int (see
+    _numeric_dim) -- everything else (id, orientation, etc.) passed through unchanged."""
+    return {**r, "width": _numeric_dim(r["width"]), "height": _numeric_dim(r["height"])}
+
+
+def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> list[str]:
     """Add one or more already-shaped resolution dicts (see generator/devices.py::
     to_project_resolution) to an existing project's .cuip, updating `DeviceResolutionIds`
     and `{DeviceResolutionSource}` and marking `ContractIsStale`. Mirrors
     build_project_attributes' own DeviceResolutionIds/DeviceResolutionSource wiring, so a
     project ends up in the identical shape whether its resolutions were set at creation
     time or added afterward.
+
+    Also reflows every existing *.cuig/*.cuiw in the project's folder so each newly-added
+    resolution gets a correctly-fitted @media block for whatever elements already exist
+    (see generator/reflow.py and docs/superpowers/specs/2026-09-08-multi-resolution-
+    reflow-design.md) -- returns the aggregated list of any reflow warnings (e.g. a new
+    element flagged as possibly overlapping a pinned one), never raises for them.
     """
+    import reflow
+
     attrs, device_resolution_source, metadata = read_cuip(cuip_path)
     project_id = dict(attrs)["Id"]
+    project_dir = cuip_path.parent
+    warnings: list[str] = []
 
     for r in new_resolutions:
+        existing_before = list(device_resolution_source)
+        # Real catalog-sourced resolutions (devices.py::to_project_resolution) carry
+        # width/height as the confirmed real-file "Npx" string form (e.g. "1280px" --
+        # matches C:\Solutions\ClaudeSamples\Components\Components.cuip's own
+        # {DeviceResolutionSource} exactly), but reflow.py/layout.py do arithmetic on
+        # these values (media-query +-1px formulas, pick_primary's width comparison)
+        # and need plain ints. Coerce to int ONLY for the numeric copies fed into the
+        # reflow subsystem -- `device_resolution_source`/the .cuip on disk keep the
+        # original string form untouched, preserving real-file fidelity.
+        numeric_existing = [_numeric_resolution(e) for e in existing_before]
+        numeric_r = _numeric_resolution(r)
+        source = reflow.choose_source_resolution(numeric_existing, numeric_r)
         device_resolution_source.append({"ProjectId": project_id, **r})
+        if source is not None:
+            page_files = list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw"))
+            for page_path in page_files:
+                result = reflow.reflow_file(page_path, target_resolution=numeric_r, source_resolution=source, mode="pin_existing")
+                warnings.extend(result.warnings)
+
     ids_csv = ",".join(r["id"] for r in device_resolution_source)
 
     keys = [k for k, _ in attrs]
@@ -241,6 +286,7 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     override_attr(attrs, "ContractIsStale", "true")
 
     write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
+    return warnings
 
 
 if __name__ == "__main__":

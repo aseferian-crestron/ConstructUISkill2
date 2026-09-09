@@ -74,3 +74,53 @@ by construction, and `round()` vs `int()` diverge whenever the fractional part i
 itself floors to 25px, a silent 1px mismatch/overshoot). Fixed by using `int()`
 truncation for per-element height throughout `stack_rows`, matching `fit_axis`'s own
 Tier 3 convention exactly.
+
+## Algorithm and integration summary
+
+Full design: `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md`.
+Implementation: `generator/reflow.py` (fit_axis, detect_rows, wrap_rows, stack_rows,
+find_new_elements, check_overlaps, pick_primary, choose_source_resolution, reflow_file,
+ReflowResult) plus new CSS parsing/building helpers in `generator/layout.py`
+(find_media_block_span, find_media_block, parse_position_rules, build_reflow_block).
+Wired into `generator/project.py::add_resolutions_to_project`, which now also returns
+the aggregated list of any reflow warnings (previously returned None).
+
+X-axis fitting runs per row (move -> wrap -> compact -> scale); Y-axis fitting stacks
+the resulting row list (move -> compact -> scale), with the pre-stacked-anchor fix in
+`stack_rows` (see the Task 6 section above) so wrap-created sibling rows never tie.
+
+Confirmed via `generator/_test_output/reflow_task1..10_*.py` and manual Construct
+verification against `C:\Solutions\ClaudeGenTest\GenTestProject` (see Task 10, Step 6).
+
+**Not yet wired up:** Trigger 2 (the skill asking the user which mode to use when new
+elements are added to an already-multi-resolution page) is a conversational/process
+step at the skill layer per the spec's Integration section, not new code in
+`generator/` -- `reflow_file`'s `mode` parameter is what a future skill-layer call would
+choose between; this plan only builds and proves the underlying mechanism.
+
+### Bug found wiring Task 10: catalog resolution width/height are strings, not ints
+
+Task 10's own end-to-end test (using real catalog data via
+`devices.py::to_project_resolution`, not the hand-built plain-int resolution dicts every
+earlier task's unit tests used) immediately crashed `add_resolutions_to_project` with
+`TypeError: can only concatenate str (not "int") to str` inside
+`layout.orientation_media_query`. Root cause: a real `.cuip`'s `{DeviceResolutionSource}`
+genuinely stores `width`/`height` as strings with a `px` suffix (confirmed against
+`C:\Solutions\ClaudeSamples\Components\Components.cuip`: `"width": "1280px"`, not a bare
+number) -- `to_project_resolution` correctly preserves that real-file shape, but
+`reflow.py`/`layout.py` do plain arithmetic on `resolution["width"]`/`["height"]`
+(`width + 1`, `pick_primary`'s `max(..., key=lambda r: r["width"])`), which only ever
+worked in prior tasks' tests because their synthetic resolution dicts used plain ints
+throughout, never exercising the real catalog's string shape.
+
+Fixed at the `add_resolutions_to_project` wiring boundary (not in `devices.py`, which
+must keep producing the confirmed real-file string shape, and not in `reflow.py`/
+`layout.py`, whose own unit tests already pass against plain ints): new
+`project.py::_numeric_dim`/`_numeric_resolution` coerce a resolution's width/height to
+`int` (stripping a trailing `px` string suffix when present) for numeric copies fed into
+`reflow.choose_source_resolution`/`reflow.reflow_file` only -- the dict actually appended
+to `device_resolution_source` and written to disk is untouched, so the `.cuip` on disk
+still gets the real, confirmed `"Npx"` string form. The Task 10 integration test's own
+Scenario 2 (orientation-bootstrap, using the real TST-1080 portrait catalog entry
+unmodified) needed the identical coercion applied locally, purely for that test's own
+query-building/comparison arithmetic.
