@@ -465,6 +465,50 @@ assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, go
 assert result["c"]["pos"] + result["c"]["size"] - result["a"]["pos"] <= 308
 print("tier 2 (compact): OK")
 
+# --- Tier 2, genuine interpolation (0 < r < 1), not the r==1.0 boundary above -------
+items = [("a", 0, 100), ("b", 150, 100), ("c", 300, 100)]  # same items, looser target
+result = fit_axis(items, target_dim=320)  # needed_reduction=80 < slack=92 -- strict interpolation
+assert result["a"]["scale"] == 1.0 and result["b"]["scale"] == 1.0 and result["c"]["scale"] == 1.0
+span = result["c"]["pos"] + result["c"]["size"] - result["a"]["pos"]
+assert span <= 320, f"tier 2 interpolation must still fit target_dim, got span={span}"
+gap_ab = result["b"]["pos"] - (result["a"]["pos"] + result["a"]["size"])
+gap_bc = result["c"]["pos"] - (result["b"]["pos"] + result["b"]["size"])
+assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, got {gap_ab}, {gap_bc}"
+print("tier 2 (compact), genuine interpolation path: OK")
+
+# --- Tier 2 with a sub-floor/overlapping input gap -- regression guard. A naive
+#     "max_possible_reduction = total_gap - (n-1)*min_gap" formula credits a
+#     below-floor (or negative/overlapping) gap as if it were reducible slack, which
+#     silently returns a layout WIDER than target_dim. b and c below overlap by 20px
+#     in the source (b covers 150-250, c starts at 230).
+items = [("a", 0, 100), ("b", 150, 100), ("c", 230, 100)]
+result = fit_axis(items, target_dim=315)
+span = result["c"]["pos"] + result["c"]["size"] - result["a"]["pos"]
+assert span <= 315, f"tier 2 must still fit target_dim even with a sub-floor input gap, got span={span}"
+gap_ab = result["b"]["pos"] - (result["a"]["pos"] + result["a"]["size"])
+gap_bc = result["c"]["pos"] - (result["b"]["pos"] + result["b"]["size"])
+assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, got {gap_ab}, {gap_bc}"
+print("tier 2 (compact), sub-floor input gap regression guard: OK")
+
+# --- Tier 2 with many gaps -- regression guard for rounding drift COMPOUNDING across
+#     several gaps. An earlier fix rounded each position incrementally off the
+#     previous ROUNDED position, which still let up to ~0.5px of error per gap
+#     accumulate across many gaps and occasionally push the final span a few px over
+#     target_dim even though each individual gap still met the 4px floor -- caught by
+#     this exact case during that fix's own re-review. Flooring (not rounding) each
+#     gap before accumulating positions closes this for good (see the implementation's
+#     comment).
+items = [("i0", 0, 100), ("i1", 149, 69), ("i2", 254, 56), ("i3", 346, 106), ("i4", 509, 94), ("i5", 622, 56)]
+result = fit_axis(items, target_dim=637)
+span = max(v["pos"] + v["size"] for v in result.values()) - min(v["pos"] for v in result.values())
+assert span <= 637, f"tier 2 must not overshoot target_dim via rounding drift across many gaps, got span={span}"
+sorted_ids = sorted(result, key=lambda i: result[i]["pos"])
+for i in range(len(sorted_ids) - 1):
+    a, b = result[sorted_ids[i]], result[sorted_ids[i + 1]]
+    gap = b["pos"] - (a["pos"] + a["size"])
+    assert gap >= 4, f"gap must never go below the 4px floor, got {gap}"
+print("tier 2 (compact), many-gaps rounding-drift regression guard: OK")
+
 # --- Tier 3: even at the 4px floor, sizes alone exceed target_dim -- must scale down.
 items = [("a", 0, 100), ("b", 150, 100)]  # sizes sum 200, 1 gap -> floor-packed min = 204
 result = fit_axis(items, target_dim=100)  # too small even for floor-packed sizes
@@ -491,11 +535,13 @@ items = [(f"e{i}", i * 60, 55) for i in range(6)]  # 6 elements, span 0..355 (la
 for target in (308, 200, 100, 50):
     result = fit_axis(items, target_dim=target)
     ids = list(result)
+    span = max(v["pos"] + v["size"] for v in result.values()) - min(v["pos"] for v in result.values())
+    assert span <= target, f"fitted group must fit target_dim={target}, got span={span}"
     for i in range(len(ids)):
         for j in range(i + 1, len(ids)):
             a, b = result[ids[i]], result[ids[j]]
             assert not overlaps(a["pos"], a["size"], b["pos"], b["size"]), f"overlap at target_dim={target}: {ids[i]} vs {ids[j]}"
-print("no-overlap guarantee across all tiers: OK")
+print("no-overlap guarantee AND target_dim-fit across all tiers: OK")
 
 # --- fit_axis is a generic (id, pos, size) fitter -- it works identically on row
 #     pseudo-items (Task 6 will feed it "__row0"-style keys), not just element ids.
@@ -582,17 +628,40 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
     needed_reduction = span - target_dim
 
     # --- Tier 2: order-preserving whitespace compaction ---------------------------
+    # CORRECTED 2026-09-09, twice (task review caught two real bugs; the first fix
+    # introduced a smaller residual of the same symptom, caught by the fix's own
+    # scoped re-review). Bug 1: the original `max_possible_reduction = total_gap -
+    # (n-1)*min_gap` sums ALL gaps uniformly, including any gap already below min_gap
+    # (or negative, i.e. overlapping input) -- those gaps must EXPAND to reach the
+    # floor, not contribute reduction, so the old formula could credit negative
+    # "slack" and under-reduce the span, silently returning a layout wider than
+    # target_dim. Fixed by splitting each gap into reducible slack (above the floor)
+    # vs. mandatory deficit (below the floor) and budgeting needed_reduction against
+    # slack alone, plus deficit -- this part of the fix is unchanged from the first
+    # correction. Bug 2 (found in the first fix's own re-review): rounding each
+    # position INCREMENTALLY (off the previous ROUNDED position) still let up to
+    # ~0.5px of rounding error compound across many gaps, occasionally pushing the
+    # final span a few px over target_dim even though every individual gap still met
+    # the 4px floor. Fixed the same way Tier 3 fixes its own analogous rounding
+    # problem: floor (never round) each gap to an integer before accumulating
+    # positions. A float gap is already >= min_gap by construction (the `max(min_gap,
+    # ...)` above), and min_gap is an integer, so floor(gap) >= min_gap always --
+    # flooring can only ever shrink the accumulated span relative to the exact
+    # (target_dim-fitting) float math, never grow it, so no compounding is possible.
     if n > 1:
         gaps = [positions[i + 1] - (positions[i] + sizes[i]) for i in range(n - 1)]
-        max_possible_reduction = max(0, total_gap - (n - 1) * min_gap)
-        if max_possible_reduction > 0 and needed_reduction <= max_possible_reduction:
-            shrink_ratio = needed_reduction / max_possible_reduction
-            new_gaps = [max(min_gap, g - shrink_ratio * (g - min_gap)) for g in gaps]
+        slack = sum(max(0, g - min_gap) for g in gaps)      # reducible whitespace only
+        deficit = sum(max(0, min_gap - g) for g in gaps)    # sub-floor gaps that must expand
+        need = needed_reduction + deficit
+        if slack > 0 and need <= slack:
+            shrink_ratio = need / slack
+            new_gaps = [max(min_gap, g - shrink_ratio * max(0, g - min_gap)) for g in gaps]
+            int_gaps = [max(min_gap, int(g)) for g in new_gaps]  # floor, never round
             new_positions = [0]
             for i, size in enumerate(sizes[:-1]):
-                new_positions.append(new_positions[-1] + size + new_gaps[i])
+                new_positions.append(new_positions[-1] + size + int_gaps[i])
             return {
-                item_id: {"pos": round(pos), "size": size, "scale": 1.0}
+                item_id: {"pos": pos, "size": size, "scale": 1.0}
                 for item_id, pos, size in zip(ids, new_positions, sizes)
             }
 
@@ -604,7 +673,13 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
             f"gaps for {n} items"
         )
     scale = available_for_sizes / total_size
-    new_sizes = [max(1, round(size * scale)) for size in sizes]  # never collapse to 0px
+    # CORRECTED 2026-09-09 (task review): round() could push the packed total over
+    # target_dim (each item's round() can add up to 0.5px, compounding across many
+    # items). int() truncates toward zero, equivalent to floor for these non-negative
+    # values, and never overshoots -- the max(1, ...) floor is unchanged (never
+    # collapse to 0px; the only remaining, deliberate source of overflow is that 1px
+    # floor itself on a pathologically over-crowded axis).
+    new_sizes = [max(1, int(size * scale)) for size in sizes]
     new_positions = [0]
     for size in new_sizes[:-1]:
         new_positions.append(new_positions[-1] + size + min_gap)
