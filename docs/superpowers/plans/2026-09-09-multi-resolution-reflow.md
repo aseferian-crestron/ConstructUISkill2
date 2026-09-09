@@ -1591,6 +1591,63 @@ assert set(elements_c) == {"i1", "i3"}
 assert elements_c["i1"] != {"left": 0, "top": 0, "width": 50, "height": 50, "z_index": None, "extra_vars": {}}, "full_refit must NOT preserve the old target position -- proves the two modes differ"
 print("Case C (full_refit, old target position discarded): OK")
 
+# --- Case D (added 2026-09-09, task review): regression guard for two bugs found by
+#     review -- (1) universal-newline translation in Path.read_text/write_text
+#     silently rewrote every line ending in the file (LF -> CRLF on Windows), breaking
+#     the "leave everything outside Css byte-identical" contract for any non-native-
+#     newline file; (2) compare.round_trip_check alone can't catch this since it only
+#     verifies the file splits/reassembles self-consistently, not that content matches
+#     what was there BEFORE reflow_file ran -- which is exactly why Case A/B/C's
+#     round_trip_check calls didn't catch it. This case writes a hand-built LF-only
+#     file with write_bytes (never silently re-encoded to the platform's native line
+#     ending the way write_text would), and compares the non-Css sections' bytes
+#     before vs. after reflow_file, not just internal self-consistency.
+path_d = OUT / "CaseD.cuig"
+path_d.write_bytes(
+    b'{FileMetadata}\nSchema = "1.0.0.0"\n'
+    b'\n{Html}\n<div id="i1"></div><div id="i2"></div>\n'
+    + f"\n{{Css}}\n{source_css}\n".encode("utf-8")
+    + b'\n{PageAttributes}\n\n[Attributes]\nName = "P"\n'
+)
+before_sections = {name: content for name, _, content in compare.parse_file(path_d).sections}
+result_d = reflow_file(path_d, target_resolution=smaller, source_resolution=primary, mode="pin_existing")
+assert result_d.warnings == [], f"expected no warnings, got {result_d.warnings}"
+assert compare.round_trip_check(path_d)
+after_sections = {name: content for name, _, content in compare.parse_file(path_d).sections}
+for section_name in ("FileMetadata", "Html", "PageAttributes"):
+    assert after_sections[section_name] == before_sections[section_name], (
+        f"{section_name} section must be byte-identical (including line endings) "
+        "before vs. after reflow_file -- reflow_file must only ever touch Css"
+    )
+assert b"\r\n" not in path_d.read_bytes(), "reflow_file must not introduce CRLF into an LF-only file"
+print("Case D (LF-only file, non-Css sections byte-identical before/after reflow_file): OK")
+
+# --- Case E (added 2026-09-09, task review): malformed input must produce a warning,
+#     never raise -- reflow_file's first draft let a StopIteration (missing {Css}
+#     section) escape uncaught.
+path_e = OUT / "CaseE.cuig"
+path_e.write_text(
+    "{FileMetadata}\nSchema = \"1.0.0.0\"\n\n{Html}\n<div id=\"i1\"></div>\n"
+    "\n{PageAttributes}\n\n[Attributes]\nName = \"P\"\n",  # no {Css} section at all
+    encoding="utf-8",
+)
+result_e = reflow_file(path_e, target_resolution=smaller, source_resolution=primary, mode="pin_existing")
+assert any("Css" in w for w in result_e.warnings), f"expected a warning naming the missing Css section, got {result_e.warnings}"
+print("Case E (missing {Css} section produces a warning, does not raise): OK")
+
+# --- Case F (added 2026-09-09, task review): an invalid mode must always raise,
+#     regardless of whether the target block happens to be empty -- the first draft
+#     only validated mode AFTER branching on the target block's emptiness, so a typo'd
+#     mode silently performed a full refit instead of raising when the target was empty.
+path_f = OUT / "CaseF.cuig"
+make_file(path_f, source_css)  # empty target block -- the branch that used to skip validation
+try:
+    reflow_file(path_f, target_resolution=smaller, source_resolution=primary, mode="pin_exsiting")  # typo, deliberate
+    assert False, "expected ValueError for an invalid mode, even with an empty target block"
+except ValueError:
+    pass
+print("Case F (invalid mode always raises, independent of target-block emptiness): OK")
+
 print("\nTASK 9: reflow_file -- ALL CHECKS PASSED")
 ```
 
@@ -1620,8 +1677,18 @@ def _read_sections(path: Path) -> tuple[str, list[tuple[str, str, str]]]:
     (fixed FileMetadata/Html/Css/PageAttributes header-per-line convention). Kept local
     (not imported from harness/) matching this project's existing precedent of each
     writer owning its own small section reader rather than depending on the harness
-    verification tool."""
-    raw = path.read_text(encoding="utf-8")
+    verification tool.
+
+    CORRECTED 2026-09-09 (task review): Path.read_text()/write_text() perform universal
+    newline translation -- '\\r\\n'/'\\r' are normalized to '\\n' on read, and '\\n' is
+    re-expanded to the platform's os.linesep on write. On Windows that silently turns
+    every bare-LF line ending in the file into CRLF, breaking this function's whole
+    contract (leave everything outside the Css section byte-identical) for any file
+    that isn't already using the platform's native line endings. Fixed by opening with
+    `newline=""`, which disables translation in both directions -- whatever line
+    endings the file already had are read and written back completely unchanged."""
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        raw = f.read()
     matches = list(_SECTION_RE.finditer(raw))
     preamble = raw[: matches[0].start()] if matches else raw
     sections = []
@@ -1633,7 +1700,9 @@ def _read_sections(path: Path) -> tuple[str, list[tuple[str, str, str]]]:
 
 
 def _write_sections(path: Path, preamble: str, sections: list[tuple[str, str, str]]) -> None:
-    path.write_text(preamble + "".join(header + content for _, header, content in sections), encoding="utf-8")
+    """See _read_sections' CORRECTED note -- newline="" here too, for the same reason."""
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(preamble + "".join(header + content for _, header, content in sections))
 
 
 @dataclass
@@ -1676,10 +1745,16 @@ def _fit_group(
         for name, value in e.get("extra_vars", {}).items():
             lname = name.lower()
             numeric = float(value[:-2]) if value.endswith("px") else None
+            # CORRECTED 2026-09-09 (task review): must use int() truncation, matching
+            # fit_axis's/stack_rows's own Tier 3 convention exactly (round() was
+            # reintroducing the "outer width/height vs. --ch5-button--* var disagree"
+            # class of bug this codebase already fixed once, Phase 4 -- a mirrored var
+            # must equal the property it mirrors bit-for-bit, which only holds if both
+            # use the same rounding function).
             if numeric is not None and "width" in lname:
-                extra_vars[name] = f"{round(numeric * x['scale'])}px"
+                extra_vars[name] = f"{max(1, int(numeric * x['scale']))}px"
             elif numeric is not None and "height" in lname:
-                extra_vars[name] = f"{round(numeric * y['scale'])}px"
+                extra_vars[name] = f"{max(1, int(numeric * y['scale']))}px"
             else:
                 extra_vars[name] = value  # not a width/height-mirroring var -- carry through unscaled
         fitted[eid] = {
@@ -1692,10 +1767,30 @@ def _fit_group(
 def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mode: str = "pin_existing") -> ReflowResult:
     """Add or update `target_resolution`'s @media block in `path` so it has a position
     rule for every element `source_resolution`'s block has. See the spec's Algorithm
-    section for `mode` semantics (pin_existing default vs. full_refit)."""
+    section for `mode` semantics (pin_existing default vs. full_refit).
+
+    CORRECTED 2026-09-09 (task review): every failure mode below must produce a
+    warning and a clean ReflowResult return, never raise -- per the spec's Error
+    handling section ("never a hard crash that aborts reflowing the rest of the
+    project's files"), which this function's own first draft violated in three
+    places: a missing {Css} section raised a bare StopIteration from the `next(...)`
+    call with no predicate default; a malformed/unterminated @media block raised
+    ValueError out of layout.find_media_block(_span); and a position rule with a
+    non-"Npx" value (or missing a required property) raised ValueError/KeyError out
+    of layout.parse_position_rules. All three are now caught and turned into warnings.
+    `mode` is also now validated up front, before any other branch -- previously an
+    invalid mode only raised when the target block was non-empty, silently performing
+    a full refit instead when it was empty/missing, an inconsistency also caught by
+    task review."""
+    if mode not in ("pin_existing", "full_refit"):
+        raise ValueError(f"unknown mode {mode!r} -- expected 'pin_existing' or 'full_refit'")
+
     warnings: list[str] = []
     preamble, sections = _read_sections(path)
-    css_index = next(i for i, (name, _, _) in enumerate(sections) if name == "Css")
+    css_index = next((i for i, (name, _, _) in enumerate(sections) if name == "Css"), None)
+    if css_index is None:
+        warnings.append(f"{path.name}: no {{Css}} section found -- skipped")
+        return ReflowResult(warnings=warnings)
     css_text = sections[css_index][2]
 
     source_orientation = _orientation_name(source_resolution)
@@ -1703,27 +1798,41 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     source_query = layout.orientation_media_query(source_orientation, source_resolution["width"], source_resolution["height"])
     target_query = layout.orientation_media_query(target_orientation, target_resolution["width"], target_resolution["height"])
 
-    source_block = layout.find_media_block(css_text, source_query)
+    try:
+        source_block = layout.find_media_block(css_text, source_query)
+    except ValueError as e:
+        warnings.append(f"{path.name}: source block for {source_query} didn't parse cleanly -- {e} -- skipped")
+        return ReflowResult(warnings=warnings)
     if source_block is None:
         warnings.append(f"{path.name}: no existing @media block for source resolution ({source_query}) -- skipped")
         return ReflowResult(warnings=warnings)
-    source_elements = layout.parse_position_rules(source_block)
+    try:
+        source_elements = layout.parse_position_rules(source_block)
+    except (ValueError, KeyError) as e:
+        warnings.append(f"{path.name}: source block for {source_query} didn't parse cleanly -- {e} -- skipped")
+        return ReflowResult(warnings=warnings)
     if not source_elements:
         warnings.append(f"{path.name}: source block for {source_query} parsed but contained no position rules -- skipped")
         return ReflowResult(warnings=warnings)
 
-    target_span = layout.find_media_block_span(css_text, target_query)
+    try:
+        target_span = layout.find_media_block_span(css_text, target_query)
+    except ValueError as e:
+        warnings.append(f"{path.name}: target block for {target_query} didn't parse cleanly -- {e} -- skipped")
+        return ReflowResult(warnings=warnings)
     target_block = layout.find_media_block(css_text, target_query) if target_span else None
-    target_elements = layout.parse_position_rules(target_block) if target_block else {}
+    try:
+        target_elements = layout.parse_position_rules(target_block) if target_block else {}
+    except (ValueError, KeyError) as e:
+        warnings.append(f"{path.name}: target block for {target_query} didn't parse cleanly -- {e} -- skipped")
+        return ReflowResult(warnings=warnings)
 
     if mode == "full_refit" or not target_elements:
         pinned, to_fit = {}, source_elements
-    elif mode == "pin_existing":
+    else:
         new_ids, pinned_ids = find_new_elements(source_elements, target_elements)
         pinned = {i: target_elements[i] for i in pinned_ids}
         to_fit = {i: source_elements[i] for i in new_ids}
-    else:
-        raise ValueError(f"unknown mode {mode!r} -- expected 'pin_existing' or 'full_refit'")
 
     if not to_fit:
         warnings.append(f"{path.name}: no new elements to fit for {target_query} -- skipped")
