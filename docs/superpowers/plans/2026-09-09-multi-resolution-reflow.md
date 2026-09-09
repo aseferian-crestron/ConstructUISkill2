@@ -2063,6 +2063,31 @@ In `generator/project.py`, add `import reflow` near the top (alongside the exist
 `from devices import ...`-style local imports), then replace `add_resolutions_to_project`:
 
 ```python
+def _numeric_dim(value: int | str) -> int:
+    """A resolution's width/height as stored in {DeviceResolutionSource} may be a plain
+    int (hand-built/test resolutions) or the real catalog's confirmed 'Npx' string form
+    (devices.py::to_project_resolution -- confirmed against a real .cuip's own
+    {DeviceResolutionSource}, e.g. "1280px"). ADDED 2026-09-09 (found during this
+    task's own TDD cycle, first time this plan routed real catalog data through the
+    reflow subsystem -- every earlier task's tests only used hand-built int-width
+    synthetic resolutions, so this never surfaced until now): reflow.py/layout.py do
+    plain arithmetic on width/height (media-query +-1px formulas, pick_primary's width
+    comparison), which raises on a string, and -- worse, silently -- makes
+    pick_primary's `max(..., key=r["width"])` compare lexicographically instead of
+    numerically if left unfixed. Coerce to int; used only for feeding reflow.py's
+    arithmetic, never for what's written back to disk (the .cuip keeps the real
+    string form, preserving real-file fidelity)."""
+    if isinstance(value, str):
+        return int(value[:-2]) if value.endswith("px") else int(value)
+    return value
+
+
+def _numeric_resolution(r: dict) -> dict:
+    """Shallow copy of a resolution dict with width/height coerced to int (see
+    _numeric_dim) -- everything else (id, orientation, etc.) passed through unchanged."""
+    return {**r, "width": _numeric_dim(r["width"]), "height": _numeric_dim(r["height"])}
+
+
 def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> list[str]:
     """Add one or more already-shaped resolution dicts (see generator/devices.py::
     to_project_resolution) to an existing project's .cuip, updating `DeviceResolutionIds`
@@ -2075,7 +2100,14 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     resolution gets a correctly-fitted @media block for whatever elements already exist
     (see generator/reflow.py and docs/superpowers/specs/2026-09-08-multi-resolution-
     reflow-design.md) -- returns the aggregated list of any reflow warnings (e.g. a new
-    element flagged as possibly overlapping a pinned one), never raises for them.
+    element flagged as possibly overlapping a pinned one), never raises for them. This
+    includes an unhandled I/O failure on any single page/widget file (e.g. Construct
+    itself holding the file open) -- ADDED 2026-09-09 (task review): reflow_file only
+    guards against parse failures, not OS-level file errors, but the spec's own
+    contract ("never a hard crash that aborts reflowing the rest of the project's
+    files") applies to every failure class, not just parse ones -- a raised OSError
+    here would leave the .cuip write below never happening while some page files had
+    already been rewritten, a silently inconsistent project. Wrapped per-file.
     """
     import reflow
 
@@ -2086,12 +2118,26 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
 
     for r in new_resolutions:
         existing_before = list(device_resolution_source)
-        source = reflow.choose_source_resolution(existing_before, r)
+        # Real catalog-sourced resolutions (devices.py::to_project_resolution) carry
+        # width/height as the confirmed real-file "Npx" string form (e.g. "1280px" --
+        # matches C:\Solutions\ClaudeSamples\Components\Components.cuip's own
+        # {DeviceResolutionSource} exactly), but reflow.py/layout.py do arithmetic on
+        # these values (media-query +-1px formulas, pick_primary's width comparison)
+        # and need plain ints. Coerce to int ONLY for the numeric copies fed into the
+        # reflow subsystem -- `device_resolution_source`/the .cuip on disk keep the
+        # original string form untouched, preserving real-file fidelity.
+        numeric_existing = [_numeric_resolution(e) for e in existing_before]
+        numeric_r = _numeric_resolution(r)
+        source = reflow.choose_source_resolution(numeric_existing, numeric_r)
         device_resolution_source.append({"ProjectId": project_id, **r})
         if source is not None:
             page_files = list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw"))
             for page_path in page_files:
-                result = reflow.reflow_file(page_path, target_resolution=r, source_resolution=source, mode="pin_existing")
+                try:
+                    result = reflow.reflow_file(page_path, target_resolution=numeric_r, source_resolution=source, mode="pin_existing")
+                except OSError as e:
+                    warnings.append(f"{page_path.name}: {e} -- skipped")
+                    continue
                 warnings.extend(result.warnings)
 
     ids_csv = ",".join(r["id"] for r in device_resolution_source)
@@ -2140,7 +2186,19 @@ and confirm the existing button is repositioned on-canvas, not clipped.
 ```python
 # generator/_test_output/reflow_manual_verification_setup.py
 """Not an automated test -- prepares the real on-disk verification project for the user
-to check in Construct (this project's standing practice, see Phase 5/9)."""
+to check in Construct (this project's standing practice, see Phase 5/9).
+
+CORRECTED 2026-09-09 (task review): the original version overrode a TST-1080 catalog
+entry's width/height fields directly (`smaller["width"], smaller["height"] = 640,
+360`), leaving its `widthMedia`/`heightMedia`/`resolutionId`/`resolutionName` fields
+still saying 1280x800 -- an internally inconsistent resolution entry Construct never
+authors, and confirmed (by opening the real file after running the original version)
+to leave Construct's own resolution-switcher UI still showing 1280x800, so the
+reflowed 641px-breakpoint block would never actually be exercised -- the plan's only
+real-world check couldn't show anything either way. Fixed by using a genuine catalog
+entry (TSW-570, a real 640x360 landscape device, confirmed present in the catalog)
+instead of hand-overriding fields on an unrelated entry -- every field stays
+self-consistent because it all comes from one real catalog row."""
 import sys
 from pathlib import Path
 
@@ -2151,11 +2209,10 @@ from devices import read_catalog, to_project_resolution  # noqa: E402
 
 GEN_TEST_CUIP = Path(r"C:\Solutions\ClaudeGenTest\GenTestProject\GenTestProject.cuip")
 catalog = read_catalog()
-smaller = to_project_resolution(catalog.by_id_name("TST-1080", orientation="landscape"))
-smaller["width"], smaller["height"] = 640, 360
+smaller = to_project_resolution(catalog.by_id_name("TSW-570", orientation="landscape"))
 
 warnings = add_resolutions_to_project(GEN_TEST_CUIP, [smaller])
-print(f"Added a 640x360 landscape resolution to {GEN_TEST_CUIP}.")
+print(f"Added a TSW-570 (640x360 landscape) resolution to {GEN_TEST_CUIP}.")
 print(f"Warnings: {warnings or '(none)'}")
 print("Open the project in Construct, switch to the new resolution, and confirm the "
       "existing button is on-canvas (not clipped) and not overlapping anything.")
