@@ -257,3 +257,32 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
                 "scale": row_scale,
             }
     return result
+
+
+def find_new_elements(source_elements: dict[str, dict], target_elements: dict[str, dict]) -> tuple[set[str], set[str]]:
+    """(new_ids, pinned_ids): ids in source but not yet in target are new; ids present
+    in both are pinned (left untouched in pin_existing mode)."""
+    source_ids = set(source_elements)
+    target_ids = set(target_elements)
+    return source_ids - target_ids, source_ids & target_ids
+
+
+def _rects_overlap(a: dict, b: dict) -> bool:
+    return not (
+        a["left"] + a["width"] <= b["left"]
+        or b["left"] + b["width"] <= a["left"]
+        or a["top"] + a["height"] <= b["top"]
+        or b["top"] + b["height"] <= a["top"]
+    )
+
+
+def check_overlaps(pinned: dict[str, dict], new: dict[str, dict]) -> list[tuple[str, str]]:
+    """Pairwise AABB overlap check between every new element and every pinned element
+    -- used only in pin_existing mode, since new elements are only fit against each
+    other, not against pinned space (see the spec's best-effort/flagged design)."""
+    conflicts = []
+    for new_id, new_rect in new.items():
+        for pinned_id, pinned_rect in pinned.items():
+            if _rects_overlap(new_rect, pinned_rect):
+                conflicts.append((new_id, pinned_id))
+    return conflicts
