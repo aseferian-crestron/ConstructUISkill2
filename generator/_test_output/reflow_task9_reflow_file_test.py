@@ -91,4 +91,61 @@ assert set(elements_c) == {"i1", "i3"}
 assert elements_c["i1"] != {"left": 0, "top": 0, "width": 50, "height": 50, "z_index": None, "extra_vars": {}}, "full_refit must NOT preserve the old target position -- proves the two modes differ"
 print("Case C (full_refit, old target position discarded): OK")
 
+# --- Case D (added 2026-09-09, task review): regression guard for two bugs found by
+#     review -- (1) universal-newline translation in Path.read_text/write_text
+#     silently rewrote every line ending in the file (LF -> CRLF on Windows), breaking
+#     the "leave everything outside Css byte-identical" contract for any non-native-
+#     newline file; (2) compare.round_trip_check alone can't catch this since it only
+#     verifies the file splits/reassembles self-consistently, not that content matches
+#     what was there BEFORE reflow_file ran -- which is exactly why Case A/B/C's
+#     round_trip_check calls didn't catch it. This case writes a hand-built LF-only
+#     file with write_bytes (never silently re-encoded to the platform's native line
+#     ending the way write_text would), and compares the non-Css sections' bytes
+#     before vs. after reflow_file, not just internal self-consistency.
+path_d = OUT / "CaseD.cuig"
+path_d.write_bytes(
+    b'{FileMetadata}\nSchema = "1.0.0.0"\n'
+    b'\n{Html}\n<div id="i1"></div><div id="i2"></div>\n'
+    + f"\n{{Css}}\n{source_css}\n".encode("utf-8")
+    + b'\n{PageAttributes}\n\n[Attributes]\nName = "P"\n'
+)
+before_sections = {name: content for name, _, content in compare.parse_file(path_d).sections}
+result_d = reflow_file(path_d, target_resolution=smaller, source_resolution=primary, mode="pin_existing")
+assert result_d.warnings == [], f"expected no warnings, got {result_d.warnings}"
+assert compare.round_trip_check(path_d)
+after_sections = {name: content for name, _, content in compare.parse_file(path_d).sections}
+for section_name in ("FileMetadata", "Html", "PageAttributes"):
+    assert after_sections[section_name] == before_sections[section_name], (
+        f"{section_name} section must be byte-identical (including line endings) "
+        "before vs. after reflow_file -- reflow_file must only ever touch Css"
+    )
+assert b"\r\n" not in path_d.read_bytes(), "reflow_file must not introduce CRLF into an LF-only file"
+print("Case D (LF-only file, non-Css sections byte-identical before/after reflow_file): OK")
+
+# --- Case E (added 2026-09-09, task review): malformed input must produce a warning,
+#     never raise -- reflow_file's first draft let a StopIteration (missing {Css}
+#     section) escape uncaught.
+path_e = OUT / "CaseE.cuig"
+path_e.write_text(
+    "{FileMetadata}\nSchema = \"1.0.0.0\"\n\n{Html}\n<div id=\"i1\"></div>\n"
+    "\n{PageAttributes}\n\n[Attributes]\nName = \"P\"\n",  # no {Css} section at all
+    encoding="utf-8",
+)
+result_e = reflow_file(path_e, target_resolution=smaller, source_resolution=primary, mode="pin_existing")
+assert any("Css" in w for w in result_e.warnings), f"expected a warning naming the missing Css section, got {result_e.warnings}"
+print("Case E (missing {Css} section produces a warning, does not raise): OK")
+
+# --- Case F (added 2026-09-09, task review): an invalid mode must always raise,
+#     regardless of whether the target block happens to be empty -- the first draft
+#     only validated mode AFTER branching on the target block's emptiness, so a typo'd
+#     mode silently performed a full refit instead of raising when the target was empty.
+path_f = OUT / "CaseF.cuig"
+make_file(path_f, source_css)  # empty target block -- the branch that used to skip validation
+try:
+    reflow_file(path_f, target_resolution=smaller, source_resolution=primary, mode="pin_exsiting")  # typo, deliberate
+    assert False, "expected ValueError for an invalid mode, even with an empty target block"
+except ValueError:
+    pass
+print("Case F (invalid mode always raises, independent of target-block emptiness): OK")
+
 print("\nTASK 9: reflow_file -- ALL CHECKS PASSED")
