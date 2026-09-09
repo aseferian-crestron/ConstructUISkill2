@@ -6,6 +6,8 @@ and docs/architecture/10-reflow.md.
 """
 from __future__ import annotations
 
+from devices import ORIENTATION_ENUM
+
 
 class AxisFitError(Exception):
     """Raised when target_dim can't fit even the mandatory min_gap floor gaps for this
@@ -286,3 +288,29 @@ def check_overlaps(pinned: dict[str, dict], new: dict[str, dict]) -> list[tuple[
             if _rects_overlap(new_rect, pinned_rect):
                 conflicts.append((new_id, pinned_id))
     return conflicts
+
+
+_ORIENTATION_NAMES = {v: k for k, v in ORIENTATION_ENUM.items()}
+
+
+def _orientation_name(resolution: dict) -> str:
+    return _ORIENTATION_NAMES[resolution["orientation"]]
+
+
+def pick_primary(resolutions: list[dict], orientation: str) -> dict | None:
+    """Highest-width resolution in the given orientation, or None if the project has
+    no resolution in that orientation."""
+    candidates = [r for r in resolutions if _orientation_name(r) == orientation]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: r["width"])
+
+
+def choose_source_resolution(existing_resolutions: list[dict], new_resolution: dict) -> dict | None:
+    """Which existing resolution to fit FROM when adding `new_resolution`: that
+    orientation's own primary if the project already has one, else the other
+    orientation's primary (bootstrap case), else None (project has no existing
+    resolutions at all -- nothing to reflow from, see the spec's Error handling)."""
+    new_orientation = _orientation_name(new_resolution)
+    other_orientation = "portrait" if new_orientation == "landscape" else "landscape"
+    return pick_primary(existing_resolutions, new_orientation) or pick_primary(existing_resolutions, other_orientation)
