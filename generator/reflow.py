@@ -6,7 +6,13 @@ and docs/architecture/10-reflow.md.
 """
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
 from devices import ORIENTATION_ENUM
+
+import layout
 
 
 class AxisFitError(Exception):
@@ -314,3 +320,153 @@ def choose_source_resolution(existing_resolutions: list[dict], new_resolution: d
     new_orientation = _orientation_name(new_resolution)
     other_orientation = "portrait" if new_orientation == "landscape" else "landscape"
     return pick_primary(existing_resolutions, new_orientation) or pick_primary(existing_resolutions, other_orientation)
+
+
+_SECTION_RE = re.compile(r"^\{(\w+)\}[ \t]*\r?\n?", re.MULTILINE)
+
+
+def _read_sections(path: Path) -> tuple[str, list[tuple[str, str, str]]]:
+    """Split a .cuig/.cuiw's raw text into (name, header_text, content) triples, in
+    order -- same section-splitting rule as project.py::read_cuip / harness/compare.py
+    (fixed FileMetadata/Html/Css/PageAttributes header-per-line convention). Kept local
+    (not imported from harness/) matching this project's existing precedent of each
+    writer owning its own small section reader rather than depending on the harness
+    verification tool."""
+    raw = path.read_text(encoding="utf-8")
+    matches = list(_SECTION_RE.finditer(raw))
+    preamble = raw[: matches[0].start()] if matches else raw
+    sections = []
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
+        sections.append((m.group(1), m.group(0), raw[start:end]))
+    return preamble, sections
+
+
+def _write_sections(path: Path, preamble: str, sections: list[tuple[str, str, str]]) -> None:
+    path.write_text(preamble + "".join(header + content for _, header, content in sections), encoding="utf-8")
+
+
+@dataclass
+class ReflowResult:
+    warnings: list[str] = field(default_factory=list)
+
+
+def _fit_group(
+    elements: dict[str, dict], target_width: int, target_height: int,
+    path: Path, query: str, warnings: list[str],
+) -> dict[str, dict] | None:
+    """Fit one group of elements (all of source in full_refit, or just the new ones in
+    pin_existing) into target_width x target_height: group into rows (detect_rows),
+    let overflowing rows wrap (wrap_rows), fit X positions per row (fit_axis), then
+    stack the resulting rows on Y (stack_rows). None if any fit_axis call raises
+    AxisFitError -- caller skips this target block entirely for this file, other files
+    in the project are unaffected."""
+    rows = detect_rows(elements)
+    wrapped_rows = wrap_rows(rows, elements, target_width)
+
+    x_fit: dict[str, dict] = {}
+    for row in wrapped_rows:
+        row_items = [(eid, elements[eid]["left"], elements[eid]["width"]) for eid in row]
+        try:
+            x_fit.update(fit_axis(row_items, target_width))
+        except AxisFitError as e:
+            warnings.append(f"{path.name}: X axis for {query} -- {e}")
+            return None
+
+    try:
+        y_fit = stack_rows(wrapped_rows, elements, target_height)
+    except AxisFitError as e:
+        warnings.append(f"{path.name}: Y axis for {query} -- {e}")
+        return None
+
+    fitted: dict[str, dict] = {}
+    for eid, e in elements.items():
+        x, y = x_fit[eid], y_fit[eid]
+        extra_vars: dict[str, str] = {}
+        for name, value in e.get("extra_vars", {}).items():
+            lname = name.lower()
+            numeric = float(value[:-2]) if value.endswith("px") else None
+            if numeric is not None and "width" in lname:
+                extra_vars[name] = f"{round(numeric * x['scale'])}px"
+            elif numeric is not None and "height" in lname:
+                extra_vars[name] = f"{round(numeric * y['scale'])}px"
+            else:
+                extra_vars[name] = value  # not a width/height-mirroring var -- carry through unscaled
+        fitted[eid] = {
+            "left": x["pos"], "top": y["top"], "width": x["size"], "height": y["height"],
+            "z_index": e.get("z_index"), "extra_vars": extra_vars,
+        }
+    return fitted
+
+
+def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mode: str = "pin_existing") -> ReflowResult:
+    """Add or update `target_resolution`'s @media block in `path` so it has a position
+    rule for every element `source_resolution`'s block has. See the spec's Algorithm
+    section for `mode` semantics (pin_existing default vs. full_refit)."""
+    warnings: list[str] = []
+    preamble, sections = _read_sections(path)
+    css_index = next(i for i, (name, _, _) in enumerate(sections) if name == "Css")
+    css_text = sections[css_index][2]
+
+    source_orientation = _orientation_name(source_resolution)
+    target_orientation = _orientation_name(target_resolution)
+    source_query = layout.orientation_media_query(source_orientation, source_resolution["width"], source_resolution["height"])
+    target_query = layout.orientation_media_query(target_orientation, target_resolution["width"], target_resolution["height"])
+
+    source_block = layout.find_media_block(css_text, source_query)
+    if source_block is None:
+        warnings.append(f"{path.name}: no existing @media block for source resolution ({source_query}) -- skipped")
+        return ReflowResult(warnings=warnings)
+    source_elements = layout.parse_position_rules(source_block)
+    if not source_elements:
+        warnings.append(f"{path.name}: source block for {source_query} parsed but contained no position rules -- skipped")
+        return ReflowResult(warnings=warnings)
+
+    target_span = layout.find_media_block_span(css_text, target_query)
+    target_block = layout.find_media_block(css_text, target_query) if target_span else None
+    target_elements = layout.parse_position_rules(target_block) if target_block else {}
+
+    if mode == "full_refit" or not target_elements:
+        pinned, to_fit = {}, source_elements
+    elif mode == "pin_existing":
+        new_ids, pinned_ids = find_new_elements(source_elements, target_elements)
+        pinned = {i: target_elements[i] for i in pinned_ids}
+        to_fit = {i: source_elements[i] for i in new_ids}
+    else:
+        raise ValueError(f"unknown mode {mode!r} -- expected 'pin_existing' or 'full_refit'")
+
+    if not to_fit:
+        warnings.append(f"{path.name}: no new elements to fit for {target_query} -- skipped")
+        return ReflowResult(warnings=warnings)
+
+    fitted = _fit_group(to_fit, target_resolution["width"], target_resolution["height"], path, target_query, warnings)
+    if fitted is None:
+        return ReflowResult(warnings=warnings)
+
+    if mode == "pin_existing" and pinned:
+        for new_id, pinned_id in check_overlaps(pinned, fitted):
+            warnings.append(
+                f"{path.name}: new element {new_id!r} may overlap pinned element "
+                f"{pinned_id!r} in {target_query} -- review placement in Construct"
+            )
+
+    all_elements = {**pinned, **fitted}
+    new_block = layout.build_reflow_block(all_elements, target_orientation, target_resolution["width"], target_resolution["height"])
+
+    if target_span is not None:
+        start, end = target_span
+        css_text = css_text[:start] + new_block + css_text[end:]
+    else:
+        # No existing block for this query (Trigger 1's case): insert the new block
+        # right after the existing content, BEFORE any trailing whitespace the Css
+        # section content ends with -- appending flush to the raw string end would
+        # land new_block immediately adjacent to the next section's header (e.g.
+        # "...}{PageAttributes}" with no newline), breaking the "header alone on its
+        # own line" convention every other section boundary in this file relies on.
+        stripped = css_text.rstrip()
+        css_text = stripped + new_block + css_text[len(stripped):]
+    sections[css_index] = ("Css", sections[css_index][1], css_text)
+
+    _write_sections(path, preamble, sections)
+    return ReflowResult(warnings=warnings)
