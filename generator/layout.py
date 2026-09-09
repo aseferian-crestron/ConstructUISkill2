@@ -42,6 +42,8 @@ of a hand-edited sample.
 """
 from __future__ import annotations
 
+import re
+
 
 def orientation_media_query(orientation: str, width: int, height: int) -> str:
     """Device-specific breakpoint for a WxH resolution in the given orientation.
@@ -118,3 +120,78 @@ def build_position_css(
         f"{{#{element_id}{{{device_rule}}}}}"
     )
     return catch_all + device
+
+
+_FLAT_RULE_RE = re.compile(r"#(?P<id>[A-Za-z0-9_]+)\{(?P<decls>[^{}]*)\}")
+
+
+def find_media_block_span(css_text: str, query: str) -> tuple[int, int] | None:
+    """(start, end) char indices of the whole `@media {query}{...}` block, brace-depth
+    matched since the inner rules themselves contain braces (a plain regex can't find
+    the correct closing brace). None if no block with this exact query exists."""
+    needle = f"@media {query}{{"
+    start = css_text.find(needle)
+    if start == -1:
+        return None
+    open_brace = start + len(needle) - 1
+    depth = 0
+    for i in range(open_brace, len(css_text)):
+        if css_text[i] == "{":
+            depth += 1
+        elif css_text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return start, i + 1
+    raise ValueError(f"unterminated @media block for query {query!r}")
+
+
+def find_media_block(css_text: str, query: str) -> str | None:
+    """Inner content of the `@media {query}{...}` block (between its outer braces)."""
+    span = find_media_block_span(css_text, query)
+    if span is None:
+        return None
+    start, end = span
+    open_brace = css_text.index("{", start)
+    return css_text[open_brace + 1:end - 1]
+
+
+def parse_position_rules(block_css: str) -> dict[str, dict]:
+    """Parse one block's flat `#id{...}` rules into position/size dicts. The regex
+    requires `{` immediately after the id -- a nested/child selector like
+    `#id .ch5-button :not(i):not(svg) {...}` has a space before its `{`, so it never
+    matches here and is correctly left alone (it carries no position data)."""
+    elements: dict[str, dict] = {}
+    for m in _FLAT_RULE_RE.finditer(block_css):
+        decls: dict[str, str] = {}
+        for decl in m.group("decls").split(";"):
+            decl = decl.strip()
+            if not decl or ":" not in decl:
+                continue
+            key, _, value = decl.partition(":")
+            decls[key.strip()] = value.strip()
+        if "left" not in decls or "width" not in decls:
+            continue
+        extra_vars = {k: v for k, v in decls.items() if k.startswith("--")}
+        elements[m.group("id")] = {
+            "left": int(decls["left"].rstrip("px")),
+            "top": int(decls["top"].rstrip("px")),
+            "width": int(decls["width"].rstrip("px")),
+            "height": int(decls["height"].rstrip("px")),
+            "z_index": int(decls["z-index"]) if "z-index" in decls else None,
+            "extra_vars": extra_vars,
+        }
+    return elements
+
+
+def build_reflow_block(elements: dict[str, dict], orientation: str, width: int, height: int) -> str:
+    """One @media block, one flat #id{} rule per element -- same device-specific shape
+    build_position_css already produces (no z-index), generalized to N elements."""
+    query = orientation_media_query(orientation, width, height)
+    rules = []
+    for element_id, e in elements.items():
+        extra_decls = "".join(f" {name}: {value};" for name, value in e.get("extra_vars", {}).items())
+        rules.append(
+            f"#{element_id}{{display: block; left: {e['left']}px; top: {e['top']}px; "
+            f"position: absolute; width: {e['width']}px; height: {e['height']}px;{extra_decls}}}"
+        )
+    return f"@media {query}{{{''.join(rules)}}}"
