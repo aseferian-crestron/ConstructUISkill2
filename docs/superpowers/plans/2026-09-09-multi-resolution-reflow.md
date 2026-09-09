@@ -1074,6 +1074,35 @@ assert result3["y"]["top"] >= result3["x"]["top"] + result3["x"]["height"] + 4, 
 )
 print("wrap-split sibling rows (tied source top) stack without overlap: OK")
 
+# --- Regression guard: ordinary (non-wrap-split) rows with a TIGHT natural gap must
+#     be a true no-op -- the original gap is preserved exactly, even below min_gap,
+#     never forced up to the floor. An earlier version of stack_rows unconditionally
+#     forced every inter-row gap to >=min_gap, which pushed rows with a genuinely tight
+#     (but non-degenerate) original gap further apart than they ever were.
+elements4 = make(("p", 0, 50), ("q", 52, 50), ("r", 104, 50))  # rows separated by 2px each
+rows4 = [["p"], ["q"], ["r"]]
+result4 = stack_rows(rows4, elements4, target_height=300)  # ample room -- pure Tier 1 (move)
+assert result4["p"]["scale"] == result4["q"]["scale"] == result4["r"]["scale"] == 1.0
+assert result4["q"]["top"] - (result4["p"]["top"] + result4["p"]["height"]) == 2, (
+    "ordinary rows' original 2px gap must be preserved exactly, not forced to the "
+    f"4px floor, got {result4}"
+)
+assert result4["r"]["top"] - (result4["q"]["top"] + result4["q"]["height"]) == 2
+print("ordinary rows with a tight original gap: true no-op regression guard: OK")
+
+# --- Same regression, but flush-stacked (0px gap) rows -- must also be preserved
+#     exactly, not forced to 4px, and must NOT be spuriously pushed into Tier 2/3.
+elements5 = make(("s", 0, 50), ("t", 50, 50), ("u", 100, 50))  # 0px gaps, span 150 exactly
+rows5 = [["s"], ["t"], ["u"]]
+result5 = stack_rows(rows5, elements5, target_height=150)  # exactly the natural span
+assert result5["s"]["scale"] == result5["t"]["scale"] == result5["u"]["scale"] == 1.0, (
+    "flush rows fitting target_height exactly must stay at Tier 1 (move); an "
+    f"unconditional 4px floor would force unnecessary Tier 3 scaling here: {result5}"
+)
+assert result5["t"]["top"] - (result5["s"]["top"] + result5["s"]["height"]) == 0
+assert result5["u"]["top"] - (result5["t"]["top"] + result5["t"]["height"]) == 0
+print("flush-stacked rows: true no-op, no spurious tier escalation: OK")
+
 # --- Empty input --------------------------------------------------------------------
 assert stack_rows([], {}, target_height=100) == {}
 print("empty input: OK")
@@ -1092,15 +1121,29 @@ Append to `generator/reflow.py`:
 
 ```python
 def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4) -> dict[str, dict]:
-    """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09).
+    """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09,
+    corrected again same-day after a task review caught a real bug -- see below).
     Builds one pseudo-item per row -- natural height `max(top+height) - min(top)` over
     the row's own members, and a PRE-STACKED anchor (not simply the row's own
     min(top): a row created by an X-axis wrap split shares its original top with the
-    row it split from, so raw min(top) can tie between sibling rows). Row i's anchor is
-    `max(its own min(top), row i-1's anchor + row i-1's natural height + min_gap)`; for
-    rows that already had distinct source Y-positions (the ordinary, non-wrap-split
-    case) this is a no-op, since detect_rows already guarantees strictly increasing,
-    non-overlapping natural positions.
+    row it split from, so raw min(top) can tie between sibling rows).
+
+    Row i's anchor is row i-1's anchor plus row i-1's natural height, plus that pair's
+    own ORIGINAL gap (`row i's own min(top) - (row i-1's own min(top) + row i-1's
+    natural height)`) when that gap is non-negative, or the min_gap floor when it
+    isn't. CORRECTED 2026-09-09 (task review): an earlier version used `max(its own
+    min(top), row i-1's anchor + row i-1's natural height + min_gap)` -- unconditionally
+    forcing EVERY inter-row gap up to at least min_gap, which is wrong: detect_rows
+    only guarantees a non-negative inter-row gap (`top >= row_bottom`), not a
+    >=min_gap one, so two ordinarily-adjacent rows separated by 1-3px in the source
+    would get pushed further apart than they ever were -- contradicting fit_axis's own
+    Tier 1 principle (rigid translate preserves original gaps exactly, even below
+    min_gap; the floor is only enforced where compaction/scaling actually happens).
+    Worse, that injected spacing could push a row list that fit target_height
+    perfectly into needing Tier 2/3 compaction/scaling it never needed. The corrected
+    formula is a true no-op for every ordinary row (original gap preserved exactly,
+    even 0px) and clamps only the genuinely degenerate case (a tied or negative gap --
+    the wrap-split sibling scenario this pre-stacking step exists for).
 
     Feeds the row pseudo-items to fit_axis against target_height, then maps each row's
     (pos, scale) back onto its own elements: new_top = row_pos + (element's own top -
@@ -1124,7 +1167,8 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
     ]
     anchors = [own_min_top[0]]
     for i in range(1, len(rows)):
-        anchors.append(max(own_min_top[i], anchors[i - 1] + natural_height[i - 1] + min_gap))
+        original_gap = own_min_top[i] - (own_min_top[i - 1] + natural_height[i - 1])
+        anchors.append(anchors[i - 1] + natural_height[i - 1] + (original_gap if original_gap >= 0 else min_gap))
 
     row_items = list(zip(row_keys, anchors, natural_height))
     row_fit = fit_axis(row_items, target_height, min_gap=min_gap)
