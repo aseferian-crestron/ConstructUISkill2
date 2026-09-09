@@ -149,3 +149,43 @@ def detect_rows(elements: dict[str, dict]) -> list[list[str]]:
             row_bottom = bottom
     rows.append(sorted(current_ids, key=lambda i: elements[i]["left"]))
     return rows
+
+
+def _row_fits(row: list[str], elements: dict[str, dict], target_width: int) -> bool:
+    lefts = [elements[eid]["left"] for eid in row]
+    rights = [elements[eid]["left"] + elements[eid]["width"] for eid in row]
+    return max(rights) - min(lefts) <= target_width
+
+
+def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: int) -> list[list[str]]:
+    """X-axis wrap tier, run between fit_axis's Tier 1 and Tier 2 (see spec). For each
+    row (in order), check the same bounding-box test as fit_axis's own Tier 1 test,
+    scoped to just that row's elements; a row that passes needs nothing further. A row
+    that fails and has more than one element peels elements off its trailing
+    (right-most, by the left-to-right order detect_rows established) end -- ALL of them
+    in one pass -- until what remains passes; the peeled elements become one new row,
+    inserted immediately after, which itself gets the same check on a later iteration
+    (so a very crowded row can split into more than two). A single-element row is
+    always left as-is regardless of whether it fits -- wrapping can't help one element;
+    that case falls through to fit_axis's own compact/scale tiers when X positions are
+    finalized per row (see the spec's Tiers 3/4 note)."""
+    pending = list(rows)
+    result: list[list[str]] = []
+    i = 0
+    while i < len(pending):
+        row = pending[i]
+        if len(row) <= 1 or _row_fits(row, elements, target_width):
+            result.append(row)
+            i += 1
+            continue
+        remainder = row
+        peeled: list[str] = []
+        while len(remainder) > 1 and not _row_fits(remainder, elements, target_width):
+            peeled.insert(0, remainder[-1])
+            remainder = remainder[:-1]
+        pending[i] = remainder
+        pending.insert(i + 1, peeled)
+        # Don't advance i: re-check the shrunk `remainder` (now at pending[i]) next
+        # iteration -- it passes immediately since peeling stopped exactly when it
+        # started fitting (or dropped to one element).
+    return result
