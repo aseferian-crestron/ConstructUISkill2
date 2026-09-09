@@ -30,7 +30,11 @@ Construct verification against the existing `GenTestProject`. Trigger 2 (the ski
 prompting for `pin_existing`/`full_refit` when adding elements to an existing
 multi-resolution page) is explicitly noted as NOT built by this plan — it's a
 skill-layer conversational step that calls the same `reflow_file` this plan builds, not
-new generator code. **Next**: execute the plan.
+new generator code. **RESUME POINT (session paused 2026-09-08, picking up next
+session):** user was offered the execution choice (Subagent-Driven vs. Inline, per the
+writing-plans skill's handoff) and hasn't answered yet — ask that question first, don't
+re-derive it. No implementation code has been written yet; the plan file is the only
+new artifact. **Next**: get the execution-approach answer, then start Task 1.
 
 **Phase 5 continuation — multi-resolution reflow design spec REVISED AGAIN (reflow
 generalized into a standalone, repeatable operation with two fit modes), approved,
