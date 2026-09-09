@@ -28,9 +28,13 @@ TSW-570 resolution. Also fixed in the same final-review pass: non-deterministic 
 ordering (iterated hash-randomized sets instead of the already-deterministic source
 dicts), a missing fallback to the `99999px` catch-all block when a page predates the
 project's first resolution, and two documentation overclaims. One known limitation
-documented, not fixed (real but latent, unreached by any test or the real project):
-adding resolutions out of ascending size order can invert the CSS cascade — see
-`docs/architecture/10-reflow.md`'s "Known limitation" note. Full history in
+documented, not fixed, then re-assessed as lower-risk after the user corrected the
+model's assumption about typical workflow: Construct projects are authored top-down
+(largest resolution = primary, created first; smaller ones added and adapted down
+afterward, never the reverse) — that's also the cascade-safe order, so the risk case
+(a LARGER resolution added to a project that already has a smaller one) is contrary
+to normal usage, not an everyday concern — see `docs/architecture/10-reflow.md`'s
+"Known limitation" note. Full history in
 `docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md` and
 `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` (both kept as
 an accurate corrected record, not left stale after the fix rounds). **Next**: another
@@ -217,6 +221,19 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-09: **Correction: Construct projects are authored top-down, not
+  smallest-first.** User corrected an assumption in the just-written "known
+  limitation" note (cascade ordering risk when resolutions are added out of size
+  order): Construct projects work like desktop-first responsive web design — the
+  largest resolution is always created first and is the primary; smaller resolutions
+  are added afterward and adapted down from it, never the reverse. This is also the
+  cascade-safe order (a later-added smaller resolution's block lands later in the
+  file, correctly overriding the primary at smaller viewports), so the risk case
+  documented (a larger resolution added after an existing smaller one) is contrary to
+  normal usage, not an everyday concern as the original note implied. Reworded the
+  known-limitation note in `docs/architecture/10-reflow.md` and this file's Current
+  phase section to reflect the corrected understanding — the limitation itself is
+  still real and still unfixed, just lower-priority than first stated.
 - 2026-09-09: **Multi-resolution reflow — CLOSED OUT: final whole-branch review's
   Critical bug fixed and visually confirmed in Construct.** The final review (after
   all 10 tasks individually passed) found the real generator emits one `@media` block

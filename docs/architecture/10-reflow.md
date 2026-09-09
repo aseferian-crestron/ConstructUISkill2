@@ -112,22 +112,33 @@ step at the skill layer per the spec's Integration section, not new code in
 `generator/` -- `reflow_file`'s `mode` parameter is what a future skill-layer call would
 choose between; this plan only builds and proves the underlying mechanism.
 
-**Known limitation, flagged by the final whole-branch review, not yet fixed (real but
-latent -- parked, not reachable by any test built so far):** `reflow_file`'s write path
-always splices a resolution's block in at wherever its query span already sits (or
-appends at the end for a brand-new query). If resolutions are ever added out of
-ascending size order -- e.g. a 1024x600 resolution added to a project AFTER a 640x400
-one -- the 1024 block physically lands later in the file's CSS than the 640 block. At
-a 640x400 viewport, both media queries can still simultaneously match near the
-boundary, and CSS resolves the tie by source order, not specificity -- so the
-later-written (1024-fitted) rule can win and render off-canvas at the smaller
-viewport. Properly fixing this means always emitting resolution blocks in a
-consistent size order regardless of when each was added, which is a real design
-change, not a one-line fix -- flagged here rather than rushed into a fix. No project
-built by this generator's own workflow has hit this yet (resolutions have always been
-added smallest-first in every test and the real verification project), but it should
-be addressed before the generator is used to build a project with resolutions added
-in an unusual order.
+**Known limitation, flagged by the final whole-branch review, not yet fixed -- but
+now understood to be lower-risk than first documented (corrected 2026-09-09 by the
+user: Construct projects are authored top-down, like desktop-first responsive web
+design -- the largest resolution is created first and always the primary; smaller
+resolutions are added afterward and adapted down from it, never the other way
+around).** `reflow_file`'s write path always splices a resolution's block in at
+wherever its query span already sits (or appends at the end for a brand-new query).
+The device media-query formula (`orientation_media_query`) is itself a cascade: at a
+given viewport, more than one device's query can technically match, and Construct
+resolves the tie by CSS source order, not specificity -- so a later-appearing block
+in the file wins at that viewport. Adding progressively SMALLER resolutions after the
+large primary -- the normal, expected workflow -- naturally produces the CORRECT
+order: each smaller resolution's block lands later in the file than the larger
+primary's, so it correctly overrides the primary at smaller viewports, exactly as
+intended.
+
+The risk case is the reverse: a LARGER resolution added to a project that already has
+a SMALLER one would land its block later in the file, and could then win the cascade
+tie at the smaller viewport too, rendering at the larger resolution's fitted (and
+likely off-canvas) position. Given the corrected understanding above, this is not a
+normal-workflow risk -- projects are built primary-first, largest-first, so an
+existing project gaining a resolution LARGER than anything it already has should be
+rare. It remains untested and unfixed (properly fixing it means always emitting
+blocks in size order regardless of add order, a real design change, not a one-line
+patch), so it's still worth being aware of if a project's resolutions are ever added
+in an unusual order, but it is not the everyday-workflow concern the original version
+of this note implied.
 
 ### Bug found wiring Task 10: catalog resolution width/height are strings, not ints
 
