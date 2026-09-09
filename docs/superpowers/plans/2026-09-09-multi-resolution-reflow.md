@@ -1747,7 +1747,17 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         start, end = target_span
         css_text = css_text[:start] + new_block + css_text[end:]
     else:
-        css_text = css_text + new_block
+        # CORRECTED 2026-09-09 (Task 9's own TDD cycle caught this): appending
+        # new_block onto the raw end of css_text lands it AFTER the Css section's own
+        # trailing whitespace (e.g. "...}\n\n"), directly abutting the next section's
+        # header with no separating newline ("...}<new_block>{PageAttributes}") --
+        # _SECTION_RE (and, per its own docstring, real Construct's header scan) only
+        # recognizes a header at the start of a physical line, so this silently
+        # swallows every section after Css into Css's own content. Fixed by inserting
+        # new_block before the trailing whitespace instead of after it, so the
+        # original newline(s) separating Css from the next section are preserved.
+        stripped = css_text.rstrip()
+        css_text = stripped + new_block + css_text[len(stripped):]
     sections[css_index] = ("Css", sections[css_index][1], css_text)
 
     _write_sections(path, preamble, sections)
