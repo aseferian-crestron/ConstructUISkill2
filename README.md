@@ -9,20 +9,27 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 5 continuation — multi-resolution reflow design spec REVISED (fit strategy
-changed to a 3-tier fallback), approved, ready for an implementation plan.** User
-changed direction on the original "scale first, clamp last" approach: fitting a smaller
-canvas now tries, per axis, in order — (1) move/rigid-translate the whole element group
-if its bounding box already fits, (2) reduce whitespace (order-preserving gap
-compaction, floor of 4px between neighbors) if moving alone isn't enough, (3) scale
-down by one shared factor as the last resort, only after gaps are already at the 4px
-floor. Elements never reorder and gaps never go negative, which is what guarantees no
-tier can introduce a new overlap between elements that didn't already overlap in the
-source layout (proof in the spec). See
-`docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` for the full
-design, including the insufficient-room edge case and updated scope boundaries
-(shrink-to-fit is now in scope as tier 3; resolution removal and hand-authored CSS are
-still out of scope). **Next**: write the implementation plan and build it.
+**Phase 5 continuation — multi-resolution reflow design spec REVISED AGAIN (reflow
+generalized into a standalone, repeatable operation with two fit modes), approved,
+ready for an implementation plan.** User pointed out UI work isn't a one-time event —
+new controls get added to existing pages long after resolutions are set up (e.g. Apple
+TV controls today, Cable box controls next week), and every resolution besides the one
+they're authored against needs the same "missing block" fix reflow already solves for
+newly-added resolutions. Reflow is now a standalone `reflow_file` operation with two
+callers: `add_resolutions_to_project` (target starts empty) and a new skill-level
+trigger when new elements are added to an already-multi-resolution page (target already
+has content) — the skill asks the user which of two modes to use: `pin_existing`
+(default — leave existing controls alone, fit only the new ones; the new elements are
+guaranteed not to overlap each other but only best-effort/flagged against pre-existing
+pinned elements, since real 2D obstacle avoidance was explicitly ruled out of scope) or
+`full_refit` (recompute everything from the source resolution, discarding whatever was
+in the target — same full overlap-safety guarantee as the original single-shot design).
+Adding a brand-new resolution turns out to be `pin_existing` with zero pinned elements —
+no special-casing needed, one mechanism covers both triggers. The still-approved 3-tier
+per-axis fit math (move, then compact whitespace to a 4px floor, then scale down) is
+unchanged from the previous revision; see
+`docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` for the full,
+current design. **Next**: write the implementation plan and build it.
 
 **Phase 9 (assets) pulled forward — local image import DONE, confirmed live in
 Construct.** User caught that the Phase 4 image-button variant couldn't actually be
@@ -65,6 +72,32 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-08: **Multi-resolution reflow — generalized from a one-shot,
+  resolution-add-only operation into a standalone `reflow_file` callable any time a
+  resolution's block is missing elements that exist elsewhere in the file.** User
+  pushed back on the spec's implicit assumption that reflow only ever happens at the
+  moment a resolution is added — real projects gain new controls on existing pages long
+  after resolutions are set up, and those controls hit the identical "other resolutions
+  have no CSS rule for this element" gap. Resolved two design forks via clarifying
+  questions: (1) when new controls are added to a page that already has fitted content
+  in other resolutions, the user wants to be **prompted** each time (not a fixed
+  policy) — leave the existing controls alone and fit just the new ones, or re-fit the
+  whole page — so `reflow_file` gained a `mode` parameter (`pin_existing` default vs.
+  `full_refit`) instead of one hardcoded behavior; (2) in `pin_existing` mode, new
+  elements are only guaranteed not to overlap *each other* — guaranteeing they avoid
+  the pinned pre-existing elements too would need real 2D obstacle-avoidance placement,
+  which the user agreed to explicitly rule out of scope in favor of a best-effort fit
+  plus a flagged warning (`check_overlaps`) for manual nudging in Construct. New
+  components added to the spec: `find_new_elements` (id-set diff between source and
+  target blocks) and `check_overlaps` (pairwise AABB check for the warning surface);
+  `reflow_file` now returns a `ReflowResult` carrying `warnings` instead of assuming a
+  silently-clean result. `add_resolutions_to_project` (Trigger 1) turns out to be the
+  degenerate case of `pin_existing` with zero pinned elements, so it needed no special
+  casing — one mechanism now covers both the resolution-add trigger and the new
+  add-elements-to-an-existing-multi-resolution-page trigger. Full rewrite at
+  `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` (Problem,
+  Scope, Algorithm, Integration, Components, Error handling, and Testing sections all
+  updated). **Next**: user reviews the rewritten spec, then the implementation plan.
 - 2026-09-08: **Multi-resolution reflow — fit-strategy redesigned to a 3-tier fallback
   (move, then compact whitespace, then scale), at the user's direction.** The
   just-approved spec (previous entry below) always scaled first and only repositioned
