@@ -43,13 +43,33 @@ of a hand-edited sample.
 from __future__ import annotations
 
 
+def orientation_media_query(orientation: str, width: int, height: int) -> str:
+    """Device-specific breakpoint for a WxH resolution in the given orientation.
+    Confirmed against C:\\Git\\CCIDE's breakpoint.ts::createRawQuery (the real
+    client-side source that generates these) and cross-checked against two real
+    portrait sample files (Bug_CCIDE_5225_Widget2.cuiw / Widget5.cuiw, both
+    1024x1322): landscape leads with max-width, portrait leads with max-height --
+    same +-1px pattern either way, just which dimension is named first/alone differs.
+    See docs/architecture/10-reflow.md for the full derivation."""
+    if orientation == "landscape":
+        return (
+            f"(orientation: landscape) and (max-width: {width + 1}px) and (max-height: {height + 1}px), "
+            f"(orientation: landscape) and (max-width: {width - 1}px)"
+        )
+    elif orientation == "portrait":
+        return (
+            f"(orientation: portrait) and (max-height: {height + 1}px) and (max-width: {width + 1}px), "
+            f"(orientation: portrait) and (max-height: {height - 1}px)"
+        )
+    else:
+        raise ValueError(f"unsupported orientation {orientation!r} -- expected 'landscape' or 'portrait'")
+
+
 def landscape_media_query(width: int, height: int) -> str:
     """Confirmed formula (see module docstring) -- device-specific landscape breakpoint
-    for a WxH primary landscape resolution."""
-    return (
-        f"(orientation: landscape) and (max-width: {width + 1}px) and (max-height: {height + 1}px), "
-        f"(orientation: landscape) and (max-width: {width - 1}px)"
-    )
+    for a WxH primary landscape resolution. Kept as a thin wrapper so existing callers
+    (page.py, this module's own build_position_css) are unaffected."""
+    return orientation_media_query("landscape", width, height)
 
 
 def build_position_css(
