@@ -9,6 +9,29 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 5 continuation — multi-resolution reflow IMPLEMENTATION PLAN WRITTEN, ready to
+build.** 7-task TDD plan at
+`docs/superpowers/plans/2026-09-08-multi-resolution-reflow.md`, source-grounded like
+every prior phase: confirmed the previously-unconfirmed portrait media-query formula by
+reading `C:\Git\CCIDE`'s `breakpoint.ts::createRawQuery` directly and cross-checking two
+real portrait `.cuiw` sample files elsewhere in that repo (`(orientation: portrait) and
+(max-height: {H+1}px) and (max-width: {W+1}px), (orientation: portrait) and (max-height:
+{H-1}px)` — same `±1px` shape as the already-confirmed landscape formula, just leading
+with height instead of width), closing a gap flagged unconfirmed since Phase 4. Tasks:
+(1) `orientation_media_query` + doc writeup, (2) CSS block parse/find/build helpers in
+`layout.py`, (3) `fit_axis` (the 3-tier algorithm itself, unit-tested per tier plus the
+insufficient-room edge case, with direct pairwise AABB checks proving no overlap across
+a range of target sizes), (4) `find_new_elements`/`check_overlaps`, (5)
+`pick_primary`/`choose_source_resolution`, (6) `reflow_file` tying both modes together
+against a hand-built minimal file, (7) wiring into `add_resolutions_to_project` plus
+end-to-end scenarios (an edge-placed element landing on-canvas, the
+orientation-bootstrap case, zero regression on projects with no pages yet) and manual
+Construct verification against the existing `GenTestProject`. Trigger 2 (the skill
+prompting for `pin_existing`/`full_refit` when adding elements to an existing
+multi-resolution page) is explicitly noted as NOT built by this plan — it's a
+skill-layer conversational step that calls the same `reflow_file` this plan builds, not
+new generator code. **Next**: execute the plan.
+
 **Phase 5 continuation — multi-resolution reflow design spec REVISED AGAIN (reflow
 generalized into a standalone, repeatable operation with two fit modes), approved,
 ready for an implementation plan.** User pointed out UI work isn't a one-time event —
@@ -72,6 +95,26 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-08: **Multi-resolution reflow — implementation plan written** (7 TDD tasks,
+  `docs/superpowers/plans/2026-09-08-multi-resolution-reflow.md`), following the
+  writing-plans skill against the now-approved spec. Before writing it, did the source
+  research the spec's scenarios actually require but didn't yet have: the portrait
+  media-query formula, unconfirmed project-wide since Phase 4 (flagged in `layout.py`'s
+  own docstring and `04-ch5-schema.md`). Found and read `C:\Git\CCIDE`'s
+  `breakpoint.ts::createRawQuery` directly (the real client-side source that generates
+  these breakpoints) and cross-checked it against two real portrait `.cuiw` files
+  elsewhere in that repo (`Bug_CCIDE_5225_Widget2.cuiw`/`Widget5.cuiw`, both a
+  1024x1322 portrait resolution) — source and samples agree exactly, closing the gap
+  rather than letting the plan bake in a guess. Also worked out concrete tier-2/tier-3
+  math not fully nailed down in the spec's prose: whitespace compaction is a linear
+  interpolation from each gap's original size toward the 4px floor (weighted by how
+  much reduction is still needed), and tier-3 scaling reserves room for the mandatory
+  `(n-1)*4px` floor gaps before computing the shared scale factor, then repacks at
+  exactly 4px rather than edge-to-edge. Plan self-review passed: full spec coverage
+  (every Components-section function has a task), no placeholders, and a
+  cross-checked-against-the-actual-codebase pass confirming `Element`'s dataclass
+  defaults, `write_cuig`'s signature, and `harness.compare`'s section-index ordering
+  all match what the plan's own test code assumes. **Next**: execute the plan.
 - 2026-09-08: **Multi-resolution reflow — generalized from a one-shot,
   resolution-add-only operation into a standalone `reflow_file` callable any time a
   resolution's block is missing elements that exist elsewhere in the file.** User
