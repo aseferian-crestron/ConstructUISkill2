@@ -122,3 +122,30 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
         item_id: {"pos": pos, "size": size, "scale": scale}
         for item_id, pos, size in zip(ids, new_positions, new_sizes)
     }
+
+
+def detect_rows(elements: dict[str, dict]) -> list[list[str]]:
+    """Partition a group of elements into rows by source Y-overlap: sort by `top`, then
+    greedily cluster -- an element joins the current row if its [top, top+height] range
+    overlaps the row's accumulated [row_top, row_bottom) range so far (row_bottom grows
+    to the tallest member seen); otherwise it starts a new row. Rows are returned
+    top-to-bottom; within a row, ids are ordered left-to-right by `left` (NOT by the
+    order they were encountered while sorting by top -- wrap_rows peels from this
+    left-to-right order's trailing end). See the spec's Row detection section."""
+    if not elements:
+        return []
+    ordered = sorted(elements.items(), key=lambda kv: kv[1]["top"])
+    rows: list[list[str]] = []
+    current_ids: list[str] = []
+    row_bottom = None
+    for element_id, e in ordered:
+        top, bottom = e["top"], e["top"] + e["height"]
+        if row_bottom is None or top < row_bottom:
+            current_ids.append(element_id)
+            row_bottom = bottom if row_bottom is None else max(row_bottom, bottom)
+        else:
+            rows.append(sorted(current_ids, key=lambda i: elements[i]["left"]))
+            current_ids = [element_id]
+            row_bottom = bottom
+    rows.append(sorted(current_ids, key=lambda i: elements[i]["left"]))
+    return rows
