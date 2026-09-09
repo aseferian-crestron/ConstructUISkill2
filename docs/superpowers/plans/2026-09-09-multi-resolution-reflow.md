@@ -311,15 +311,23 @@ import re
 _FLAT_RULE_RE = re.compile(r"#(?P<id>[A-Za-z0-9_]+)\{(?P<decls>[^{}]*)\}")
 
 
-def find_media_block_span(css_text: str, query: str) -> tuple[int, int] | None:
+def find_media_block_span(css_text: str, query: str, start: int = 0) -> tuple[int, int] | None:
     """(start, end) char indices of the whole `@media {query}{...}` block, brace-depth
     matched since the inner rules themselves contain braces (a plain regex can't find
-    the correct closing brace). None if no block with this exact query exists."""
+    the correct closing brace). Searches from `start` onward (default: the beginning).
+    None if no block with this exact query exists from `start` onward.
+
+    ADDED the `start` parameter 2026-09-09 (final whole-branch review): confirmed
+    against a real 3-button page that the generator emits ONE @media block PER
+    ELEMENT even when several elements share the identical query string, not one
+    block containing every element's rule -- so a query can legitimately match more
+    than once. `start` lets a caller walk forward past a match to find the next one
+    (see find_media_block_spans, and the Data model section of the spec)."""
     needle = f"@media {query}{{"
-    start = css_text.find(needle)
-    if start == -1:
+    idx = css_text.find(needle, start)
+    if idx == -1:
         return None
-    open_brace = start + len(needle) - 1
+    open_brace = idx + len(needle) - 1
     depth = 0
     for i in range(open_brace, len(css_text)):
         if css_text[i] == "{":
@@ -327,12 +335,31 @@ def find_media_block_span(css_text: str, query: str) -> tuple[int, int] | None:
         elif css_text[i] == "}":
             depth -= 1
             if depth == 0:
-                return start, i + 1
+                return idx, i + 1
     raise ValueError(f"unterminated @media block for query {query!r}")
 
 
+def find_media_block_spans(css_text: str, query: str) -> list[tuple[int, int]]:
+    """ADDED 2026-09-09 (final whole-branch review). ALL (start, end) spans of `@media
+    {query}{...}` blocks matching this exact query string, in document order -- see
+    find_media_block_span's note above for why a query can match more than once.
+    Callers that need every element for a query (almost every reflow caller) must use
+    this, not find_media_block_span, which only finds the first."""
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while True:
+        span = find_media_block_span(css_text, query, start=pos)
+        if span is None:
+            break
+        spans.append(span)
+        pos = span[1]
+    return spans
+
+
 def find_media_block(css_text: str, query: str) -> str | None:
-    """Inner content of the `@media {query}{...}` block (between its outer braces)."""
+    """Inner content of the FIRST `@media {query}{...}` block (between its outer
+    braces). Only the first -- see find_media_block_span's note; callers needing every
+    element for a query must use parse_all_position_rules instead."""
     span = find_media_block_span(css_text, query)
     if span is None:
         return None
@@ -366,6 +393,20 @@ def parse_position_rules(block_css: str) -> dict[str, dict]:
             "z_index": int(decls["z-index"]) if "z-index" in decls else None,
             "extra_vars": extra_vars,
         }
+    return elements
+
+
+def parse_all_position_rules(css_text: str, query: str) -> dict[str, dict]:
+    """ADDED 2026-09-09 (final whole-branch review). Parse EVERY element's flat
+    `#id{...}` rule for `query`, merging across however many separate @media blocks
+    the real generator split them into (see find_media_block_spans). Later blocks win
+    on a duplicate id, matching normal CSS cascade order -- in practice no id should
+    ever appear in more than one block for the same query."""
+    elements: dict[str, dict] = {}
+    for start, end in find_media_block_spans(css_text, query):
+        open_brace = css_text.index("{", start)
+        block = css_text[open_brace + 1:end - 1]
+        elements.update(parse_position_rules(block))
     return elements
 
 
@@ -1648,6 +1689,57 @@ except ValueError:
     pass
 print("Case F (invalid mode always raises, independent of target-block emptiness): OK")
 
+# --- Case G (added 2026-09-09, final whole-branch review): the single most important
+#     regression guard in this file. Every case above hand-authors ONE @media block
+#     containing every element's #id{} rule together -- a shape the real generator
+#     NEVER produces. layout.py::build_position_css is called once per element, so a
+#     real 3-button page has THREE separate `@media (max-width: 99999px){...}` blocks
+#     (one per button), all with the byte-identical query string -- confirmed against
+#     a real ButtonVariants.cuig. The old find_media_block/find_media_block_span
+#     (single-match) silently found only the FIRST element and produced zero
+#     warnings; this case would have failed loudly against that bug.
+path_g = OUT / "CaseG.cuig"
+buttons = [("ibtnicon", 10), ("ibtnimage", 200), ("ibtncheck", 400)]
+per_element_css = "".join(
+    f"@media (max-width: 99999px){{#{bid}{{display: block; left: {left}px; top: 10px; position: absolute; z-index: 1; width: 100px; height: 50px;}}}}"
+    f"@media {primary_query}{{#{bid}{{display: block; left: {left}px; top: 10px; position: absolute; width: 100px; height: 50px;}}}}"
+    for bid, left in buttons
+)
+make_file(path_g, per_element_css)
+result_g = reflow_file(path_g, target_resolution=smaller, source_resolution=primary, mode="pin_existing")
+assert result_g.warnings == [], f"expected no warnings, got {result_g.warnings}"
+assert compare.round_trip_check(path_g)
+css_g = compare.parse_file(path_g).sections[2][2]
+elements_g = layout.parse_all_position_rules(css_g, smaller_query)
+assert set(elements_g) == {"ibtnicon", "ibtnimage", "ibtncheck"}, (
+    f"expected all 3 real-shape elements to be found and fit, got {set(elements_g)} -- "
+    "this is exactly the multi-block-per-query bug if it regresses"
+)
+for eid, e in elements_g.items():
+    assert e["left"] + e["width"] <= 640, f"{eid} must be on-canvas (right edge)"
+    assert e["top"] + e["height"] <= 400, f"{eid} must be on-canvas (bottom edge)"
+print("Case G (real per-element-block CSS shape, all 3 elements found and fit): OK")
+
+# --- Case H (added 2026-09-09, final whole-branch review): the write-path mirror of
+#     Case G -- a TARGET resolution that already has multiple per-element blocks
+#     (e.g. from an earlier reflow run under the old bug) must consolidate down to
+#     exactly one block for that query, never leave duplicate #id{} rules under the
+#     same query with a stale one silently winning the CSS cascade.
+path_h = OUT / "CaseH.cuig"
+stale_target_blocks = "".join(
+    f"@media {smaller_query}{{#{bid}{{display: block; left: 0px; top: 0px; position: absolute; width: 40px; height: 20px;}}}}"
+    for bid, _ in buttons[:2]  # only 2 of the 3 already (mis-)reflowed, one per stale block
+)
+make_file(path_h, per_element_css + stale_target_blocks)
+result_h = reflow_file(path_h, target_resolution=smaller, source_resolution=primary, mode="full_refit")
+assert compare.round_trip_check(path_h)
+css_h = compare.parse_file(path_h).sections[2][2]
+target_spans_h = layout.find_media_block_spans(css_h, smaller_query)
+assert len(target_spans_h) == 1, f"expected exactly one consolidated block for the target query, found {len(target_spans_h)}"
+elements_h = layout.parse_all_position_rules(css_h, smaller_query)
+assert set(elements_h) == {"ibtnicon", "ibtnimage", "ibtncheck"}, "consolidation must not lose or duplicate any element"
+print("Case H (multiple stale target blocks for one query consolidate to exactly one, no duplicates/losses): OK")
+
 print("\nTASK 9: reflow_file -- ALL CHECKS PASSED")
 ```
 
@@ -1765,9 +1857,10 @@ def _fit_group(
 
 
 def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mode: str = "pin_existing") -> ReflowResult:
-    """Add or update `target_resolution`'s @media block in `path` so it has a position
-    rule for every element `source_resolution`'s block has. See the spec's Algorithm
-    section for `mode` semantics (pin_existing default vs. full_refit).
+    """Add or update `target_resolution`'s @media block(s) in `path` so it has a
+    position rule for every element `source_resolution`'s block(s) have. See the
+    spec's Algorithm section for `mode` semantics (pin_existing default vs.
+    full_refit).
 
     CORRECTED 2026-09-09 (task review): every failure mode below must produce a
     warning and a clean ReflowResult return, never raise -- per the spec's Error
@@ -1781,7 +1874,33 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     `mode` is also now validated up front, before any other branch -- previously an
     invalid mode only raised when the target block was non-empty, silently performing
     a full refit instead when it was empty/missing, an inconsistency also caught by
-    task review."""
+    task review.
+
+    CORRECTED AGAIN 2026-09-09 (final whole-branch review -- a more severe bug than
+    any of the above): the real generator emits ONE @media block PER ELEMENT even
+    when several elements share the identical query string (build_position_css is
+    called once per element) -- confirmed against a real 3-button page, three
+    separate `@media (max-width: 99999px){...}` blocks, not one block with three
+    #id{} rules. The single-match `find_media_block`/`find_media_block_span` this
+    function used only ever saw the FIRST element for both source and target,
+    silently dropping every other element with zero warnings -- the exact
+    "components absent" failure this whole feature exists to prevent. Fixed by
+    switching to `find_media_block_spans`/`parse_all_position_rules` (plural) for
+    both source and target, and, on write, replacing the FIRST matching target span
+    with the one consolidated block while DELETING every other matching target span
+    entirely (splicing from the end backward so earlier indices stay valid) -- see
+    the spec's Data model and Components sections. Also added: a fallback to the
+    99999px catch-all block when the source resolution's own dedicated block is
+    missing (a page authored before the project had any resolution only ever has the
+    catch-all; without this fallback such a page can never gain a device block for
+    any resolution added after its first, since the first add has nothing to source
+    from and the catch-all was never promoted to a real device block either -- see
+    the spec's Error handling section). Also fixed a determinism bug: `pinned`/
+    `to_fit` were built by iterating `find_new_elements`'s SETS, whose iteration
+    order depends on Python's per-process string-hash randomization, making the
+    emitted rule order (and warning order) different on every run of the same input
+    -- fixed by iterating `target_elements`/`source_elements` (dict insertion order,
+    deterministic) and testing membership in the sets instead."""
     if mode not in ("pin_existing", "full_refit"):
         raise ValueError(f"unknown mode {mode!r} -- expected 'pin_existing' or 'full_refit'")
 
@@ -1797,32 +1916,32 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     target_orientation = _orientation_name(target_resolution)
     source_query = layout.orientation_media_query(source_orientation, source_resolution["width"], source_resolution["height"])
     target_query = layout.orientation_media_query(target_orientation, target_resolution["width"], target_resolution["height"])
+    catch_all_query = "(max-width: 99999px)"
 
     try:
-        source_block = layout.find_media_block(css_text, source_query)
-    except ValueError as e:
-        warnings.append(f"{path.name}: source block for {source_query} didn't parse cleanly -- {e} -- skipped")
-        return ReflowResult(warnings=warnings)
-    if source_block is None:
-        warnings.append(f"{path.name}: no existing @media block for source resolution ({source_query}) -- skipped")
-        return ReflowResult(warnings=warnings)
-    try:
-        source_elements = layout.parse_position_rules(source_block)
+        source_elements = layout.parse_all_position_rules(css_text, source_query)
     except (ValueError, KeyError) as e:
         warnings.append(f"{path.name}: source block for {source_query} didn't parse cleanly -- {e} -- skipped")
         return ReflowResult(warnings=warnings)
     if not source_elements:
-        warnings.append(f"{path.name}: source block for {source_query} parsed but contained no position rules -- skipped")
+        # Fall back to the 99999px catch-all -- a page authored before the project
+        # had any resolution only ever has this block (see the module docstring).
+        try:
+            source_elements = layout.parse_all_position_rules(css_text, catch_all_query)
+        except (ValueError, KeyError) as e:
+            warnings.append(f"{path.name}: catch-all block didn't parse cleanly -- {e} -- skipped")
+            return ReflowResult(warnings=warnings)
+    if not source_elements:
+        warnings.append(f"{path.name}: no source block (device or catch-all) had any position rules -- skipped")
         return ReflowResult(warnings=warnings)
 
     try:
-        target_span = layout.find_media_block_span(css_text, target_query)
+        target_spans = layout.find_media_block_spans(css_text, target_query)
     except ValueError as e:
         warnings.append(f"{path.name}: target block for {target_query} didn't parse cleanly -- {e} -- skipped")
         return ReflowResult(warnings=warnings)
-    target_block = layout.find_media_block(css_text, target_query) if target_span else None
     try:
-        target_elements = layout.parse_position_rules(target_block) if target_block else {}
+        target_elements = layout.parse_all_position_rules(css_text, target_query) if target_spans else {}
     except (ValueError, KeyError) as e:
         warnings.append(f"{path.name}: target block for {target_query} didn't parse cleanly -- {e} -- skipped")
         return ReflowResult(warnings=warnings)
@@ -1831,8 +1950,8 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         pinned, to_fit = {}, source_elements
     else:
         new_ids, pinned_ids = find_new_elements(source_elements, target_elements)
-        pinned = {i: target_elements[i] for i in pinned_ids}
-        to_fit = {i: source_elements[i] for i in new_ids}
+        pinned = {i: target_elements[i] for i in target_elements if i in pinned_ids}
+        to_fit = {i: source_elements[i] for i in source_elements if i in new_ids}
 
     if not to_fit:
         warnings.append(f"{path.name}: no new elements to fit for {target_query} -- skipped")
@@ -1852,8 +1971,13 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     all_elements = {**pinned, **fitted}
     new_block = layout.build_reflow_block(all_elements, target_orientation, target_resolution["width"], target_resolution["height"])
 
-    if target_span is not None:
-        start, end = target_span
+    if target_spans:
+        # Replace the FIRST matching target span with the one consolidated block;
+        # delete every OTHER matching span entirely (splice from the end backward so
+        # earlier indices stay valid -- each deletion only shifts content AFTER it).
+        for start, end in reversed(target_spans[1:]):
+            css_text = css_text[:start] + css_text[end:]
+        start, end = target_spans[0]
         css_text = css_text[:start] + new_block + css_text[end:]
     else:
         # CORRECTED 2026-09-09 (Task 9's own TDD cycle caught this): appending
