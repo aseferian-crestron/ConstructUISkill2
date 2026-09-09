@@ -189,3 +189,63 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
         # iteration -- it passes immediately since peeling stopped exactly when it
         # started fitting (or dropped to one element).
     return result
+
+
+def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4) -> dict[str, dict]:
+    """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09).
+    Builds one pseudo-item per row -- natural height `max(top+height) - min(top)` over
+    the row's own members, and a PRE-STACKED anchor (not simply the row's own
+    min(top): a row created by an X-axis wrap split shares its original top with the
+    row it split from, so raw min(top) can tie between sibling rows). Row i's anchor is
+    `max(its own min(top), row i-1's anchor + row i-1's natural height + min_gap)`; for
+    rows that already had distinct source Y-positions (the ordinary, non-wrap-split
+    case) this is a no-op, since detect_rows already guarantees strictly increasing,
+    non-overlapping natural positions.
+
+    Feeds the row pseudo-items to fit_axis against target_height, then maps each row's
+    (pos, scale) back onto its own elements: new_top = row_pos + (element's own top -
+    the row's own raw min(top)) * scale, new_height = element.height * scale (only
+    when scale != 1.0, floored at 1px like fit_axis's own tier 3). Returns
+    {element_id: {"top": int, "height": int, "scale": float}}.
+
+    CORRECTED during this task's own TDD (test written first, caught by the RED->GREEN
+    cycle, not a prior task's bug): height uses int() truncation, matching fit_axis's
+    own Tier 3 convention (see fit_axis's Tier 3 comment -- int() never overshoots,
+    round() can), NOT round(). This matters concretely whenever a row has one element
+    that spans the row's exact natural extent (top == the row's own min(top) AND
+    top+height == the row's own max(top+height), e.g. a single-element row, or the
+    tallest element in a multi-element row): that element's own height times the row's
+    scale MUST equal fit_axis's own row-item size exactly, since both are the same
+    expression (int(natural_height * scale)) by construction -- round() would silently
+    diverge from the row's own fitted size whenever the fractional part is >= 0.5.
+    Using round() here was tried first and demonstrably breaks that invariant (a
+    100px-tall element scaled by ~0.2556 rounds to 26px but the row itself floors to
+    25px) -- caught before it shipped."""
+    if not rows:
+        return {}
+    row_keys = [f"__row{i}" for i in range(len(rows))]
+    own_min_top = [min(elements[eid]["top"] for eid in row) for row in rows]
+    natural_height = [
+        max(elements[eid]["top"] + elements[eid]["height"] for eid in row) - own_min_top[i]
+        for i, row in enumerate(rows)
+    ]
+    anchors = [own_min_top[0]]
+    for i in range(1, len(rows)):
+        anchors.append(max(own_min_top[i], anchors[i - 1] + natural_height[i - 1] + min_gap))
+
+    row_items = list(zip(row_keys, anchors, natural_height))
+    row_fit = fit_axis(row_items, target_height, min_gap=min_gap)
+
+    result: dict[str, dict] = {}
+    for i, row in enumerate(rows):
+        row_pos = row_fit[row_keys[i]]["pos"]
+        row_scale = row_fit[row_keys[i]]["scale"]
+        for eid in row:
+            e = elements[eid]
+            offset = (e["top"] - own_min_top[i]) * row_scale
+            result[eid] = {
+                "top": round(row_pos + offset),
+                "height": max(1, int(e["height"] * row_scale)) if row_scale != 1.0 else e["height"],
+                "scale": row_scale,
+            }
+    return result
