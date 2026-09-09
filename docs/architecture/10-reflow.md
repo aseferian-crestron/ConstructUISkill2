@@ -102,9 +102,9 @@ it now contains all 3 real elements (`ibtnicon`, `ibtnimage`, `ibtncheck`), each
 canvas and non-overlapping, in exactly one consolidated block -- before this fix, the
 single-match `find_media_block` this project used would have only ever found
 `ibtnicon` (the first of the three per-element source blocks), silently dropping the
-other two buttons with zero warnings. **Visual confirmation in Construct itself is
-still pending the user opening the project** -- this check proves the on-disk CSS is
-now correct, not that anyone has looked at it rendered.
+other two buttons with zero warnings. **Visually confirmed by the user in Construct
+(2026-09-09):** opened `GenTestProject`, switched to the TSW-570 resolution, and
+confirmed all 3 buttons on `ButtonVariants.cuig` render on-canvas and non-overlapping.
 
 **Not yet wired up:** Trigger 2 (the skill asking the user which mode to use when new
 elements are added to an already-multi-resolution page) is a conversational/process

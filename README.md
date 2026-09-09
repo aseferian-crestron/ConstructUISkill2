@@ -9,7 +9,36 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 5 continuation — multi-resolution reflow BUILT AND VERIFIED end-to-end
+**Phase 5 continuation — multi-resolution reflow DONE, visually confirmed in
+Construct.** All 10 tasks plus a final whole-branch review's fix wave are complete
+and merged to `master` (29 commits). The final review caught the most severe bug in
+the whole plan: the real generator emits one `@media` block PER ELEMENT even when
+several elements share the identical query (`build_position_css` is called once per
+element), so the reflow subsystem's single-match block lookup silently found and
+reflowed only the FIRST element on any real multi-element page — the exact
+"components absent" failure this feature exists to prevent, undetected through 9
+tasks of review because every test (including the integration suite) hand-authored a
+single combined block, a shape the generator never produces. Fixed with plural
+`find_media_block_spans`/`parse_all_position_rules` in `generator/layout.py` and a
+consolidating write path in `reflow_file`; verified against the real
+`C:\Solutions\ClaudeGenTest\GenTestProject` (`ButtonVariants.cuig`'s 3 buttons all
+correctly found and fit, was 1 before the fix) and now **visually confirmed by the
+user in Construct** — all 3 buttons render on-canvas and non-overlapping at the
+TSW-570 resolution. Also fixed in the same final-review pass: non-deterministic rule
+ordering (iterated hash-randomized sets instead of the already-deterministic source
+dicts), a missing fallback to the `99999px` catch-all block when a page predates the
+project's first resolution, and two documentation overclaims. One known limitation
+documented, not fixed (real but latent, unreached by any test or the real project):
+adding resolutions out of ascending size order can invert the CSS cascade — see
+`docs/architecture/10-reflow.md`'s "Known limitation" note. Full history in
+`docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md` and
+`docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` (both kept as
+an accurate corrected record, not left stale after the fix rounds). **Next**: another
+component type, Trigger 2's skill-layer wiring (the mode-choice prompt when adding
+elements to an already-multi-resolution page — `reflow_file`'s `mode` parameter is
+the mechanism, not yet wired to the skill layer), or user's direction.
+
+**Phase 5 continuation (superseded above) — multi-resolution reflow BUILT AND VERIFIED end-to-end
 (both triggers' underlying mechanism, including row-wrap).** All 10 tasks of
 `docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md` complete.
 `generator/reflow.py` (`fit_axis`, `detect_rows`, `wrap_rows`, `stack_rows`,
@@ -188,6 +217,31 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-09: **Multi-resolution reflow — CLOSED OUT: final whole-branch review's
+  Critical bug fixed and visually confirmed in Construct.** The final review (after
+  all 10 tasks individually passed) found the real generator emits one `@media` block
+  PER ELEMENT even when several elements share the identical query
+  (`build_position_css` runs once per element), but `layout.py`'s `find_media_block`
+  only ever finds the FIRST such block — silently reflowing only one element on any
+  real multi-element page, zero warnings. Confirmed against the real
+  `ButtonVariants.cuig` (3 buttons, 3 separate `99999px` blocks, not one combined
+  block) before ruling; every task's tests had hand-authored the combined-block shape
+  for convenience, which is why 9 tasks of review missed it. Fixed with plural
+  `find_media_block_spans`/`parse_all_position_rules` (find every matching block) and
+  a consolidating write path (replace the first matching target span, delete the
+  rest); also fixed in the same pass: non-deterministic rule ordering (was iterating
+  hash-randomized sets), a missing `99999px` catch-all fallback for pages that
+  predate a project's first resolution, and two documentation overclaims. Independently
+  verified via standalone scratch scripts before writing the fix into the design spec
+  and plan, then via a scoped re-review (adversarial splice stress test, 4 different
+  `PYTHONHASHSEED` values) after the fix landed — clean, no new breakage. One known
+  limitation documented but not fixed: resolutions added out of ascending size order
+  can invert the CSS cascade (latent, unreached by any test or the real project — see
+  `docs/architecture/10-reflow.md`). User then opened `GenTestProject` in Construct,
+  switched to the newly-added TSW-570 resolution, and confirmed all 3 buttons on
+  `ButtonVariants.cuig` render on-canvas and non-overlapping — the one remaining
+  unconfirmed item from Task 10, now closed. **Next**: another component type,
+  Trigger 2's skill-layer wiring, or user's direction.
 - 2026-09-09: **Multi-resolution reflow — Task 10 (final task) DONE: wired into
   `add_resolutions_to_project`, end-to-end scenarios including row-wrap, doc
   writeup.** `add_resolutions_to_project` now calls `reflow.reflow_file` for every
