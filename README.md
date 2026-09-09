@@ -9,8 +9,33 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 5 continuation — multi-resolution reflow design REVISED AGAIN (X axis gains a
-row-wrap tier), approved, implementation plan is now STALE and needs to be rewritten.**
+**Phase 5 continuation — multi-resolution reflow: row-wrap design approved, NEW
+10-task implementation plan written, ready to build.** Superseding the entry directly
+below: the new plan lives at
+`docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md` (the 2026-09-08 plan is
+now stale/superseded, kept for history only). Tasks 1-3 and 7-8 carry over from the old
+plan unchanged (portrait media query, CSS parse/build helpers, `fit_axis`,
+`find_new_elements`/`check_overlaps`, `pick_primary`/`choose_source_resolution`) since
+the core per-axis fitter's own behavior didn't change. Three new tasks implement the
+row-wrap mechanism itself: Task 4 `detect_rows` (Y-overlap row grouping), Task 5
+`wrap_rows` (the X-axis wrap tier — peel-and-recurse row splitting, hand-verified
+against the spec), Task 6 `stack_rows` (Y-axis row-stacking). Tasks 9-10 (`reflow_file`,
+integration) route through the new row/wrap/stack pipeline instead of a flat per-axis
+`fit_axis` call, and Task 10 adds a genuine row-wrap end-to-end scenario (a 4-button row
+split across two lines on a much narrower resolution, confirming no element gets scaled
+and no pair overlaps). While translating the design into concrete code, found and fixed
+a real spec gap: two rows produced by splitting the same original row share the exact
+source `top` (splitting doesn't move anything vertically), so naively stacking them by
+raw `min(top)` would tie sibling rows and overlap them — fixed with a pre-stacked
+anchor, folded back into the design spec before Task 6 was written against it. Plan
+self-review passed (full spec coverage, one placeholder-adjacent issue found and fixed
+in Task 2's own test scaffolding, every function signature confirmed used consistently
+across tasks). **Next**: user has been offered the execution-approach choice
+(Subagent-Driven vs. Inline) — awaiting answer.
+
+**Phase 5 continuation (superseded above) — multi-resolution reflow design REVISED
+AGAIN (X axis gains a row-wrap tier), approved, implementation plan is now STALE and
+needs to be rewritten.**
 User revisited the design before answering the execution-approach question from the
 prior session, pointing out the algorithm was pinned to pure per-axis scaling and
 should behave like a real responsive layout — when horizontal space is tight but
