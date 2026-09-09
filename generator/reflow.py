@@ -63,17 +63,33 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
     needed_reduction = span - target_dim
 
     # --- Tier 2: order-preserving whitespace compaction ---------------------------
+    # CORRECTED 2026-09-09 (task review caught a real bug in the first version of this
+    # formula): the original `max_possible_reduction = total_gap - (n-1)*min_gap` sums
+    # ALL gaps uniformly, including any gap already below min_gap (or negative, i.e.
+    # overlapping input) -- those gaps must EXPAND to reach the floor, not contribute
+    # reduction, so the old formula could credit negative "slack" and under-reduce the
+    # span, silently returning a layout wider than target_dim. Fixed by splitting each
+    # gap into reducible slack (above the floor) vs. mandatory deficit (below the
+    # floor) and budgeting needed_reduction against slack alone, plus deficit. Also
+    # fixed: positions were previously accumulated as floats and rounded independently
+    # at the very end, which could round a gap that was >= min_gap as a float down to
+    # < min_gap as an integer between two INDEPENDENTLY-rounded neighbors -- fixed by
+    # rounding incrementally inside the loop and re-clamping to the floor at each step,
+    # so every position produced is already an integer honoring the floor.
     if n > 1:
         gaps = [positions[i + 1] - (positions[i] + sizes[i]) for i in range(n - 1)]
-        max_possible_reduction = max(0, total_gap - (n - 1) * min_gap)
-        if max_possible_reduction > 0 and needed_reduction <= max_possible_reduction:
-            shrink_ratio = needed_reduction / max_possible_reduction
-            new_gaps = [max(min_gap, g - shrink_ratio * (g - min_gap)) for g in gaps]
+        slack = sum(max(0, g - min_gap) for g in gaps)      # reducible whitespace only
+        deficit = sum(max(0, min_gap - g) for g in gaps)    # sub-floor gaps that must expand
+        need = needed_reduction + deficit
+        if slack > 0 and need <= slack:
+            shrink_ratio = need / slack
+            new_gaps = [max(min_gap, g - shrink_ratio * max(0, g - min_gap)) for g in gaps]
             new_positions = [0]
             for i, size in enumerate(sizes[:-1]):
-                new_positions.append(new_positions[-1] + size + new_gaps[i])
+                prev = new_positions[-1]
+                new_positions.append(max(round(prev + size + new_gaps[i]), prev + size + min_gap))
             return {
-                item_id: {"pos": round(pos), "size": size, "scale": 1.0}
+                item_id: {"pos": pos, "size": size, "scale": 1.0}
                 for item_id, pos, size in zip(ids, new_positions, sizes)
             }
 
@@ -85,7 +101,13 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
             f"gaps for {n} items"
         )
     scale = available_for_sizes / total_size
-    new_sizes = [max(1, round(size * scale)) for size in sizes]  # never collapse to 0px
+    # CORRECTED 2026-09-09 (task review): round() could push the packed total over
+    # target_dim (each item's round() can add up to 0.5px, compounding across many
+    # items). int() truncates toward zero, equivalent to floor for these non-negative
+    # values, and never overshoots -- the max(1, ...) floor is unchanged (never
+    # collapse to 0px; the only remaining, deliberate source of overflow is that 1px
+    # floor itself on a pathologically over-crowded axis).
+    new_sizes = [max(1, int(size * scale)) for size in sizes]
     new_positions = [0]
     for size in new_sizes[:-1]:
         new_positions.append(new_positions[-1] + size + min_gap)

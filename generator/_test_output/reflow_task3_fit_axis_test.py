@@ -25,6 +25,31 @@ assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, go
 assert result["c"]["pos"] + result["c"]["size"] - result["a"]["pos"] <= 308
 print("tier 2 (compact): OK")
 
+# --- Tier 2, genuine interpolation (0 < r < 1), not the r==1.0 boundary above -------
+items = [("a", 0, 100), ("b", 150, 100), ("c", 300, 100)]  # same items, looser target
+result = fit_axis(items, target_dim=320)  # needed_reduction=80 < slack=92 -- strict interpolation
+assert result["a"]["scale"] == 1.0 and result["b"]["scale"] == 1.0 and result["c"]["scale"] == 1.0
+span = result["c"]["pos"] + result["c"]["size"] - result["a"]["pos"]
+assert span <= 320, f"tier 2 interpolation must still fit target_dim, got span={span}"
+gap_ab = result["b"]["pos"] - (result["a"]["pos"] + result["a"]["size"])
+gap_bc = result["c"]["pos"] - (result["b"]["pos"] + result["b"]["size"])
+assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, got {gap_ab}, {gap_bc}"
+print("tier 2 (compact), genuine interpolation path: OK")
+
+# --- Tier 2 with a sub-floor/overlapping input gap -- regression guard. A naive
+#     "max_possible_reduction = total_gap - (n-1)*min_gap" formula credits a
+#     below-floor (or negative/overlapping) gap as if it were reducible slack, which
+#     silently returns a layout WIDER than target_dim. b and c below overlap by 20px
+#     in the source (b covers 150-250, c starts at 230).
+items = [("a", 0, 100), ("b", 150, 100), ("c", 230, 100)]
+result = fit_axis(items, target_dim=315)
+span = result["c"]["pos"] + result["c"]["size"] - result["a"]["pos"]
+assert span <= 315, f"tier 2 must still fit target_dim even with a sub-floor input gap, got span={span}"
+gap_ab = result["b"]["pos"] - (result["a"]["pos"] + result["a"]["size"])
+gap_bc = result["c"]["pos"] - (result["b"]["pos"] + result["b"]["size"])
+assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, got {gap_ab}, {gap_bc}"
+print("tier 2 (compact), sub-floor input gap regression guard: OK")
+
 # --- Tier 3: even at the 4px floor, sizes alone exceed target_dim -- must scale down.
 items = [("a", 0, 100), ("b", 150, 100)]  # sizes sum 200, 1 gap -> floor-packed min = 204
 result = fit_axis(items, target_dim=100)  # too small even for floor-packed sizes
@@ -51,11 +76,13 @@ items = [(f"e{i}", i * 60, 55) for i in range(6)]  # 6 elements, span 0..355 (la
 for target in (308, 200, 100, 50):
     result = fit_axis(items, target_dim=target)
     ids = list(result)
+    span = max(v["pos"] + v["size"] for v in result.values()) - min(v["pos"] for v in result.values())
+    assert span <= target, f"fitted group must fit target_dim={target}, got span={span}"
     for i in range(len(ids)):
         for j in range(i + 1, len(ids)):
             a, b = result[ids[i]], result[ids[j]]
             assert not overlaps(a["pos"], a["size"], b["pos"], b["size"]), f"overlap at target_dim={target}: {ids[i]} vs {ids[j]}"
-print("no-overlap guarantee across all tiers: OK")
+print("no-overlap guarantee AND target_dim-fit across all tiers: OK")
 
 # --- fit_axis is a generic (id, pos, size) fitter -- it works identically on row
 #     pseudo-items (Task 6 will feed it "__row0"-style keys), not just element ids.
