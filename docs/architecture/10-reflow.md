@@ -89,8 +89,20 @@ X-axis fitting runs per row (move -> wrap -> compact -> scale); Y-axis fitting s
 the resulting row list (move -> compact -> scale), with the pre-stacked-anchor fix in
 `stack_rows` (see the Task 6 section above) so wrap-created sibling rows never tie.
 
-Confirmed via `generator/_test_output/reflow_task1..10_*.py` and manual Construct
-verification against `C:\Solutions\ClaudeGenTest\GenTestProject` (see Task 10, Step 6).
+Confirmed via `generator/_test_output/reflow_task1..10_*.py` (all 15 smoke/task test
+files pass, including Task 9's Case G/H, added by the 2026-09-09 final whole-branch
+review, guarding against the real generator's one-`@media`-block-per-element CSS
+shape) and by re-running
+`generator/_test_output/reflow_manual_verification_setup.py` against
+`C:\Solutions\ClaudeGenTest\GenTestProject`. Reading `ButtonVariants.cuig`'s new
+640x360 `@media` block directly (`layout.parse_all_position_rules`) confirms the fix:
+it now contains all 3 real elements (`ibtnicon`, `ibtnimage`, `ibtncheck`), each on-
+canvas and non-overlapping, in exactly one consolidated block -- before this fix, the
+single-match `find_media_block` this project used would have only ever found
+`ibtnicon` (the first of the three per-element source blocks), silently dropping the
+other two buttons with zero warnings. **Visual confirmation in Construct itself is
+still pending the user opening the project** -- this check proves the on-disk CSS is
+now correct, not that anyone has looked at it rendered.
 
 **Not yet wired up:** Trigger 2 (the skill asking the user which mode to use when new
 elements are added to an already-multi-resolution page) is a conversational/process
