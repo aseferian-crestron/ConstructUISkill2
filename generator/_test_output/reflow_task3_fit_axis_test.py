@@ -50,6 +50,25 @@ gap_bc = result["c"]["pos"] - (result["b"]["pos"] + result["b"]["size"])
 assert gap_ab >= 4 and gap_bc >= 4, f"gaps must never go below the 4px floor, got {gap_ab}, {gap_bc}"
 print("tier 2 (compact), sub-floor input gap regression guard: OK")
 
+# --- Tier 2 with many gaps -- regression guard for rounding drift COMPOUNDING across
+#     several gaps. An earlier fix rounded each position incrementally off the
+#     previous ROUNDED position, which still let up to ~0.5px of error per gap
+#     accumulate across many gaps and occasionally push the final span a few px over
+#     target_dim even though each individual gap still met the 4px floor -- caught by
+#     this exact case during that fix's own re-review. Flooring (not rounding) each
+#     gap before accumulating positions closes this for good (see the implementation's
+#     comment).
+items = [("i0", 0, 100), ("i1", 149, 69), ("i2", 254, 56), ("i3", 346, 106), ("i4", 509, 94), ("i5", 622, 56)]
+result = fit_axis(items, target_dim=637)
+span = max(v["pos"] + v["size"] for v in result.values()) - min(v["pos"] for v in result.values())
+assert span <= 637, f"tier 2 must not overshoot target_dim via rounding drift across many gaps, got span={span}"
+sorted_ids = sorted(result, key=lambda i: result[i]["pos"])
+for i in range(len(sorted_ids) - 1):
+    a, b = result[sorted_ids[i]], result[sorted_ids[i + 1]]
+    gap = b["pos"] - (a["pos"] + a["size"])
+    assert gap >= 4, f"gap must never go below the 4px floor, got {gap}"
+print("tier 2 (compact), many-gaps rounding-drift regression guard: OK")
+
 # --- Tier 3: even at the 4px floor, sizes alone exceed target_dim -- must scale down.
 items = [("a", 0, 100), ("b", 150, 100)]  # sizes sum 200, 1 gap -> floor-packed min = 204
 result = fit_axis(items, target_dim=100)  # too small even for floor-packed sizes

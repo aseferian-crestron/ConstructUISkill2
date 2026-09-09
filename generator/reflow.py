@@ -63,19 +63,26 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
     needed_reduction = span - target_dim
 
     # --- Tier 2: order-preserving whitespace compaction ---------------------------
-    # CORRECTED 2026-09-09 (task review caught a real bug in the first version of this
-    # formula): the original `max_possible_reduction = total_gap - (n-1)*min_gap` sums
-    # ALL gaps uniformly, including any gap already below min_gap (or negative, i.e.
-    # overlapping input) -- those gaps must EXPAND to reach the floor, not contribute
-    # reduction, so the old formula could credit negative "slack" and under-reduce the
-    # span, silently returning a layout wider than target_dim. Fixed by splitting each
-    # gap into reducible slack (above the floor) vs. mandatory deficit (below the
-    # floor) and budgeting needed_reduction against slack alone, plus deficit. Also
-    # fixed: positions were previously accumulated as floats and rounded independently
-    # at the very end, which could round a gap that was >= min_gap as a float down to
-    # < min_gap as an integer between two INDEPENDENTLY-rounded neighbors -- fixed by
-    # rounding incrementally inside the loop and re-clamping to the floor at each step,
-    # so every position produced is already an integer honoring the floor.
+    # CORRECTED 2026-09-09, twice (task review caught two real bugs; the first fix
+    # introduced a smaller residual of the same symptom, caught by the fix's own
+    # scoped re-review). Bug 1: the original `max_possible_reduction = total_gap -
+    # (n-1)*min_gap` sums ALL gaps uniformly, including any gap already below min_gap
+    # (or negative, i.e. overlapping input) -- those gaps must EXPAND to reach the
+    # floor, not contribute reduction, so the old formula could credit negative
+    # "slack" and under-reduce the span, silently returning a layout wider than
+    # target_dim. Fixed by splitting each gap into reducible slack (above the floor)
+    # vs. mandatory deficit (below the floor) and budgeting needed_reduction against
+    # slack alone, plus deficit -- this part of the fix is unchanged from the first
+    # correction. Bug 2 (found in the first fix's own re-review): rounding each
+    # position INCREMENTALLY (off the previous ROUNDED position) still let up to
+    # ~0.5px of rounding error compound across many gaps, occasionally pushing the
+    # final span a few px over target_dim even though every individual gap still met
+    # the 4px floor. Fixed the same way Tier 3 fixes its own analogous rounding
+    # problem: floor (never round) each gap to an integer before accumulating
+    # positions. A float gap is already >= min_gap by construction (the `max(min_gap,
+    # ...)` above), and min_gap is an integer, so floor(gap) >= min_gap always --
+    # flooring can only ever shrink the accumulated span relative to the exact
+    # (target_dim-fitting) float math, never grow it, so no compounding is possible.
     if n > 1:
         gaps = [positions[i + 1] - (positions[i] + sizes[i]) for i in range(n - 1)]
         slack = sum(max(0, g - min_gap) for g in gaps)      # reducible whitespace only
@@ -84,10 +91,10 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
         if slack > 0 and need <= slack:
             shrink_ratio = need / slack
             new_gaps = [max(min_gap, g - shrink_ratio * max(0, g - min_gap)) for g in gaps]
+            int_gaps = [max(min_gap, int(g)) for g in new_gaps]  # floor, never round
             new_positions = [0]
             for i, size in enumerate(sizes[:-1]):
-                prev = new_positions[-1]
-                new_positions.append(max(round(prev + size + new_gaps[i]), prev + size + min_gap))
+                new_positions.append(new_positions[-1] + size + int_gaps[i])
             return {
                 item_id: {"pos": pos, "size": size, "scale": 1.0}
                 for item_id, pos, size in zip(ids, new_positions, sizes)
