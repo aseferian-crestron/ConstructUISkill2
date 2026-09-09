@@ -9,8 +9,37 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 5 continuation — multi-resolution reflow IMPLEMENTATION PLAN WRITTEN, ready to
-build.** 7-task TDD plan at
+**Phase 5 continuation — multi-resolution reflow design REVISED AGAIN (X axis gains a
+row-wrap tier), approved, implementation plan is now STALE and needs to be rewritten.**
+User revisited the design before answering the execution-approach question from the
+prior session, pointing out the algorithm was pinned to pure per-axis scaling and
+should behave like a real responsive layout — when horizontal space is tight but
+vertical space is available, elements should wrap onto new rows below rather than only
+ever compact/scale in place. Worked through the shape via clarifying questions: rows
+are inferred from source elements' Y-overlap (not authored explicitly), the new wrap
+tier sits between move and compact/scale (`move -> wrap -> compact -> scale` on X),
+wrapping is row-only (no symmetric column-wrap for height-constrained cases), and
+wrapping preserves source row groupings — only an overflowing row splits, trailing
+elements peel onto a new row directly below it, rather than a full greedy re-pack that
+could merge/reorder rows. The Y axis keeps its original 3-tier fallback but now
+operates on the row list (as pseudo-items) instead of individual elements, so rows
+stack top-to-bottom the same way elements used to. The "no new overlaps within the
+fitted group" proof still holds without new 2D collision checks: same-row elements
+stay disjoint on X (unchanged argument), different-row elements stay disjoint on Y
+since each row's Y-extent is self-contained and rows themselves never overlap. Full
+rewrite at `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md`
+(Scope, Algorithm, Components, Error handling, and Testing sections all updated; new
+`detect_rows`/`wrap_rows`/`stack_rows` components added to `generator/reflow.py`'s
+planned shape). **The previously-written 7-task implementation plan
+(`docs/superpowers/plans/2026-09-08-multi-resolution-reflow.md`) was written against
+the old per-axis-only algorithm and is now stale — it has NOT been rewritten yet.**
+**Next**: get the user's review/sign-off on the revised spec (asked, awaiting answer),
+then invoke writing-plans to redo the implementation plan, then get the
+execution-approach answer (Subagent-Driven vs. Inline) that was never answered last
+session either.
+
+**Phase 5 continuation (superseded above) — multi-resolution reflow IMPLEMENTATION
+PLAN WRITTEN, ready to build.** 7-task TDD plan at
 `docs/superpowers/plans/2026-09-08-multi-resolution-reflow.md`, source-grounded like
 every prior phase: confirmed the previously-unconfirmed portrait media-query formula by
 reading `C:\Git\CCIDE`'s `breakpoint.ts::createRawQuery` directly and cross-checking two
@@ -99,6 +128,32 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-09: **Multi-resolution reflow — X axis redesigned with a row-wrap tier
+  (`move -> wrap -> compact -> scale`), via the brainstorming skill.** User asked to
+  revisit the reflow logic before answering the still-outstanding execution-approach
+  question, objecting that the design was "pinned to a pure horizontal space" — pure
+  per-axis scaling/compaction, never letting elements use available vertical room by
+  moving below other elements. Classified as an architectural revision (changes an
+  already-approved design's core algorithm, reopens a line explicitly marked
+  out-of-scope). Resolved via one-at-a-time clarifying questions: rows are inferred
+  from source Y-overlap (not authored explicitly); the wrap tier is inserted between
+  move and compact (wrap preferred over shrinking); row-wrap only, no symmetric
+  column-wrap; and wrapping splits only overflowing source rows (trailing elements
+  peel onto a new row below), rather than a full greedy re-pack that could merge or
+  reorder rows. Y axis keeps its original 3-tier fallback (move/compact/scale)
+  unchanged in kind, but now operates on the row list as pseudo-items instead of
+  individual elements. Reworked the "no new overlaps" proof to cover the new
+  structure: same-row elements stay disjoint on X (original argument, unchanged
+  wording only), different-row elements stay disjoint on Y since each row's Y-extent
+  is self-contained and rows themselves never overlap — no new 2D collision detection
+  needed. Rewrote Scope, Algorithm, Components, Error handling, and Testing sections
+  of `docs/superpowers/specs/2026-09-08-multi-resolution-reflow-design.md` in place
+  (same file, per this project's established revision pattern); self-review caught and
+  fixed two stale "3-tier fit"/pre-wrap-tier-order wording spots left over from the
+  previous revision. Committed (`fde5733`). **The existing 7-task implementation plan
+  was written against the old algorithm and is now stale — not yet rewritten.**
+  **Next**: user reviews the revised spec, then re-run writing-plans for a fresh
+  implementation plan, then get the still-unanswered execution-approach choice.
 - 2026-09-08: **Multi-resolution reflow — implementation plan written** (7 TDD tasks,
   `docs/superpowers/plans/2026-09-08-multi-resolution-reflow.md`), following the
   writing-plans skill against the now-approved spec. Before writing it, did the source
