@@ -92,8 +92,18 @@ Position/size is CSS-only (never TOML — confirmed in Phase 4). A page/widget's
 everything right now" for whichever resolution an element was last authored/fit
 against, because a resolution's own dedicated `@media` block always mirrors the
 catch-all block's values exactly at creation/fit time (confirmed against real Button1
-and `Widget.cuiw`). Reflow parses a block (catch-all or any one resolution's
-device-specific block) back into:
+and `Widget.cuiw`).
+
+**A given `@media` query is not one block.** `layout.py::build_position_css` is called
+once per element, so the real generator emits one `@media {query}{...}` pair *per
+element*, not one shared block containing every element's rule — confirmed against a
+real 3-button page (`ButtonVariants.cuig`): three separate `@media (max-width:
+99999px){...}` blocks, one per button, all with the byte-identical query string, not
+one block with three `#id{...}` rules inside it. (Found late — during the final
+whole-branch review, 2026-09-09 — because every earlier task's tests hand-authored a
+single combined block for convenience, a shape the generator itself never produces;
+see Components below for the fix.) Reflow therefore parses **every** block matching a
+given query, not just the first, merging their rules into one dict:
 
 ```python
 {element_id: {"left": int, "top": int, "width": int, "height": int,
@@ -337,17 +347,32 @@ Error handling below.
   -> dict[element_id, ParsedElement]` (the flat-rule parser described above) and
   `build_reflow_block(elements, resolution) -> str` (the N-element `@media` block
   builder, factored so `build_position_css`'s device-block logic can share it for the
-  single-element case it already handles).
+  single-element case it already handles — this factoring, called for here since the
+  spec's first draft, was actually done as part of the final-review fix, 2026-09-09,
+  see `_device_rule_decls` below). Also add `find_media_block_spans(css_text, query) ->
+  list[tuple[int, int]]` and `parse_all_position_rules(css_text, query) -> dict[element_id,
+  ParsedElement]` (added 2026-09-09, final whole-branch review): per the Data model
+  note above, a query can match more than one block, so every reflow caller that needs
+  "every element for this query" must use these, not the single-match
+  `find_media_block_span`/`find_media_block`, which remain for callers that
+  deliberately want only the first (none currently do, post-fix, but the distinction
+  is kept explicit rather than removing the single-match functions).
 - **`generator/reflow.py`** (new):
   - `reflow_file(path, target_resolution, source_resolution, mode="pin_existing") ->
     ReflowResult` — the general entry point for both triggers. Reads the file's
     `{Css}` (and `{PageAttributes}`/`{Html}` — needed to re-write the file, but
-    untouched), parses source and (if present) the target's current dedicated block,
-    splits into pinned/new per `mode`, fits the new group via `fit_axis`, runs the
-    pinned/new overlap check when `mode="pin_existing"`, appends the new `@media`
-    block, writes back. `ReflowResult` carries `warnings: list[str]` (overlap
-    conflicts, skipped-axis messages) so callers/the skill can surface them instead of
-    assuming a silently clean result.
+    untouched), parses **every** block matching the source query and every block
+    matching the target query (via `find_media_block_spans`/`parse_all_position_rules`
+    — not just the first, see Data model), splits into pinned/new per `mode`, fits the
+    new group via `fit_axis`, runs the pinned/new overlap check when
+    `mode="pin_existing"`, then on write: replaces the *first* matching target span
+    with the one consolidated new `@media` block and deletes every other matching
+    target span entirely (splicing from the end backward so earlier indices stay
+    valid) — added 2026-09-09 (final whole-branch review) once multi-block-per-query
+    was confirmed; the original design assumed one block per query and would leave
+    duplicate `#id{}` rules under the same query if left unfixed. `ReflowResult`
+    carries `warnings: list[str]` (overlap conflicts, skipped-axis messages) so
+    callers/the skill can surface them instead of assuming a silently clean result.
   - `fit_axis(items, target_dim, min_gap=4) -> dict[item_id, {"pos": int, "size":
     int, "scale": float}]` — the core 3-tier fitter described in Algorithm
     (`fit_axis` section). `items` is `[(item_id, pos, size)]` — either elements (X
@@ -397,6 +422,18 @@ Error handling below.
   component with no position rule at all) is skipped with a clear message identifying
   the file and element — never silently dropped, never a hard crash that aborts
   reflowing the *rest* of the project's files.
+- If the chosen source resolution's own dedicated block is missing from a given file
+  (added 2026-09-09, final whole-branch review) — the realistic case being a page
+  authored before the project had *any* resolution, which only ever gets the
+  `99999px` catch-all block (see `layout.py`'s no-devices-yet fallback) — `reflow_file`
+  falls back to the `99999px` catch-all block as the source before giving up. Without
+  this, a page that predates the project's first resolution can never gain a device
+  block for any *later*-added resolution either: the first add has no source to
+  reflow from (nothing existing yet) and skips it outright, so the file never gets a
+  device-specific block for that first resolution to source *subsequent* adds from.
+  The catch-all is always a valid source per the Data model note above (a device
+  block always mirrors it exactly at creation/fit time), so this fallback never
+  changes the algorithm, only which existing block supplies the starting data.
 - A `fit_axis` call that can't fit even the mandatory 4px-floor gaps for its item count
   (see the `fit_axis` section's insufficient-room edge case) is skipped the same way —
   clear message naming the file, axis, and item count, rest of the project's files
@@ -424,6 +461,23 @@ Error handling below.
   source/target id set into new vs. pinned; `check_overlaps` correctly flags a
   deliberately-overlapping pair and correctly reports no conflicts for a
   non-overlapping pair.
+- **Added 2026-09-09 (final whole-branch review): at least one scenario must build its
+  test CSS the way the real generator actually does** — one `@media {query}{...}` pair
+  per element via `layout.py::build_position_css` (or the equivalent
+  `ch5_button.py::build_default_button_element`), concatenated, never a single
+  hand-authored block containing multiple `#id{}` rules. Every earlier test in this
+  plan used the latter (hand-idealized) shape, which is why the multi-block-per-query
+  bug (see Data model) went undetected through nine tasks' worth of review plus a full
+  integration suite. `parse_all_position_rules`/`find_media_block_spans` need their own
+  direct unit tests too: a query matching zero, one, and three separate blocks;
+  `reflow_file`'s write path consolidating three matching target spans down to exactly
+  one with no id duplicated and no id lost.
+- **Determinism:** `reflow_file`'s emitted rule order (and `ReflowResult.warnings`
+  order) must not depend on Python's per-process string-hash randomization — iterate
+  `source_elements`/`target_elements` (dict insertion order, deterministic) when
+  building the `pinned`/`to_fit` groups, never the `new_ids`/`pinned_ids` sets
+  `find_new_elements` returns. A regression test should run the same input twice (or
+  compare against a hardcoded expected order) and assert identical output both times.
 - `fit_axis` unit tests, one per tier plus the edge case:
   - Tier 1: items whose bounding box already fits target_dim once translated — confirm
     relative gaps between items are byte-for-byte unchanged, only a constant offset
