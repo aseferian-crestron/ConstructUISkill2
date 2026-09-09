@@ -9,9 +9,44 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 5 continuation — multi-resolution reflow: row-wrap design approved, NEW
-10-task implementation plan written, ready to build.** Superseding the entry directly
-below: the new plan lives at
+**Phase 5 continuation — multi-resolution reflow BUILT AND VERIFIED end-to-end
+(both triggers' underlying mechanism, including row-wrap).** All 10 tasks of
+`docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md` complete.
+`generator/reflow.py` (`fit_axis`, `detect_rows`, `wrap_rows`, `stack_rows`,
+`find_new_elements`, `check_overlaps`, `pick_primary`, `choose_source_resolution`,
+`reflow_file`) plus new CSS helpers in `generator/layout.py` are wired into
+`generator/project.py::add_resolutions_to_project` (Task 10), which now calls
+`reflow_file` for every `*.cuig`/`*.cuiw` in a project's folder each time a resolution
+is added, and returns the aggregated list of any reflow warnings (return type changed
+from `None` to `list[str]`, additive). End-to-end scenario tests
+(`generator/_test_output/reflow_task10_integration_test.py`) cover an edge-placed
+element landing on-canvas after a smaller resolution is added, the
+orientation-bootstrap case, a genuine row-wrap scenario (a 4-button single row split
+across two lines on a much narrower resolution — hand-verified: rows split to
+`[b0,b1]`/`[b2,b3]`, tops `20`/`114`, no element scaled, no pairwise overlap), and
+zero regression when a project has no pages/widgets yet. Task 10 also found and fixed
+a real bug exercising real catalog data end-to-end for the first time: a real `.cuip`'s
+`{DeviceResolutionSource}` stores `width`/`height` as `"Npx"` strings (confirmed
+against `Components.cuip`), but `reflow.py`/`layout.py` do plain arithmetic on those
+fields — every earlier task's unit tests only used plain-int synthetic resolutions, so
+this never surfaced until Task 10 called `devices.py::to_project_resolution` for real.
+Fixed with new `project.py::_numeric_dim`/`_numeric_resolution`, applied only to the
+copies fed into the reflow subsystem — the `.cuip` on disk still gets the real string
+form. All 15 smoke/task tests pass (zero regressions). Manual Construct verification
+prepared against the existing `C:\Solutions\ClaudeGenTest\GenTestProject` (a second,
+640x360 landscape resolution added; setup script reported no warnings) —
+**visual confirmation in Construct is still pending the user opening the project.**
+Trigger 2 (the skill prompting `pin_existing`/`full_refit` when new elements are added
+to an already-multi-resolution page) remains explicitly NOT built — a skill-layer
+conversational step, not generator code; `reflow_file`'s `mode` parameter is the
+mechanism a future skill call would choose between. See
+`docs/architecture/10-reflow.md`'s "Algorithm and integration summary" section.
+**Next**: user confirms the manual Construct check, then another component type,
+Trigger 2's skill-layer wiring, or user's direction.
+
+**Phase 5 continuation (superseded above) — multi-resolution reflow: row-wrap design
+approved, NEW 10-task implementation plan written, ready to build.** Superseding the
+entry directly below: the new plan lives at
 `docs/superpowers/plans/2026-09-09-multi-resolution-reflow.md` (the 2026-09-08 plan is
 now stale/superseded, kept for history only). Tasks 1-3 and 7-8 carry over from the old
 plan unchanged (portrait media query, CSS parse/build helpers, `fit_axis`,
@@ -153,6 +188,37 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-09: **Multi-resolution reflow — Task 10 (final task) DONE: wired into
+  `add_resolutions_to_project`, end-to-end scenarios including row-wrap, doc
+  writeup.** `add_resolutions_to_project` now calls `reflow.reflow_file` for every
+  `*.cuig`/`*.cuiw` in a project's folder, once per newly-added resolution, using
+  `choose_source_resolution` to pick which existing resolution to fit from
+  (same-orientation primary, or the other orientation's primary for the bootstrap
+  case); return type changed from `None` to `list[str]` of aggregated reflow warnings
+  (additive, existing callers unaffected). New
+  `generator/_test_output/reflow_task10_integration_test.py` covers 4 scenarios: an
+  edge-placed element landing on-canvas after a smaller resolution is added, the
+  orientation-bootstrap case, a genuine row-wrap scenario (4-button single row onto a
+  much narrower resolution — hand-traced to confirm the algorithm's own output before
+  trusting the test's assertions: rows split `[b0,b1]`/`[b2,b3]`, tops land at `20`/
+  `114`, all 4 buttons stay their original 150x90 size, zero pairwise overlaps), and a
+  zero-pages regression check. Found and fixed a real bug while wiring real catalog
+  data through the pipeline end-to-end for the first time (every earlier task's unit
+  tests used hand-built plain-int resolution dicts, never the real catalog shape): a
+  real `.cuip`'s `{DeviceResolutionSource}` stores `width`/`height` as `"Npx"` strings
+  (confirmed against `Components.cuip`), but `reflow.py`/`layout.py` do plain
+  arithmetic on those fields (`width + 1`, `pick_primary`'s width comparison) and
+  crashed with a `TypeError`. Fixed at the `add_resolutions_to_project` wiring
+  boundary — new `_numeric_dim`/`_numeric_resolution` coerce width/height to `int`
+  only for the copies fed into the reflow subsystem, leaving what's written to the
+  `.cuip` on disk in the real, confirmed string form. All 15 smoke/task tests pass
+  (zero regressions). Manual verification prepared against the real
+  `C:\Solutions\ClaudeGenTest\GenTestProject` (a 640x360 landscape resolution added
+  via the reflow path; setup script printed no warnings) — visual confirmation in
+  Construct itself is still pending the user opening the project, not yet claimed as
+  confirmed. `docs/architecture/10-reflow.md` updated with the algorithm/integration
+  summary and this bug's writeup. This closes out the 10-task multi-resolution reflow
+  plan in full.
 - 2026-09-09: **Multi-resolution reflow — X axis redesigned with a row-wrap tier
   (`move -> wrap -> compact -> scale`), via the brainstorming skill.** User asked to
   revisit the reflow logic before answering the still-outstanding execution-approach
