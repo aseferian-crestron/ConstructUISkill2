@@ -112,6 +112,23 @@ step at the skill layer per the spec's Integration section, not new code in
 `generator/` -- `reflow_file`'s `mode` parameter is what a future skill-layer call would
 choose between; this plan only builds and proves the underlying mechanism.
 
+**Known limitation, flagged by the final whole-branch review, not yet fixed (real but
+latent -- parked, not reachable by any test built so far):** `reflow_file`'s write path
+always splices a resolution's block in at wherever its query span already sits (or
+appends at the end for a brand-new query). If resolutions are ever added out of
+ascending size order -- e.g. a 1024x600 resolution added to a project AFTER a 640x400
+one -- the 1024 block physically lands later in the file's CSS than the 640 block. At
+a 640x400 viewport, both media queries can still simultaneously match near the
+boundary, and CSS resolves the tie by source order, not specificity -- so the
+later-written (1024-fitted) rule can win and render off-canvas at the smaller
+viewport. Properly fixing this means always emitting resolution blocks in a
+consistent size order regardless of when each was added, which is a real design
+change, not a one-line fix -- flagged here rather than rushed into a fix. No project
+built by this generator's own workflow has hit this yet (resolutions have always been
+added smallest-first in every test and the real verification project), but it should
+be addressed before the generator is used to build a project with resolutions added
+in an unusual order.
+
 ### Bug found wiring Task 10: catalog resolution width/height are strings, not ints
 
 Task 10's own end-to-end test (using real catalog data via
