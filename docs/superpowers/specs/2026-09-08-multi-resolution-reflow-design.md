@@ -225,11 +225,26 @@ separate code path is needed for "apply the tiers within a row."
 ### Y axis: row-stacking
 
 Once X-axis wrapping has finalized row membership, each row gets a natural height,
-`max(top_i + height_i) - min(top_i)` over its own members, and an anchor,
-`min(top_i)`. The row list — ordered top-to-bottom, unchanged from Row detection except
-for any splits Tier 2 introduced — is fed to `fit_axis` as pseudo-items (`pos =
-anchor`, `size = natural height`) against `target_height`. This is the *only* Y-axis
-fitting that happens: no per-element Y tiers, no column-wrap (see Scope).
+`max(top_i + height_i) - min(top_i)` over its own members.
+
+A row's **anchor** is *not* simply its own `min(top_i)` — a row created by an X-axis
+wrap split shares the exact same source `top` values as the row it split from
+(splitting rearranges which elements belong to which row, but doesn't move anything
+vertically by itself), so two sibling rows can tie on raw `min(top)` even though they
+must end up on different lines. To keep the row sequence meaningfully ordered before
+`fit_axis`'s own tiers run, rows are pre-stacked sequentially: row 0's anchor is its own
+`min(top_i)`; each later row's anchor is `max(its own min(top_i), previous row's anchor
++ previous row's natural height + 4px)`. For rows that already came from distinct
+source Y-positions (the ordinary, non-wrap-split case), this is a no-op — `detect_rows`
+already guarantees strictly increasing, non-overlapping natural positions, so the `max`
+always picks the row's own anchor. It only changes anything for wrap-created siblings,
+placing a split-off row naturally just below the row it split from instead of tied with
+it.
+
+The row list — ordered top-to-bottom, unchanged from Row detection except for any
+splits the wrap tier introduced — is fed to `fit_axis` as pseudo-items (`pos = anchor`
+as computed above, `size = natural height`) against `target_height`. This is the *only*
+Y-axis fitting that happens: no per-element Y tiers, no column-wrap (see Scope).
 
 Whatever `fit_axis` computes for a row (`new_pos`, and `scale` — 1.0 unless the row
 list needed Tier 3) is then applied to every element inside that row: `new_top =
@@ -247,12 +262,13 @@ go negative, so a monotonically non-decreasing, order-preserving sequence of pos
 stays pairwise non-overlapping on X by construction.
 
 Two elements in **different rows** are disjoint on Y without needing any per-element Y
-check: each row's Y-extent is derived entirely from its own members (`anchor` to
-`anchor + height`), and rows themselves are pairwise non-overlapping on Y by the same
-non-negative-gap, order-preserving `fit_axis` argument, just applied one level up to
-the row list instead of individual elements. Since every element's `top`/`height`
-stays within its own row's Y-extent by definition, two elements in different rows
-inherit their rows' Y-separation.
+check: the pre-stacking step guarantees rows enter `fit_axis` already in a valid,
+non-decreasing, non-overlapping order (`anchor_i >= anchor_{i-1} + height_{i-1} + 4px`
+by construction), and `fit_axis` itself never reorders or lets a gap go negative — so
+rows stay pairwise non-overlapping on Y by the same argument as any other group it
+fits, just applied one level up to the row list. Every element's `top`/`height` stays
+within its own row's Y-extent (`anchor` to `anchor + height`) by definition, so two
+elements in different rows inherit their rows' Y-separation.
 
 So every pair in the fitted group is separated on at least one axis — X within a row,
 Y across rows — with no 2D collision detection required. This guarantee does **not**
@@ -328,10 +344,14 @@ Error handling below.
     `fit_axis` once per row.
   - `stack_rows(rows, target_height, min_gap=4) -> dict[element_id, {"top": int,
     "height": int, "scale": float}]` — the Y-axis row-stacking step: builds row
-    pseudo-items from `rows` (anchor/natural-height per row), calls `fit_axis` against
-    `target_height`, then maps each row's `(pos, scale)` back onto its elements
-    (`new_top = row_pos + (element.top - row_anchor) * scale`, `new_height =
-    element.height * scale` when `scale != 1.0`), per the Algorithm section.
+    pseudo-items from `rows` (natural height per row, plus the pre-stacked anchor —
+    `max(own min(top), previous row's anchor + previous row's height + min_gap)` — that
+    keeps wrap-created sibling rows from tying on Y, see Algorithm), calls `fit_axis`
+    against `target_height`, then maps each row's `(pos, scale)` back onto its elements
+    (`new_top = row_pos + (element.top - row's_own_min_top) * scale`, `new_height =
+    element.height * scale` when `scale != 1.0`) — note the per-element offset is taken
+    from the row's *own* raw `min(top)`, not its pre-stacked anchor, since that offset
+    only needs to preserve each element's position relative to its row's other members.
   - `find_new_elements(source_elements, target_elements) -> tuple[set[str],
     set[str]]` — returns `(new_ids, pinned_ids)`, the id-set diff described above.
   - `check_overlaps(pinned_elements, new_elements) -> list[tuple[str, str]]` — pairwise
