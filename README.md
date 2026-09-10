@@ -9,7 +9,45 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Reflow bug fix — device-specific blocks that omit width/height (real Construct-authored
+**Reflow: preserve centering — DONE, verified against the real `ReflowTest.cuig`.** After
+the width/height-fallback fix (below) got the portrait layout showing all 21 elements
+on-canvas and non-overlapping, the user caught a subtler issue: the "Source" and "Menu"
+button rows were centered in the 1280px landscape source (left margin 265px, right margin
+266px) but came out flush against the portrait target's right edge (52px left, 0px right)
+— none of `fit_axis`'s three tiers ever center a result; Tier 1 leaves an already-fitting
+group at its original absolute position (meaningless once the canvas width changed), and
+Tiers 2/3 both pack from a fixed left/top anchor. `stack_rows` reuses `fit_axis` for the Y
+axis, so the row-stack had the identical gap (leaving ~600px of empty space below the
+content in the 1280px-tall portrait canvas). Went through the full brainstorming → spec →
+plan process given this touches the algorithm's core overlap-safety argument: design spec
+at `docs/superpowers/specs/2026-09-10-reflow-centering-design.md`, implementation plan at
+`docs/superpowers/plans/2026-09-10-reflow-centering.md` (5 tasks, executed inline).
+**Design, approved by the user via 3 targeted questions**: (1) only recenter a row/stack
+that was ALREADY centered in the source (detected via `abs(left_margin - right_margin) <=
+max(4, round(0.01 * source_dim))`), not force-center everything; (2) evaluated per row
+independently, not as one whole-page decision; (3) applied to both X and Y axes. The
+trickiest piece: a row that `wrap_rows` splits into sub-rows has no meaningful "was IT
+centered" answer of its own (it's a subset of a once-centered row) — resolved (user's
+choice) by always centering a wrap-split fragment row, like a fresh flex-wrap line.
+**Built**: `fit_axis` gained `source_dim`/`center` params and a final uniform-shift
+`_center_result` step (safe by the same argument as Tier 1's existing translate — a
+uniform shift of an already-non-overlapping group can't introduce a new overlap);
+`wrap_rows` now tags each output row as a fragment (from a split) or untouched, so
+`_fit_group` knows which centering rule to apply; `stack_rows` gained `source_height` for
+the Y-axis case (a single whole-stack decision, no fragment concept). Every task's numeric
+test case was hand-traced during planning before being written down. Verified: full
+existing suite (13 files, phases 2-5 + every reflow task) passes with zero regressions —
+confirmed during planning that none of the existing tests' synthetic fixtures are
+accidentally centered within tolerance, so none needed adjusting except
+`reflow_task5_wrap_rows_test.py`'s assertions (updated for `wrap_rows`'s new return
+shape, an intentional, expected change). Re-ran the portrait reflow against the real
+`ButtonVariants.cuig`/`ReflowTest.cuig`/`MyWidget.cuiw`: the 8-item and 2-item button rows
+that were centered in the source now come back with byte-identical left/right margins in
+the portrait target (26px/26px and 55px/55px respectively, was 52px/0px before this fix);
+all 21 elements still present, zero pairwise overlaps, everything on-canvas. **Next**:
+user to re-check `ReflowTest.cuig`'s portrait layout in Construct.
+
+**Reflow bug fix (superseded above) — device-specific blocks that omit width/height (real Construct-authored
 pages routinely do this) were silently dropping elements; fixed, verified against the
 user's real `ReflowTest.cuig`.** After adding TSW-770 + TST-1080 (Portrait) to
 `GenTestProject2` (see the `{DeviceResolutionSource}` fix below for that step), the user
@@ -314,6 +352,24 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-10: **Reflow: preserve centering -- DONE, verified against the real
+  ReflowTest.cuig.** User caught that a button row centered in the 1280px landscape
+  source came out flush against the portrait target's edge instead of staying centered
+  (none of fit_axis's 3 tiers ever center a result; stack_rows' Y axis had the same
+  gap). Went through brainstorming -> spec
+  (`docs/superpowers/specs/2026-09-10-reflow-centering-design.md`) -> plan
+  (`docs/superpowers/plans/2026-09-10-reflow-centering.md`, 5 tasks) given this touches
+  the algorithm's overlap-safety argument. User's approved design: only recenter a
+  row/stack that was already centered in the source (tolerance `max(4, 1%)`), decided
+  per row independently, applied to both axes; a wrap-split fragment row always centers
+  (no meaningful "was it centered" answer of its own). Built: `fit_axis` gained
+  `source_dim`/`center` + a final uniform-shift step; `wrap_rows` tags fragment vs.
+  untouched rows; `stack_rows` gained `source_height`. Full existing suite passes with
+  zero regressions (verified during planning no fixture was accidentally centered,
+  except `reflow_task5_wrap_rows_test.py`'s assertions, intentionally updated for the
+  new return shape). Re-ran against the real files: previously-centered rows now come
+  back with byte-identical left/right margins (26/26, 55/55 -- was 52/0), all 21
+  elements present, zero overlaps. See Current phase above for the full writeup.
 - 2026-09-10: **Reflow: device-specific blocks omitting width/height were silently
   dropping elements -- found and fixed after the user's real `ReflowTest.cuig` reflowed
   broken (most components not moved, several overflowing off-canvas) for TST-1080
