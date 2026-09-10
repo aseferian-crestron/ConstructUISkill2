@@ -546,8 +546,7 @@ def _fit_group(
         extra_vars: dict[str, str] = {}
         for name, value in e.get("extra_vars", {}).items():
             if name in size_vars:
-                extra_vars[name] = size_vars[name]
-                continue
+                continue  # handled by the unconditional merge below
             lname = name.lower()
             numeric = float(value[:-2]) if value.endswith("px") else None
             # CORRECTED 2026-09-09 (task review): must use int() truncation, matching
@@ -555,15 +554,28 @@ def _fit_group(
             # reintroducing the "outer width/height vs. --ch5-button--* var disagree"
             # class of bug this codebase already fixed once, Phase 4 -- a mirrored var
             # must equal the property it mirrors bit-for-bit, which only holds if both
-            # use the same rounding function). Legacy fallback path only -- see
-            # _component_size_css_vars above for the schema-driven replacement, used
-            # whenever `sdk` is available.
-            if numeric is not None and "width" in lname:
+            # use the same rounding function). Legacy fallback path only (sdk is None)
+            # -- see _component_size_css_vars above for the schema-driven replacement,
+            # used whenever `sdk` is available.
+            if sdk is None and numeric is not None and "width" in lname:
                 extra_vars[name] = f"{max(1, int(numeric * x['scale']))}px"
-            elif numeric is not None and "height" in lname:
+            elif sdk is None and numeric is not None and "height" in lname:
                 extra_vars[name] = f"{max(1, int(numeric * y['scale']))}px"
             else:
                 extra_vars[name] = value  # not a width/height-mirroring var -- carry through unscaled
+        # CORRECTED 2026-09-10 (real bug: a button's adorner correctly showed its new,
+        # smaller height, but the button itself rendered at its old, much larger size):
+        # `size_vars` must be ADDED here unconditionally, not merged only into whatever
+        # keys the loop above already found in the source's own extra_vars. A real
+        # "regular"-mode button (the common case for anything not yet resized by hand
+        # in Construct) never carries --ch5-button--regular-width/height at all -- that
+        # pair only appears once a button has actually been custom-resized -- so when
+        # reflow forces such a button to size="custom" (see reflow_file), it MUST also
+        # synthesize these vars fresh; leaving them missing (the original bug here)
+        # means Construct has nothing to constrain the internal render to the new size,
+        # so it falls back to a larger default while the outer box (and the adorner)
+        # correctly reflects the smaller computed size.
+        extra_vars.update(size_vars)
         fitted[eid] = {
             "left": x["pos"], "top": y["top"], "width": width, "height": height,
             "z_index": e.get("z_index"), "extra_vars": extra_vars,

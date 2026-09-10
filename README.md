@@ -9,6 +9,37 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Reflow bug fix — a resized button's adorner showed the correct new size, but the
+button rendered much bigger — DONE.** Same session as the D-pad/aspect-lock work below,
+found immediately after by the user re-checking TSW-570 in Construct: a "Source 2"
+button's selection adorner correctly showed 21px height, but the button itself rendered
+far larger. Root cause: the size-var fix from the D-pad bug only *recomputed* CSS vars
+that already existed in an element's source `extra_vars` — it never *added* a missing
+one. A real `size="regular"` button (confirmed: `--ch5-button--regular-width/height`
+only ever appears once a button has actually been custom-resized in Construct) has NO
+such vars in its source CSS at all, so when reflow forces it to `size="custom"` (see
+below), Construct has nothing telling it to constrain the internal render to the new
+size — it falls back to a larger default while the outer box (and the adorner) correctly
+reflects what reflow computed. Fixed: `_fit_group` now `extra_vars.update(size_vars)`
+unconditionally after the per-var loop, synthesizing the vars fresh whenever missing,
+not just updating ones that happened to already be there. New regression test
+(`reflow_missing_size_vars_test.py`) replicates the exact shape (a plain `size="regular"`
+button with empty source `extra_vars`) and asserts the vars are present and match the
+final box exactly. Full 16-file suite passes. Re-ran against the real files: zero
+width/height/var mismatches across the entire TSW-570 block (programmatically checked
+every element, not just the one the user spotted) — "Source 2" now has
+`--ch5-button--regular-width: 84px`/`-height: 21px`, matching its box exactly. **Not yet
+addressed** (user's next-flagged issue, needs the same brainstorm-first rigor as other
+reflow algorithm changes since it touches the wrap model): the wrap tier always drops
+peeled/overflow elements onto a brand-new row below rather than considering unused
+width beside an already-tall sibling row (e.g. the D-pad's row) — user's hypothesis,
+plausible but unconfirmed, is that fixing this would reduce how hard the Y-axis needs to
+compress everything else, which is what drove some buttons down to an illegibly-small
+21px in the first place (a texture/overlap symptom, not a true box overlap — confirmed
+separately: wrapped sub-rows have a clean 4px gap, not a collision). **Next**: user to
+re-check TSW-570 in Construct for the adorner/render-size fix, then decide whether to
+proceed with the wrap-placement redesign.
+
 **Reflow: SDK-schema-driven size scaling + aspect-lock reconciliation + size="custom"
 forcing — DONE, verified against the real `GenTestProject2` at TSW-570 (640x360), the
 smallest/most stressful resolution added yet.** After the centering fix (below), the
@@ -403,6 +434,18 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-10: **Reflow: missing size-var bug (adorner right, button rendered bigger) --
+  DONE.** User re-checked TSW-570 in Construct right after the D-pad/aspect-lock fix and
+  caught it immediately: a resized button's adorner showed the new smaller size, but the
+  actual render stayed big. The size-var fix only recomputed vars ALREADY present in an
+  element's extra_vars -- a plain size="regular" button (the common case for anything
+  not yet hand-resized) has none at all, so forcing it to size="custom" left Construct
+  with nothing to constrain the render, even though the box CSS was correct. Fixed with
+  an unconditional `extra_vars.update(size_vars)` so the vars get synthesized fresh when
+  missing. New test `reflow_missing_size_vars_test.py`; full 16-file suite passes;
+  re-verified zero width/height/var mismatches across the entire real TSW-570 block. See
+  Current phase above -- also flags the user's next question (wrap-placement/Up-Down
+  beside the D-pad) as not yet addressed, pending a decision on scope.
 - 2026-09-10: **Reflow: SDK-schema-driven size scaling + aspect-lock + size="custom"
   forcing -- DONE, verified against real GenTestProject2 at TSW-570 (640x360).** User
   added TSW-760 then TSW-570 and hit two real bugs at the smallest resolution yet: a
