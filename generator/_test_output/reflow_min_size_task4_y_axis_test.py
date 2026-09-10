@@ -114,10 +114,11 @@ elements = {
 tags = {"pad": "ch5-dpad", "b1": "ch5-button", "b2": "ch5-button"}
 warns: list[str] = []
 relaxed = stack_rows(rows, elements, target_height=200, id_to_tag=tags, sdk=ui_sdk, warnings=warns)
-assert relaxed == stack_rows(rows, elements, target_height=200), (
-    "a relaxed row must fall back to exactly today's layout")
-assert len(warns) == 1 and "too crowded to honor" in warns[0], warns
-assert "1 of 1 row(s)" in warns[0], warns
+no_floor = stack_rows(rows, elements, target_height=200)
+assert min(v["height"] for v in relaxed.values()) >= min(v["height"] for v in no_floor.values()), (
+    "a relaxed stack must never crush anything below what no floor at all would give",
+    relaxed, no_floor)
+assert len(warns) == 1 and "can't honor every component's minimum size" in warns[0], warns
 print(f"infeasible stack relaxes instead of failing: OK ({warns[0]})")
 
 # --- Partial relaxation: only the offending row loses its floor --------------------
@@ -133,10 +134,35 @@ elements = {
 tags = {"pad": "ch5-dpad", "b1": "ch5-button", "c1": "ch5-button", "c2": "ch5-button"}
 warns = []
 r = stack_rows(rows, elements, target_height=260, id_to_tag=tags, sdk=ui_sdk, warnings=warns)
-assert len(warns) == 1 and "1 of 3 row(s)" in warns[0], warns
+assert len(warns) == 1 and "can't honor every component's minimum size" in warns[0], warns
 assert r["c1"]["height"] >= FALLBACK_MIN_SIZE_PX and r["c2"]["height"] >= FALLBACK_MIN_SIZE_PX, r
 assert max(v["top"] + v["height"] for v in r.values()) <= 260, r
 print(f"only the offending row is relaxed, the others keep their floors: OK "
       f"(c1={r['c1']['height']}px)")
+
+# --- The invariant the first relaxation design violated ---------------------------
+# Measured against the real ReflowTest.cuig at 400x240, relaxation-by-dropping produced
+# 1px buttons where NO floor at all gave 16-30px: the rows still frozen at their full
+# floor ate everything and starved the relaxed ones. A floor must never be able to make
+# a layout worse than having no floor, at any target height -- sweep and prove it.
+rows = [["pad", "up"], ["r1"], ["r2"], ["r3"], ["r4"]]
+elements = {
+    "pad": {"left": 200, "top": 0, "width": 228, "height": 228},
+    "up":  {"left": 20, "top": 40, "width": 106, "height": 79},
+    "r1":  {"left": 0, "top": 260, "width": 500, "height": 42},
+    "r2":  {"left": 0, "top": 320, "width": 500, "height": 42},
+    "r3":  {"left": 0, "top": 380, "width": 500, "height": 42},
+    "r4":  {"left": 0, "top": 440, "width": 500, "height": 42},
+}
+tags = {"pad": "ch5-dpad", "up": "ch5-button", "r1": "ch5-button",
+        "r2": "ch5-button", "r3": "ch5-button", "r4": "ch5-button"}
+for target_height in range(120, 420, 10):
+    with_floor = stack_rows(rows, elements, target_height, id_to_tag=tags, sdk=ui_sdk, warnings=[])
+    without = stack_rows(rows, elements, target_height)
+    assert min(v["height"] for v in with_floor.values()) >= min(v["height"] for v in without.values()), (
+        f"at target_height={target_height} the floor made the smallest component SMALLER: "
+        f"{min(v['height'] for v in with_floor.values())} vs {min(v['height'] for v in without.values())}")
+    assert max(v["top"] + v["height"] for v in with_floor.values()) <= target_height, target_height
+print("swept 30 target heights: a floor never crushes anything below the no-floor result: OK")
 
 print("\nTask 4: all assertions passed.")

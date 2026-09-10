@@ -382,6 +382,61 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
     return result
 
 
+def _cap_floors(
+    floors: dict[str, int], natural: dict[str, int], available: int, capped: list[str],
+    min_cap: float = 0.0,
+) -> dict[str, int] | None:
+    """Water-fill `floors` down to fit `available`: find the largest single cap `lambda`
+    such that no row in `capped` may reserve more than `lambda` x its OWN natural size,
+    and every floor above that cap is trimmed to it (floors already below the cap are
+    left completely alone). Rows outside `capped` keep their floor in full. `None` if
+    even a 1px floor per capped row doesn't fit.
+
+    Why a cap and not a proportional scale, and not dropping the worst offenders (both
+    were tried and measured against the user's real ReflowTest.cuig on 2026-09-10):
+
+      - DROPPING the most demanding rows' floors and honoring the rest in full let the
+        still-frozen rows eat everything -- 1px components at 400x240, where no floor at
+        all gave 16-30px.
+      - SCALING every floor by one factor let a single inflated demand dominate: a 40px
+        button sharing a row with a 300px D-pad forces that whole row to reserve 263px
+        (the row scales as one unit), and scaling that 263 down proportionally still
+        leaves it huge, starving the ordinary button rows that could easily have been
+        satisfied -- they fell from 50px to 26px.
+
+    Capping fixes both, because the two failures are the same failure: the expensive
+    demands are precisely the ones asking for a large FRACTION of their own row, so
+    bounding that fraction trims exactly them and leaves modest, affordable floors
+    untouched. It also degrades continuously -- as `available` shrinks, `lambda` slides
+    down toward Tier 3's own uniform scale, which is the no-floor behavior.
+
+    `min_cap` is the floor under the cap itself, and it's what makes "a minimum size can
+    never make a component SMALLER than it would have been" true: pass Tier 3's own
+    uniform scale (available / total natural size) and this returns None rather than
+    squeezing the capped rows below the size they'd have had with no floors at all. The
+    caller uses that to stop funding one group's floors out of another's: capping only
+    the schema-less floors is rejected when it would push those rows below their
+    no-floor size just to keep a schema-backed floor whole, and capping EVERY floor is
+    tried instead -- which always succeeds, since at `lambda = min_cap` the capped total
+    is at most `min_cap x total natural size = available`."""
+    fixed = sum(v for k, v in floors.items() if k not in capped)
+    room = available - fixed
+    if room < len(capped):
+        return None
+    lo, hi = 0.0, 1.0
+    for _ in range(50):  # bisection; 50 halvings is far below 1px of resolution
+        mid = (lo + hi) / 2
+        if sum(min(floors[k], max(1, int(mid * natural[k]))) for k in capped) <= room:
+            lo = mid
+        else:
+            hi = mid
+    if lo < min_cap:
+        return None
+    result = {k: (min(v, max(1, int(lo * natural[k]))) if k in capped else v)
+              for k, v in floors.items()}
+    return result if sum(result.values()) <= available else None
+
+
 def stack_rows(
     rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4,
     source_height: int | None = None, id_to_tag: dict[str, str] | None = None,
@@ -480,41 +535,54 @@ def stack_rows(
                 own_natural = max(1, natural_height[i])
                 derived[row_keys[i]] = max(1, min(math.ceil(own_natural * worst_ratio), own_natural))
                 schema_backed[row_keys[i]] = _has_schema_min_size(sdk, worst_tag)
-        # Feasibility relaxation -- ADDED 2026-09-10 while implementing this, after an
-        # existing regression test (reflow_aspect_lock_dpad_test.py) caught the spec's
-        # error handling doing real damage here. Unlike an X-axis floor (one element per
-        # column, a floor the component itself technically enforces), a Y floor is
-        # DERIVED: keeping a 40px button at its own 30px minimum forces its whole 300px
-        # row to stay 225px tall. So a crowded stack can demand more than target_height
-        # even when every individual component would be perfectly satisfiable, and the
-        # spec's plain AxisFitError there would skip the ENTIRE device block -- turning a
-        # legibility problem into missing components, the exact failure reflow_file exists
-        # to prevent. Relax instead of failing: drop the most aggressive demands first
-        # (largest floor as a fraction of the row's own natural height) until what remains
-        # fits, and report how many rows lost their floor. A relaxed row simply scales the
-        # way it does today.
+        # Feasibility relaxation -- ADDED 2026-09-10 while implementing this (an existing
+        # regression test, reflow_aspect_lock_dpad_test.py, caught the spec's plain
+        # AxisFitError doing real damage here), then REWRITTEN the same day after the user
+        # asked for a 35px floor and a sweep over their own page exposed the first
+        # version's own failure mode (see below).
+        #
+        # Why relaxing at all: unlike an X-axis floor (one element per column, a floor the
+        # component itself technically enforces), a Y floor is DERIVED -- keeping a 40px
+        # button at its own 30px minimum forces its whole 300px row to stay 225px tall. So
+        # a crowded stack can demand more than target_height even when every individual
+        # component is satisfiable, and raising AxisFitError there makes _fit_group skip
+        # the ENTIRE device block: a legibility problem turned into missing components,
+        # the exact failure reflow_file exists to prevent.
+        #
+        # Why PROPORTIONAL relaxation and not "drop some rows' floors": the first version
+        # relaxed by setting the most demanding rows' floors to 1 and honoring the rest in
+        # full. Measured against the real ReflowTest.cuig at 400x240, that produced 1px
+        # buttons and a 1px D-pad -- dramatically WORSE than the same page with no floors
+        # at all (16-30px buttons, an 87px D-pad) -- because the rows still frozen at their
+        # full floor consumed everything and starved the rows that had been relaxed. A
+        # floor must never be able to make a layout worse than having no floor. Scaling
+        # every floor down by one factor keeps each row's protection in proportion, so an
+        # unsatisfiable stack degrades smoothly toward plain uniform scaling instead of
+        # falling off a cliff. Schema-backed floors (a real Construct limit, e.g. ch5-dpad
+        # under 100px) are held at full value while there's room for them, and only scaled
+        # once the soft, FALLBACK_MIN_SIZE_PX-derived ones alone can't absorb the shortfall.
         available = target_height - (len(rows) - 1) * min_gap
-        relaxed = 0
-        # Give up SOFT floors (FALLBACK_MIN_SIZE_PX -- this project's legibility choice
-        # for types the schema says nothing about) before schema-backed ones (a real
-        # technical limit: a ch5-dpad below 100px isn't just ugly, Construct doesn't
-        # support it). Within each group, drop the largest floor first, so the fewest
-        # rows have to be sacrificed to make the stack fit.
-        for key in sorted(derived, key=lambda k: (schema_backed.get(k, False), -derived[k])):
-            if sum(derived.values()) <= available:
-                break
-            derived[key] = 1
-            relaxed += 1
-        if sum(derived.values()) > available:
-            # Even a 1px floor per row doesn't fit -- hand the whole axis back to the
-            # legacy tier (which has its own available_for_sizes check) rather than
-            # raising from the dict branch.
-            derived, relaxed = {}, len(rows)
-        if relaxed and warnings is not None:
+        needed = sum(derived.values())
+        relaxation = None
+        if needed > available:
+            # Trim the schema-less (FALLBACK_MIN_SIZE_PX) floors first and only cap the
+            # schema-backed ones -- a real Construct limit, e.g. a ch5-dpad under 100px --
+            # if trimming everything else still isn't enough.
+            soft = [k for k in derived if not schema_backed.get(k)]
+            uniform = available / max(1, sum(natural_height))  # Tier 3's own no-floor scale
+            capped = (_cap_floors(derived, natural_by_key, available, soft, uniform)
+                      if soft else None)
+            if capped is None:
+                capped = _cap_floors(derived, natural_by_key, available, list(derived), uniform)
+                relaxation = "capped every floor" if capped is not None else "dropped every floor"
+            else:
+                relaxation = "capped the schema-less floors"
+            derived = capped if capped is not None else {}
+        if relaxation and warnings is not None:
             warnings.append(
-                f"target_height {target_height} is too crowded to honor every component's "
-                f"minimum size -- {relaxed} of {len(rows)} row(s) fitted without a floor "
-                f"(their components may render below their minimum usable size)"
+                f"target_height {target_height} can't honor every component's minimum size "
+                f"({needed}px of floors, {available}px available) -- {relaxation}, so every "
+                f"component shrinks proportionally rather than some being crushed"
             )
         row_min_sizes = {k: v for k, v in derived.items() if v > 1} or None
 

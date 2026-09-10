@@ -9,6 +9,53 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Relaxation redesigned as water-fill capping, after the user's own page proved the
+first two designs wrong — DONE.** User clarified the intent: 35px is "the minimum allowed
+size WHEN you have to shrink", not a target size (correcting a suggestion to raise the
+constant to 40/45 to get bigger buttons — that's not what the knob is for; the floor is
+clamped to each item's authored size and can only stop shrinking, never grow anything).
+Sweeping their real `ReflowTest.cuig` down through smaller panels to prove the floor
+actually engages then exposed a genuine defect in the relaxation path, and fixing it
+properly took three attempts, each ruled out by measurement rather than argument:
+
+1. **Drop the most demanding rows' floors, honor the rest in full** (the original). At
+   400x240 this produced **1px** buttons and a 1px D-pad where no floor at all gave
+   16-30px/87px — the rows still frozen at their full floor ate everything and starved
+   the relaxed ones.
+2. **Scale every floor by one factor.** Fixed the crush, but let a single inflated demand
+   dominate: a 40px button sharing a row with a 300px D-pad forces that row to reserve
+   263px (a row scales as ONE unit), and scaling 263 down proportionally still leaves it
+   huge — ordinary button rows that were easily satisfiable fell from 50px to 26px.
+3. **Water-fill capping** (`reflow.py::_cap_floors`, shipped). Both failures are the same
+   failure: the expensive demands are exactly the ones asking for a large FRACTION of
+   their own row. So bisect for the largest single cap `lambda` such that no row may
+   reserve more than `lambda x its own natural height`, trim every floor above it, and
+   leave affordable floors completely untouched.
+
+Plus the rule that makes the whole thing safe: **a floor may never make a component
+smaller than it would have been with no floor at all.** `_cap_floors` takes `min_cap` =
+Tier 3's own uniform scale and refuses any capping below it, so the caller can't fund one
+group's floors out of another's. Schema-backed floors (a real Construct limit) are still
+held whole while that's affordable; when it isn't, everything degrades together instead of
+the D-pad holding 100px while buttons are crushed to pay for it. Capping every floor
+always succeeds, since at `lambda = min_cap` the capped total is at most `available`.
+
+**Measured on the real `ReflowTest.cuig` (floor = 35):**
+
+| target | with floors | without floors |
+|---|---|---|
+| 640x360 | btn 36-68, dpad 198 | btn 36-68, dpad 198 (floor not reached) |
+| 480x272 | **btn 35-40, dpad 116** | btn 27-51, dpad 147 (floor engages, D-pad donates) |
+| 400x240 | btn 16-30, dpad 88 | btn 16-30, dpad 87 (degraded to no-floor, gracefully) |
+| 320x240 | btn 10-20, dpad 58 | btn 10-19, dpad 56 (never worse) |
+
+New tests pin the invariant that the first design violated: a 30-point sweep over target
+heights on a realistic shape asserting the smallest component is never smaller than the
+no-floor result, plus a proportional bound on the deliberately pathological E2E fixture.
+Full 31-file suite green. **Next**: user re-checks TSW-570 in Construct (the real files
+were regenerated and the result is idempotent under the final code: buttons 36px, Up/Down
+68px, D-pad 198px, 21 elements, no overlaps, inside 640x360).
+
 **Floor raised to 35px + the real page actually regenerated + a real source-selection
 bug fixed to make that possible — DONE.** User re-checked `ReflowTest.cuig` in Construct,
 still saw 28px buttons, and asked for a 35px minimum "which should force the dpad to be
