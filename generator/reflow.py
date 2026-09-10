@@ -21,7 +21,23 @@ class AxisFitError(Exception):
     warning rather than crashing (see the spec's Error handling section)."""
 
 
-def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 4) -> dict[str, dict]:
+def _center_result(result: dict[str, dict], target_dim: int) -> dict[str, dict]:
+    """One uniform shift so `result`'s bounding box sits centered in `target_dim`
+    instead of wherever its tier left it -- safe for the same reason fit_axis's own
+    Tier 1 translate is (a uniform shift of an already-non-overlapping group can't
+    introduce a new overlap). See docs/superpowers/specs/2026-09-10-reflow-centering-
+    design.md."""
+    min_pos = min(v["pos"] for v in result.values())
+    max_pos = max(v["pos"] + v["size"] for v in result.values())
+    leftover = target_dim - (max_pos - min_pos)
+    shift = leftover // 2 - min_pos
+    return {k: {**v, "pos": v["pos"] + shift} for k, v in result.items()}
+
+
+def fit_axis(
+    items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 4,
+    source_dim: int | None = None, center: bool | None = None,
+) -> dict[str, dict]:
     """3-tier fit for one axis of one group of items being fit together. `items` is
     [(item_id, pos, size)] in any order -- either elements (X axis, within one row) or
     row pseudo-items (Y axis, the row list; see stack_rows). Returns {item_id: {"pos":
@@ -38,6 +54,17 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
 
     See the spec's "Why this still can't introduce new overlaps" for the proof this
     relies on: order is never changed, and no gap is ever allowed to go negative.
+
+    `source_dim`/`center` -- ADDED 2026-09-10 (see docs/superpowers/specs/
+    2026-09-10-reflow-centering-design.md): after whichever tier above computes the
+    fitted span, if centering applies, `_center_result` shifts the WHOLE result so it's
+    centered in `target_dim` instead of left/top-anchored. `center=True`/`False` skip
+    auto-detection entirely; `center=None` (default) auto-detects from `source_dim`:
+    margins of the group's ORIGINAL absolute positions (the `items` passed in, before
+    any tier runs) against `source_dim`, centered if
+    `abs(left_margin - right_margin) <= max(4, round(0.01 * source_dim))`. A caller
+    passing neither `source_dim` nor `center` gets `center=False` -- today's exact
+    behavior, unchanged.
     """
     if not items:
         return {}
@@ -46,6 +73,13 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
     ids = [i for i, _, _ in sorted_items]
     positions = [p for _, p, _ in sorted_items]
     sizes = [s for _, _, s in sorted_items]
+
+    if center is None and source_dim is not None:
+        left_margin = min(positions)
+        right_margin = source_dim - max(p + s for p, s in zip(positions, sizes))
+        center = abs(left_margin - right_margin) <= max(4, round(0.01 * source_dim))
+    else:
+        center = bool(center)
 
     min_pos = min(positions)
     max_pos = max(p + s for p, s in zip(positions, sizes))
@@ -59,10 +93,11 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
             offset = -min_pos
         else:
             offset = 0
-        return {
+        result = {
             item_id: {"pos": pos + offset, "size": size, "scale": 1.0}
             for item_id, pos, size in zip(ids, positions, sizes)
         }
+        return _center_result(result, target_dim) if center else result
 
     # Translate so the leading edge is 0 -- tiers 2/3 cascade positions from there.
     positions = [p - min_pos for p in positions]
@@ -103,10 +138,11 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
             new_positions = [0]
             for i, size in enumerate(sizes[:-1]):
                 new_positions.append(new_positions[-1] + size + int_gaps[i])
-            return {
+            result = {
                 item_id: {"pos": pos, "size": size, "scale": 1.0}
                 for item_id, pos, size in zip(ids, new_positions, sizes)
             }
+            return _center_result(result, target_dim) if center else result
 
     # --- Tier 3: uniform scale-down, last resort, repacked at exactly min_gap -----
     available_for_sizes = target_dim - (n - 1) * min_gap
@@ -126,10 +162,11 @@ def fit_axis(items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 
     new_positions = [0]
     for size in new_sizes[:-1]:
         new_positions.append(new_positions[-1] + size + min_gap)
-    return {
+    result = {
         item_id: {"pos": pos, "size": size, "scale": scale}
         for item_id, pos, size in zip(ids, new_positions, new_sizes)
     }
+    return _center_result(result, target_dim) if center else result
 
 
 def detect_rows(elements: dict[str, dict]) -> list[list[str]]:
