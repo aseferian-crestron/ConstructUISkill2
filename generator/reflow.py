@@ -546,6 +546,59 @@ def _is_aspect_locked(sdk: "sdk_module.UiSdk", tag_name: str) -> bool:
     return source_props in ({"width"}, {"height"})
 
 
+FALLBACK_MIN_SIZE_PX = 30
+"""Minimum size (px, both axes) for component types the SDK's own schema doesn't
+constrain -- ch5-button/ch5-slider and most others have no `minSizes` entry at all,
+because scaling one of those down is a legibility judgement, not a technical limit.
+Tune freely: it never overrides a real schema-published floor, only fills the gap
+where Crestron publishes nothing. Found necessary 2026-09-10, live-testing TSW-570
+(640x360): real buttons were being scaled to 28px tall -- too small at runtime."""
+
+
+def _parse_min_size(value: object) -> int | None:
+    """One `minSizes` value -> px int, or None if it isn't a usable number. The real
+    schema is NOT uniformly "Npx" strings (verified against SDK 2.18.0): ch5-dpad has
+    "100px", ch5-qrcode has the unit-less "160", and ch5-video-switcher has a raw JSON
+    int 300 -- a naive `.rstrip("px")` raises AttributeError on the last one."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return max(1, int(value))
+    text = str(value).strip().lower()
+    if text.endswith("px"):
+        text = text[:-2].strip()
+    try:
+        return max(1, int(float(text)))
+    except ValueError:
+        return None
+
+
+def _component_min_size(sdk: "sdk_module.UiSdk", tag_name: str, axis: str = "width") -> int:
+    """`tag_name`'s practical minimum size on `axis` ("width"/"height"), in px --
+    Tier 3's per-item floor (see fit_axis's `min_sizes`). Two sources, in order: the
+    SDK's own `minSizes` schema entry (a real, Construct-enforced technical floor --
+    ch5-dpad 100px, ch5-keypad 210px) and FALLBACK_MIN_SIZE_PX for every type the
+    schema says nothing about (ch5-button/ch5-slider have no entry -- Crestron
+    publishes no floor there because shrinking one is a design choice, not a
+    technical limit). The height axis prefers `minHeight` when the schema publishes
+    one (ch5-tab-button: 110 wide / 68 tall) and otherwise reuses `minWidth`, which is
+    correct for the square, single-axis-sourced components that dominate this set (see
+    _is_aspect_locked). Never raises: an unknown tag is indistinguishable from a tag
+    with no floor."""
+    try:
+        ctx = sdk.context_for(tag_name)
+    except (KeyError, StopIteration):
+        return FALLBACK_MIN_SIZE_PX
+    min_sizes = ctx.get("minSizes") if isinstance(ctx, dict) else None
+    if isinstance(min_sizes, dict):
+        keys = ("minHeight", "minWidth") if axis == "height" else ("minWidth",)
+        for key in keys:
+            parsed = _parse_min_size(min_sizes.get(key))
+            if parsed is not None:
+                return parsed
+    return FALLBACK_MIN_SIZE_PX
+
+
 def _fit_group(
     elements: dict[str, dict], target_width: int, target_height: int,
     source_width: int, source_height: int,
