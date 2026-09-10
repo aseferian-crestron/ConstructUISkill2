@@ -52,9 +52,18 @@ always succeeds, since at `lambda = min_cap` the capped total is at most `availa
 New tests pin the invariant that the first design violated: a 30-point sweep over target
 heights on a realistic shape asserting the smallest component is never smaller than the
 no-floor result, plus a proportional bound on the deliberately pathological E2E fixture.
-Full 31-file suite green. **Next**: user re-checks TSW-570 in Construct (the real files
-were regenerated and the result is idempotent under the final code: buttons 36px, Up/Down
-68px, D-pad 198px, 21 elements, no overlaps, inside 640x360).
+Full 31-file suite green.
+
+**CONFIRMED IN CONSTRUCT 2026-09-10**: user opened the regenerated `GenTestProject2` and
+reported the TSW-570 (640x360) layout looks correct -- closing out the chain of pending
+live checks from the last three entries (aspect-lock/size-var fix, column-aware + wrap
+compaction, and now minimum-size floors). The on-disk result is idempotent under the
+final code: buttons 36px, Up/Down 68px, D-pad 198px, 21 elements, zero overlaps, inside
+640x360. **Next / open threads** (nothing in flight): (1) whether
+`FALLBACK_MIN_SIZE_PX = 35` still holds up across more pages and resolutions -- on this
+page the floor isn't even reached at 640x360, it engages from ~480x272 down; (2) the
+generator phases after reflow (contracts, themes, fonts, languages, hard buttons, skill
+layer) per the original plan.
 
 **Floor raised to 35px + the real page actually regenerated + a real source-selection
 bug fixed to make that possible — DONE.** User re-checked `ReflowTest.cuig` in Construct,
