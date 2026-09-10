@@ -704,22 +704,50 @@ def _fit_group(
     Up/Down pair) always get the SAME final `left`, each keeping its own width scaled
     by the column's own scale factor. `stack_rows`' Y-axis is unaffected: `row_lists`
     flattens each wrapped row's columns back into a plain element-id list, the same
-    shape `stack_rows` already expected."""
+    shape `stack_rows` already expected.
+
+    ADDED 2026-09-10 (minimum-size floors, see docs/superpowers/specs/
+    2026-09-10-reflow-min-size-design.md): when `sdk`/`id_to_tag` are given, each column
+    contributes a width floor to its row's fit_axis call -- the MAX over its own members'
+    `_component_min_size`, since the column's single fitted width has to satisfy every
+    member. NOTE what this can and can't do on X (established while implementing it; the
+    spec had assumed the two axes were symmetric): a row only ever reaches Tier 3 with ONE
+    column, because wrap_rows' peel loop exits only when the remainder passes
+    `_columns_fit` (Tier 2 compaction alone suffices, so Tier 3 is never reached) or when a
+    single unpeelable column is left. So fit_axis's freeze-and-redistribute never actually
+    engages on this axis -- the floor's only effect here is to convert "silently emit a
+    component narrower than its own technical minimum" into an AxisFitError, i.e. a warning
+    and a skipped block, which is the spec's chosen failure mode. In practice that needs a
+    target narrower than the component's own floor (210px for a ch5-keypad, 30px for a
+    plain button), so no real device resolution reaches it; the Y axis (stack_rows, which
+    has no wrap tier) is where minimum sizes actually change layouts. Known limitation,
+    deliberate: members are scaled by their column's own ratio, so a member much narrower
+    than its column-mate could still land under its own floor; real columns are stacked
+    pairs of equal width, so no shape this project has evidence for hits that."""
     rows = detect_rows(elements)
     wrapped_rows = wrap_rows(rows, elements, target_width)
 
     x_fit: dict[str, dict] = {}
     for columns, is_fragment in wrapped_rows:
         row_items = []
+        col_min_sizes: dict[str, int] = {}
         for idx, column in enumerate(columns):
             col_key = f"__col{idx}"
             col_left, col_width = _column_bounds(column, elements)
             row_items.append((col_key, col_left, col_width))
+            if sdk is not None and id_to_tag:
+                tags = [id_to_tag.get(eid) for eid in column]
+                if all(tags):
+                    col_min_sizes[col_key] = max(_component_min_size(sdk, t, "width") for t in tags)
+        # None, never {}, when there's no SDK: that selects fit_axis's untouched legacy
+        # Tier 3 rather than the iterative path with every floor defaulted to 1 (the two
+        # are NOT interchangeable -- see fit_axis's docstring).
+        min_sizes = col_min_sizes if sdk is not None else None
         try:
             if is_fragment:
-                col_fit = fit_axis(row_items, target_width, center=True)
+                col_fit = fit_axis(row_items, target_width, center=True, min_sizes=min_sizes)
             else:
-                col_fit = fit_axis(row_items, target_width, source_dim=source_width)
+                col_fit = fit_axis(row_items, target_width, source_dim=source_width, min_sizes=min_sizes)
         except AxisFitError as e:
             warnings.append(f"{path.name}: X axis for {query} -- {e}")
             return None
