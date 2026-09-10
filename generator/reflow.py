@@ -421,6 +421,7 @@ class ReflowResult:
 
 def _fit_group(
     elements: dict[str, dict], target_width: int, target_height: int,
+    source_width: int, source_height: int,
     path: Path, query: str, warnings: list[str],
 ) -> dict[str, dict] | None:
     """Fit one group of elements (all of source in full_refit, or just the new ones in
@@ -428,21 +429,32 @@ def _fit_group(
     let overflowing rows wrap (wrap_rows), fit X positions per row (fit_axis), then
     stack the resulting rows on Y (stack_rows). None if any fit_axis call raises
     AxisFitError -- caller skips this target block entirely for this file, other files
-    in the project are unaffected."""
+    in the project are unaffected.
+
+    `source_width`/`source_height` -- ADDED 2026-09-10 (see docs/superpowers/specs/
+    2026-09-10-reflow-centering-design.md): the SOURCE canvas dimensions the elements'
+    absolute positions were authored against, needed to detect whether a row/row-stack
+    was centered there. An untouched (non-wrap-split) row auto-detects against its own
+    original margins; a wrap-split fragment row is always centered (see wrap_rows's
+    docstring)."""
     rows = detect_rows(elements)
     wrapped_rows = wrap_rows(rows, elements, target_width)
 
     x_fit: dict[str, dict] = {}
-    for row in wrapped_rows:
+    for row, is_fragment in wrapped_rows:
         row_items = [(eid, elements[eid]["left"], elements[eid]["width"]) for eid in row]
         try:
-            x_fit.update(fit_axis(row_items, target_width))
+            if is_fragment:
+                x_fit.update(fit_axis(row_items, target_width, center=True))
+            else:
+                x_fit.update(fit_axis(row_items, target_width, source_dim=source_width))
         except AxisFitError as e:
             warnings.append(f"{path.name}: X axis for {query} -- {e}")
             return None
 
+    row_lists = [row for row, _ in wrapped_rows]
     try:
-        y_fit = stack_rows(wrapped_rows, elements, target_height)
+        y_fit = stack_rows(row_lists, elements, target_height, source_height=source_height)
     except AxisFitError as e:
         warnings.append(f"{path.name}: Y axis for {query} -- {e}")
         return None
@@ -614,7 +626,11 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         warnings.append(f"{path.name}: no new elements to fit for {target_query} -- skipped")
         return ReflowResult(warnings=warnings)
 
-    fitted = _fit_group(to_fit, target_resolution["width"], target_resolution["height"], path, target_query, warnings)
+    fitted = _fit_group(
+        to_fit, target_resolution["width"], target_resolution["height"],
+        source_resolution["width"], source_resolution["height"],
+        path, target_query, warnings,
+    )
     if fitted is None:
         return ReflowResult(warnings=warnings)
 
