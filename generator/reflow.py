@@ -695,13 +695,14 @@ def _is_aspect_locked(sdk: "sdk_module.UiSdk", tag_name: str) -> bool:
     return source_props in ({"width"}, {"height"})
 
 
-FALLBACK_MIN_SIZE_PX = 30
+FALLBACK_MIN_SIZE_PX = 35
 """Minimum size (px, both axes) for component types the SDK's own schema doesn't
 constrain -- ch5-button/ch5-slider and most others have no `minSizes` entry at all,
 because scaling one of those down is a legibility judgement, not a technical limit.
 Tune freely: it never overrides a real schema-published floor, only fills the gap
 where Crestron publishes nothing. Found necessary 2026-09-10, live-testing TSW-570
-(640x360): real buttons were being scaled to 28px tall -- too small at runtime."""
+(640x360): real buttons were being scaled to 28px tall -- too small at runtime.
+Raised 30 -> 35 the same day, by the user, after seeing the page in Construct."""
 
 
 def _parse_min_size(value: object) -> int | None:
@@ -1098,6 +1099,20 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         source_elements = catchall_elements
     else:
         source_elements = _fill_missing_size(source_elements, catchall_elements, path, source_query, warnings)
+        # CORRECTED 2026-09-10: a device block is an OVERRIDE of the catch-all, not a
+        # replacement for it -- Construct only restates a rule in a device block when it
+        # differs there, so every element the block doesn't mention is still positioned at
+        # this resolution, by the catch-all's own rule (plain CSS cascade; this is the
+        # element-level counterpart of what _fill_missing_size already does at field
+        # level). Treating the block as the complete source silently dropped every
+        # unmentioned element: the real ReflowTest.cuig's 1280x800 block holds exactly ONE
+        # rule (the D-pad's left/top, identical to the catch-all's), so reflowing from it
+        # produced a one-element target block and lost the other twenty -- the exact
+        # "components absent at the new resolution" failure this whole feature exists to
+        # prevent. Catch-all order first, so output stays deterministic.
+        inherited = {eid: e for eid, e in catchall_elements.items() if eid not in source_elements}
+        if inherited:
+            source_elements = {**inherited, **source_elements}
     if not source_elements:
         warnings.append(f"{path.name}: no source block (device or catch-all) had any position rules -- skipped")
         return ReflowResult(warnings=warnings)

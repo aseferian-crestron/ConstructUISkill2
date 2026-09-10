@@ -72,11 +72,11 @@ elements = {
     "small": {"left": 400, "top": 100, "width": 100, "height": 40},
 }
 floored = stack_rows(
-    rows, elements, target_height=240,
+    rows, elements, target_height=280,
     id_to_tag={"pad": "ch5-dpad", "small": "ch5-button"}, sdk=ui_sdk,
 )
 assert floored["small"]["height"] >= FALLBACK_MIN_SIZE_PX, floored["small"]
-assert max(v["top"] + v["height"] for v in floored.values()) <= 240
+assert max(v["top"] + v["height"] for v in floored.values()) <= 280
 print(f"most-constrained member sets the row floor: OK (small "
       f"{floored['small']['height']}px, pad {floored['pad']['height']}px)")
 

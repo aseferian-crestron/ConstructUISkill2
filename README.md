@@ -9,6 +9,44 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Floor raised to 35px + the real page actually regenerated + a real source-selection
+bug fixed to make that possible — DONE.** User re-checked `ReflowTest.cuig` in Construct,
+still saw 28px buttons, and asked for a 35px minimum "which should force the dpad to be
+made smaller". Two things were true: the 28px really was stale output (the file had never
+been rewritten — the previous session verified on a COPY), and refreshing it for real was
+blocked by a bug worth fixing on its own.
+
+**`reflow_file` treated a non-empty source device block as the complete source layout.**
+A device block is an OVERRIDE of the catch-all, not a replacement — Construct only restates
+a rule where it differs. `ReflowTest.cuig`'s 1280x800 block holds exactly ONE rule (the
+D-pad's `left`/`top`, byte-identical to the catch-all's), so reflowing from it produced a
+one-element target block and silently dropped the other twenty: the exact "components
+absent at the new resolution" failure this feature exists to prevent. Fixed as the
+element-level counterpart of what `_fill_missing_size` already does at field level — every
+catch-all element the device block doesn't mention is inherited into the source, catch-all
+order first for determinism, with the block's own restated rule still winning for the
+element it names. New regression test `reflow_source_block_union_test.py` covers both
+halves (all three elements carried over; the restated one keeps its override).
+
+**`FALLBACK_MIN_SIZE_PX` 30 -> 35** (one test fixture's target height retuned, since its
+derived row floor no longer fit). Full 31-file suite green.
+
+**Real files regenerated** (`mode="full_refit"`, SDK wired in; backup taken first, in the
+session scratchpad as `GenTestProject2.bak-20260910-180206`): `ReflowTest.cuig` 21 -> 21
+elements, source/menu buttons **28 -> 36px**, Up/Down **54 -> 68px**, D-pad **228 ->
+198px**, zero overlaps, zero elements under their floor, max right 639 / bottom 358 within
+640x360. `ButtonVariants.cuig` and `MyWidget.cuiw` unchanged (already fit).
+
+**Worth knowing before tuning further: at 35 the floor never actually binds on this page.**
+The uniform Tier 3 factor already lands the buttons at 36, so the D-pad's 228 -> 198 comes
+from the column/compaction wrap fixes, not from the minimum. Swept the constant against the
+real file to find where it does bite: 40 -> buttons 40px / D-pad 184; 45 -> buttons 42px /
+D-pad 176; 50, 55, 60 -> unchanged at 42/176. It saturates because 42px is the buttons'
+own authored height and the floor is deliberately shrink-only (clamped to each item's own
+size, so it never grows a component past what the user drew) — once every button row sits
+at its natural size, the D-pad simply takes the remainder (344 - 4*42 = 176). **Next**:
+user re-checks TSW-570 in Construct and says whether to go to 40/45 for bigger buttons.
+
 **Reflow: minimum-size floors for Tier 3 — DONE, implemented + verified against the
 real files; one real finding the user should know about.** User reviewed the min-size
 design spec (`docs/superpowers/specs/2026-09-10-reflow-min-size-design.md`, written at
