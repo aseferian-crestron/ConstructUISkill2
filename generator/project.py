@@ -115,20 +115,21 @@ def build_project_attributes(
     exact order, including its exact conditional-omission rules (empty/default -> omitted).
     Returns (attrs, device_resolution_source) -- attrs as an ordered list (not a dict) so
     key ORDER -- confirmed load-bearing, since it's what we diff against the real file --
-    is explicit and preserved; device_resolution_source is the {DeviceResolutionSource}
-    JSON array (each entry gets ProjectId filled in to match this project's Id).
+    is explicit and preserved.
 
     `themes`: a project can have MULTIPLE themes associated (ProjectThemeIds, comma-list)
     with one active/default (ThemeId) -- confirmed in docs/architecture/00-overview.md.
     Defaults to a single-element list of the component key's default theme.
 
     `resolutions`: a project can support MULTIPLE device resolutions simultaneously --
-    pass a list of already-shaped DeviceResolutionSource-style dicts (see
-    `docs/architecture/00-overview.md`'s DeviceResolutionDto shape, confirmed against a
-    real sample). This module does NOT yet know the device catalog or orientation-enum
-    semantics (deferred to Phase 5 -- resolutions/reflow) -- it only wires whatever
-    resolution dicts the caller supplies into DeviceResolutionIds + DeviceResolutionSource
-    correctly, including the N>1 case.
+    pass a list of dicts shaped like `devices.py::to_project_resolution`'s return value
+    (catalog-sourced only -- this module has no "genuinely custom resolution" builder yet).
+    Every id goes into `DeviceResolutionIds`. `device_resolution_source` (the returned
+    {DeviceResolutionSource} JSON array) is always empty: confirmed directly from
+    `PersistenceHelper.cs`'s WriteProject -- that section ONLY ever persists
+    `CustomDeviceResolutions`, never catalog-sourced picks (see
+    devices.py::to_project_resolution's docstring for the full citation and the real
+    corruption this caused when an earlier version got it backwards).
     """
     themes = themes or [PROJECT_DEFAULT_THEME.get(component_key, PROJECT_DEFAULT_THEME[COMPONENT_KEY_UI])]
     theme_id = default_theme or themes[0]
@@ -165,7 +166,7 @@ def build_project_attributes(
         attrs.append(("ProjectLanguageFiles", project_language_files))
     attrs.append(("ContractIsStale", "true" if contract_is_stale else "false"))
 
-    device_resolution_source = [{"ProjectId": project_id, **r} for r in resolutions]
+    device_resolution_source: list[dict] = []  # see docstring: catalog picks never go here
     return attrs, device_resolution_source
 
 
@@ -236,12 +237,20 @@ def _numeric_resolution(r: dict) -> dict:
 
 
 def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> list[str]:
-    """Add one or more already-shaped resolution dicts (see generator/devices.py::
+    """Add one or more catalog-sourced resolution dicts (see generator/devices.py::
     to_project_resolution) to an existing project's .cuip, updating `DeviceResolutionIds`
-    and `{DeviceResolutionSource}` and marking `ContractIsStale`. Mirrors
-    build_project_attributes' own DeviceResolutionIds/DeviceResolutionSource wiring, so a
-    project ends up in the identical shape whether its resolutions were set at creation
-    time or added afterward.
+    and marking `ContractIsStale`.
+
+    `{DeviceResolutionSource}` is read and written back UNCHANGED -- confirmed from source
+    (see devices.py::to_project_resolution's docstring) that it only ever holds genuinely
+    CUSTOM resolutions, never catalog picks like the ones this function adds. An earlier
+    version of this function appended every new resolution to `{DeviceResolutionSource}`
+    regardless of source, which is what actually produced a real corrupted-looking project
+    (a catalog device appearing twice in Construct's own Resolution Manager -- once as
+    itself, once as a phantom deletable "custom" duplicate) that the user found and fixed
+    by hand in Construct (2026-09-10). `DeviceResolutionIds` (not `{DeviceResolutionSource}`)
+    is the authoritative membership list for a project's resolutions, both catalog and
+    custom -- read from there, not from `{DeviceResolutionSource}`.
 
     Also reflows every existing *.cuig/*.cuiw in the project's folder so each newly-added
     resolution gets a correctly-fitted @media block for whatever elements already exist
@@ -256,27 +265,47 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     here would leave the .cuip write below never happening while some page files had
     already been rewritten, a silently inconsistent project. Wrapped per-file.
     """
+    import devices
     import reflow
 
     attrs, device_resolution_source, metadata = read_cuip(cuip_path)
-    project_id = dict(attrs)["Id"]
     project_dir = cuip_path.parent
     warnings: list[str] = []
 
+    existing_ids = [i for i in dict(attrs).get("DeviceResolutionIds", "").split(",") if i]
+
+    # Full width/height/orientation for every resolution already in the project, needed
+    # for reflow's choose_source_resolution. Resolve each id against the global catalog
+    # first (the common case); fall back to this project's own {DeviceResolutionSource}
+    # only for ids the catalog doesn't recognize (a genuinely custom resolution).
+    catalog = devices.read_catalog()
+
+    def _resolve(resolution_id: str) -> dict:
+        try:
+            return devices.to_project_resolution(catalog.by_id(resolution_id))
+        except KeyError:
+            match = next((e for e in device_resolution_source if e["id"] == resolution_id), None)
+            if match is None:
+                raise KeyError(
+                    f"Resolution id {resolution_id!r} is in DeviceResolutionIds but found "
+                    "neither in the global catalog nor in this project's own "
+                    "{DeviceResolutionSource}"
+                ) from None
+            return match
+
+    existing_full = [_resolve(i) for i in existing_ids]
+
     for r in new_resolutions:
-        existing_before = list(device_resolution_source)
         # Real catalog-sourced resolutions (devices.py::to_project_resolution) carry
-        # width/height as the confirmed real-file "Npx" string form (e.g. "1280px" --
-        # matches C:\Solutions\ClaudeSamples\Components\Components.cuip's own
-        # {DeviceResolutionSource} exactly), but reflow.py/layout.py do arithmetic on
-        # these values (media-query +-1px formulas, pick_primary's width comparison)
-        # and need plain ints. Coerce to int ONLY for the numeric copies fed into the
-        # reflow subsystem -- `device_resolution_source`/the .cuip on disk keep the
-        # original string form untouched, preserving real-file fidelity.
-        numeric_existing = [_numeric_resolution(e) for e in existing_before]
+        # width/height as the confirmed real-file "Npx" string form (e.g. "1280px"), but
+        # reflow.py/layout.py do arithmetic on these values (media-query +-1px formulas,
+        # pick_primary's width comparison) and need plain ints. Coerce to int only for the
+        # numeric copies fed into the reflow subsystem.
+        numeric_existing = [_numeric_resolution(e) for e in existing_full]
         numeric_r = _numeric_resolution(r)
         source = reflow.choose_source_resolution(numeric_existing, numeric_r)
-        device_resolution_source.append({"ProjectId": project_id, **r})
+        existing_ids.append(r["id"])
+        existing_full.append(r)
         if source is not None:
             page_files = list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw"))
             for page_path in page_files:
@@ -287,7 +316,7 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
                     continue
                 warnings.extend(result.warnings)
 
-    ids_csv = ",".join(r["id"] for r in device_resolution_source)
+    ids_csv = ",".join(existing_ids)
 
     keys = [k for k, _ in attrs]
     if "DeviceResolutionIds" in keys:

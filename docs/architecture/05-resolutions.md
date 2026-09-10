@@ -5,6 +5,49 @@ Status: **Device catalog + add-resolutions-to-a-project DONE.** Full multi-resol
 separate, not-yet-started slice — see "Next" at the bottom; the user chose to scope it out
 of this first slice given its size.
 
+## CORRECTION (2026-09-10): `{DeviceResolutionSource}` only ever holds CUSTOM resolutions
+
+An earlier version of this slice got the `{DeviceResolutionSource}`/`DeviceResolutionIds`
+relationship backwards, and it caused a real corruption the user found and fixed by hand
+in Construct: a catalog-sourced resolution (e.g. TSW-1070) was being written into
+`{DeviceResolutionSource}` as if it were a project-embedded entry. Confirmed directly from
+source (`UiEditor.Server\Helpers\PersistenceHelper.cs`'s `WriteProject`/`SaveProject`,
+both identical):
+
+```csharp
+// Write Project custom resolutions
+if (uiProject.CustomDeviceResolutions is not null)
+    projectSource.DeviceResolutionSource = uiProject.CustomDeviceResolutions;
+```
+
+`{DeviceResolutionSource}` **only ever persists genuinely custom (non-catalog)
+resolutions**. A standard catalog pick is represented *purely* by its id in
+`DeviceResolutionIds`; there is no redundant copy of its width/height/etc. in the project
+file at all — it's resolved against the global catalog file at runtime every time
+(`ResolutionHelper.cs::GenerateDeviceResolutionDto` rebuilds the full in-memory resolution
+list from `LibraryDeviceResolutions` + `CustomResolutions` on every Resolution Manager
+open, never from the project's own persisted `DeviceResolutionSource`). On load,
+`OpenProjectHandlerHelper.cs` copies `project.CustomDeviceResolutions =
+projectSource.DeviceResolutionSource` verbatim, and the Resolution Manager renders that as
+a **second, separately-removable list** — so a catalog resolution mistakenly written into
+`{DeviceResolutionSource}` shows up as a duplicate, deletable "custom" row sitting right
+next to its real catalog row. That's exactly the visual the user saw and correctly flagged
+as corruption, in both the reference sample project (`C:\Solutions\ClaudeSamples\
+Components`) and this project's own generated `GenTestProject`/`GenTestProject2` — this
+machine's `resolutionData.user.json` additionally had an actual invalid duplicate custom
+entry literally named "TSW-1070" (colliding with the real device name, which Construct is
+supposed to — but apparently didn't always — prevent), compounding the confusion.
+
+Fixed in `generator/devices.py::to_project_resolution` (no longer forces `IsCustom`/
+`resolutionType`/`resolutionName` at all — the returned dict is used only for
+`DeviceResolutionIds` + reflow math, never written into `{DeviceResolutionSource}`) and
+`generator/project.py::build_project_attributes`/`add_resolutions_to_project` (catalog
+resolutions only ever extend `DeviceResolutionIds`; `{DeviceResolutionSource}` is written
+back untouched). This module still has no "add a genuinely custom resolution" builder —
+when one is added, it alone should produce `{DeviceResolutionSource}` entries, and should
+validate (mirroring a rule Construct itself is supposed to enforce, per the user) that a
+custom resolution's name doesn't collide with a standard catalog device's name.
+
 ## The two previously-flagged open questions, both resolved
 
 **`UiEditorResolutionDao.cs` vs. the inline `.cuip` `{DeviceResolutionSource}` section**
@@ -13,8 +56,9 @@ of this first slice given its size.
   catalog of every resolution Construct knows about (see below). It's just a plain
   `List<DeviceResolutionSpec>` reader/writer (`UiEditor.Server\Dao\UiEditorResolutionDao.cs`).
 - A project's own `.cuip` `{DeviceResolutionSource}` stores which of those catalog entries
-  are *included in this project* (`DeviceResolutionDto` = `DeviceResolutionSpec` +
-  `ProjectId`/`IsCustom`/`IsSelected`, confirmed in `UiEditor.Common\Models\DeviceResolutionDto.cs`).
+  are genuinely CUSTOM (see the correction above — NOT every included entry;
+  `DeviceResolutionDto` = `DeviceResolutionSpec` + `ProjectId`/`IsCustom`/`IsSelected`,
+  confirmed in `UiEditor.Common\Models\DeviceResolutionDto.cs`).
 
 **`orientation` enum semantics** (flagged in Phase 2): `DisplayOrientation` enum
 (`UiEditor.Common\Models\DisplayOrientation.cs`): `None=0, Landscape=1, Portrait=2, Both=3`.

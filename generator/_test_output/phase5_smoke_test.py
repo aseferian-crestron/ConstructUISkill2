@@ -61,8 +61,16 @@ assert compare.round_trip_check(cuip_path), "add-resolutions round-trip failed"
 
 after = parse_cuip(cuip_path)
 assert after["attrs"]["DeviceResolutionIds"] == "D-L-TSW1070-1280-0800,D-L-TST1080-1280-0800,D-P-TST1080-0800-1280"
-assert len(after["device_resolution_source"]) == 3
-assert all(e["ProjectId"] == after["attrs"]["Id"] for e in after["device_resolution_source"])
+# {DeviceResolutionSource} only ever holds genuinely CUSTOM resolutions (confirmed from
+# PersistenceHelper.cs's WriteProject -- see devices.py::to_project_resolution's
+# docstring); these 3 are all catalog picks, so it must stay empty. Regression check for
+# the bug where add_resolutions_to_project appended every new resolution here regardless
+# of source, producing a real corrupted-looking project (a catalog device duplicated as a
+# phantom deletable "custom" entry in Construct's own Resolution Manager) that the user
+# found and fixed by hand on 2026-09-10.
+assert after["device_resolution_source"] == [], (
+    f"{{DeviceResolutionSource}} must stay empty for catalog-only resolutions, got {after['device_resolution_source']!r}"
+)
 # everything else about the project (Id, ThemeId, SdkId, ...) must be untouched
 for key in ("Id", "ThemeId", "SdkId", "ComponentKey", "Name"):
     assert before["attrs"][key] == after["attrs"][key], f"{key} changed unexpectedly"

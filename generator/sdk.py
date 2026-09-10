@@ -12,23 +12,32 @@ Grounded directly in C:\\Git\\CCIDE source, not inferred from samples:
     own SdkId attribute (e.g. "CH5:2.18.0", see generator/project.py) names the version.
 
 Construct's AppStoragePath itself is not read from any config by this module -- it is
-Electron's per-OS userData path for the "crestron-construct" app, confirmed on this
-machine at "%APPDATA%\\crestron-construct\\AppStorage". This module only ever *reads*
-these files (never writes/modifies an installed SDK).
+resolved the same way `EnvironmentUtility.cs` (`Crestron.IDE\\AppHost\\Crestron.IDE\\
+Common\\Utils\\EnvironmentUtility.cs`) does per-OS: `<OS ApplicationData folder>/
+crestron-construct/AppStorage`. Confirmed on this (Windows) machine at
+"%APPDATA%\\crestron-construct\\AppStorage"; on macOS that same .NET call resolves (per
+that file's own code comment) to `~/Library/Application Support`, not the more commonly
+documented `~/.config`. This module only ever *reads* these files (never writes/modifies
+an installed SDK).
 """
 from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 
 def default_app_storage_path() -> Path:
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        raise RuntimeError("APPDATA environment variable not set -- cannot locate Construct's AppStoragePath")
-    return Path(appdata) / "crestron-construct" / "AppStorage"
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            raise RuntimeError("APPDATA environment variable not set -- cannot locate Construct's AppStoragePath")
+        base = Path(appdata)
+    return base / "crestron-construct" / "AppStorage"
 
 
 @dataclass

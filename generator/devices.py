@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,10 +39,23 @@ ORIENTATION_ENUM = {"none": 0, "landscape": 1, "portrait": 2, "both": 3}
 
 
 def default_app_storage_path() -> Path:
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        raise RuntimeError("APPDATA environment variable not set -- cannot locate Construct's AppStoragePath")
-    return Path(appdata) / "crestron-construct" / "AppStorage"
+    """Construct's AppStoragePath -- confirmed against `EnvironmentUtility.cs`'s own
+    per-OS resolution (`Crestron.IDE\\AppHost\\Crestron.IDE\\Common\\Utils\\
+    EnvironmentUtility.cs`): `<OS ApplicationData folder>/crestron-construct/AppStorage`.
+    Windows: `Environment.SpecialFolder.ApplicationData` = `%APPDATA%` (Roaming). macOS:
+    the same .NET call resolves (per that file's own code comment, confirmed against this
+    project's actual runtime behavior, not the more common XDG-style `~/.config` some .NET
+    docs describe) to `~/Library/Application Support`. Linux is not a supported Construct
+    desktop platform (see EnvironmentUtility.cs's OSX/else-branch split) -- not handled here.
+    """
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            raise RuntimeError("APPDATA environment variable not set -- cannot locate Construct's AppStoragePath")
+        base = Path(appdata)
+    return base / "crestron-construct" / "AppStorage"
 
 
 @dataclass
@@ -126,17 +140,38 @@ def read_catalog(app_storage_path: Path | None = None, *, include_custom: bool =
     return ResolutionCatalog(entries=entries)
 
 
-def to_project_resolution(entry: dict, *, is_selected: bool = True, is_custom: bool = False) -> dict:
-    """Shape a catalog entry into the dict generator/project.py::build_project_attributes
-    expects in its `resolutions` list -- i.e. a DeviceResolutionDto minus `ProjectId` (filled
-    in by build_project_attributes itself from the project's own Id). `orientation` is
-    converted from the catalog's string form to DisplayOrientation's int encoding, matching
-    how it's actually serialized inside a .cuip's {DeviceResolutionSource} (confirmed against
-    the real Components.cuip: "orientation": 1 for its landscape TSW-1070 entry).
+def to_project_resolution(entry: dict, *, is_selected: bool = True) -> dict:
+    """Shape a catalog entry into a plain dict carrying everything
+    generator/project.py::add_resolutions_to_project / build_project_attributes need to
+    reference a catalog-sourced resolution: its `id` (for `DeviceResolutionIds`) and
+    width/height/orientation (for reflow math). `orientation` is converted from the
+    catalog's string form to DisplayOrientation's int encoding.
+
+    IMPORTANT -- this dict is NEVER written into a project's `{DeviceResolutionSource}`
+    JSON array. Confirmed directly from source (`UiEditor.Server\\Helpers\\
+    PersistenceHelper.cs`'s `WriteProject`/`SaveProject`, both bodies identical):
+    `if (uiProject.CustomDeviceResolutions is not null) projectSource.DeviceResolutionSource
+    = uiProject.CustomDeviceResolutions;` -- `{DeviceResolutionSource}` ONLY ever persists
+    genuinely CUSTOM (non-catalog) resolutions; a standard catalog pick like TSW-1070 is
+    represented purely by its id in `DeviceResolutionIds`, resolved against the global
+    catalog file at runtime (`ResolutionHelper.cs::GenerateDeviceResolutionDto` rebuilds the
+    full in-memory list from `LibraryDeviceResolutions` + `CustomResolutions` every time,
+    never from a project's own persisted `DeviceResolutionSource`). On load,
+    `project.CustomDeviceResolutions = projectSource.DeviceResolutionSource` is copied
+    verbatim (`OpenProjectHandlerHelper.cs`) and rendered in the Resolution Manager as a
+    second, separately-removable list -- so a catalog resolution mistakenly written into
+    `{DeviceResolutionSource}` shows up as a duplicate, deletable "custom" row next to its
+    real catalog row. An earlier version of this function did exactly that (forced
+    `IsCustom: true` and wrote every catalog pick into `{DeviceResolutionSource}`) --
+    confirmed the actual cause of a real corrupted project the user found and fixed by hand
+    in Construct (2026-09-10): both the reference sample project and this project's own
+    generated test project had a phantom duplicate "TSW-1070" custom entry from this exact
+    mistake. This module still has no "add a genuinely custom resolution" builder (out of
+    scope so far) -- when one is added, only THAT dict should ever reach
+    `{DeviceResolutionSource}`.
     """
     visited_name = entry["idName"] if not entry.get("displayNameSuffix") else f"{entry['idName']}{entry['displayNameSuffix']}"
     return {
-        "IsCustom": is_custom,
         "IsSelected": is_selected,
         "VisitedName": visited_name,
         "id": entry["id"],
