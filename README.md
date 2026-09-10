@@ -9,7 +9,58 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Reflow: preserve centering — DONE, verified against the real `ReflowTest.cuig`.** After
+**Reflow: SDK-schema-driven size scaling + aspect-lock reconciliation + size="custom"
+forcing — DONE, verified against the real `GenTestProject2` at TSW-570 (640x360), the
+smallest/most stressful resolution added yet.** After the centering fix (below), the
+user added TSW-760 and TSW-570 to `GenTestProject2` and hit two new real bugs at 640x360
+(small enough to force genuine wrap + compaction + scaling together for the first time):
+(1) a `ch5-dpad` sharing a row with other content visibly overlapped its neighbors in
+Construct even though the computed box math was provably non-overlapping — traced to
+`_fit_group`'s extra_vars scaling only recognizing CSS var names containing the literal
+substrings "width"/"height"; `--ch5-dpad--regular-size` (the D-pad's actual rendered-size
+var, confirmed via the SDK's `classToVariableMapping` schema to be sourced from `width`)
+matches neither, so it stayed at its original unscaled value regardless of what the box
+computed — the box was safe, the RENDER wasn't; (2) a wrapped second line of real
+(user-authored, not generator-authored) buttons ran off-canvas because those buttons had
+`size="regular"`, which ignores explicit CSS and renders at a fixed preset size — the
+same bug this generator's own element-creation code already works around at creation
+time, just never applied by reflow. The user pushed back on an initial fix proposal
+(schema-driven var scaling alone) by asking me to actually test it against the real
+D-pad shape first — correctly caught that it was incomplete: X and Y are fit completely
+independently, so even with the var wired to the *correct* schema-mapped axis, that
+axis's own scale factor could still be 1.0 (unchanged) while the OTHER axis did all the
+shrinking, leaving the var (and the real render) unscaled regardless. Real fix, verified
+against a genuine resized D-pad in the reference project
+(`C:\Solutions\ClaudeSamples\Components\Component - Keypad - DPad.cuig`, id `ixo7`:
+width/height/var are always numerically identical, confirming the component is
+fundamentally square): after both axes fit independently, any element the SDK schema
+marks single-axis-sourced (`_is_aspect_locked`) gets width=height=`min(fitted_width,
+fitted_height)` — shrinking only, so it can't introduce a new overlap. Built (all in
+`generator/reflow.py`, gated behind an optional `sdk` param so every existing caller/test
+that doesn't pass one keeps today's exact legacy behavior unchanged): `_component_size_css_vars`
+(generalizes `ch5_button.py::button_size_css_vars` to any component type via the same
+schema, recomputing size vars from the FINAL reconciled width/height instead of
+ratio-scaling — strictly more robust, no compounding rounding difference between two
+methods), `_is_aspect_locked`, `_tag_index` + `_force_custom_size` (reflow's first-ever
+edits to `{Html}`/`[[Elements]]` TOML, not just `{Css}` — forces `size="custom"` on any
+element actually resized that's currently `"regular"`, leaves repositioned-only elements
+and already-`"custom"` elements untouched). `project.py::add_resolutions_to_project` now
+loads the project's own installed SDK (from its `SdkId` attribute) and passes it through,
+non-fatally (a project whose SDK can't be loaded still gets reflowed with legacy
+behavior, flagged with a warning, never aborted). Two new regression tests hand-verify
+both fixes against realistic shapes (`reflow_aspect_lock_dpad_test.py`:
+a D-pad forced non-square by asymmetric X/Y scaling now reconciles to square, var
+matches, zero overlaps; `reflow_force_custom_size_test.py`: a resized `"regular"` button
+becomes `"custom"` in both Html and TOML, an already-`"custom"` resized button is a
+no-op, a merely-repositioned `"regular"` button is left untouched). Full existing suite
+(15 files) still passes with zero regressions. Re-ran the TSW-570 reflow against the
+real files: D-pad now 166x166 (was 332x166, non-square), zero overlaps, everything
+within the 640x360 canvas; the real Menu-row buttons that got genuinely resized are now
+`size="custom"` in both Html and TOML. **Next**: user to re-check `ReflowTest.cuig` at
+TSW-570 in Construct.
+
+**Reflow: preserve centering (superseded above) — DONE, verified against the real
+`ReflowTest.cuig`.** After
 the width/height-fallback fix (below) got the portrait layout showing all 21 elements
 on-canvas and non-overlapping, the user caught a subtler issue: the "Source" and "Menu"
 button rows were centered in the 1280px landscape source (left margin 265px, right margin
@@ -352,6 +403,27 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-10: **Reflow: SDK-schema-driven size scaling + aspect-lock + size="custom"
+  forcing -- DONE, verified against real GenTestProject2 at TSW-570 (640x360).** User
+  added TSW-760 then TSW-570 and hit two real bugs at the smallest resolution yet: a
+  ch5-dpad visibly overlapped neighbors in Construct despite non-overlapping box math
+  (its `--ch5-dpad--regular-size` var, schema-confirmed sourced from width, wasn't
+  recognized by the old substring-based scaling and stayed unscaled); a wrapped real
+  button ran off-canvas because `size="regular"` ignores explicit CSS entirely. User
+  caught that my first fix proposal (schema-driven var scaling alone) was incomplete
+  by asking me to test it first -- X/Y are fit independently, so the var's mapped axis
+  could still have scale 1.0 while the OTHER axis did the shrinking. Real fix,
+  confirmed against a genuine resized D-pad in the reference project (width=height=var
+  always, confirming it's fundamentally square): after independent X/Y fitting, force
+  width=height=min(...) for any SDK-schema-flagged single-axis component (shrink-only,
+  can't introduce overlap). Built `_component_size_css_vars`/`_is_aspect_locked` (SDK
+  schema-driven, generalizes ch5_button.py's existing button-only helper) and
+  `_tag_index`/`_force_custom_size` (reflow's first edits to Html/TOML, not just Css) in
+  reflow.py, gated behind an optional `sdk` param so every existing caller/test is
+  unaffected; `add_resolutions_to_project` now loads the project's own SDK and passes
+  it through, non-fatally. 2 new regression tests, full 15-file suite passes. Re-ran
+  against the real files: D-pad now 166x166 (was 332x166), zero overlaps, resized real
+  buttons now size="custom" in both Html and TOML. See Current phase above.
 - 2026-09-10: **Reflow: preserve centering -- DONE, verified against the real
   ReflowTest.cuig.** User caught that a button row centered in the 1280px landscape
   source came out flush against the portrait target's edge instead of staying centered

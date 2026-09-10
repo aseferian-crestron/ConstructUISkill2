@@ -267,10 +267,26 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     """
     import devices
     import reflow
+    import sdk as sdk_module
 
     attrs, device_resolution_source, metadata = read_cuip(cuip_path)
     project_dir = cuip_path.parent
     warnings: list[str] = []
+
+    # ADDED 2026-09-10 (real D-pad overlap bug -- see reflow.py::_is_aspect_locked's
+    # docstring): loading the project's own installed SDK enables schema-driven CSS-var
+    # scaling, aspect-lock reconciliation, and size="regular"->"custom" forcing inside
+    # reflow_file. Never fatal: a project with an SdkId reflow_file can't resolve (not
+    # installed, malformed attribute) still gets its resolution added and pages
+    # reflowed with the pre-2026-09-10 legacy behavior, just flagged with a warning
+    # rather than aborting the whole operation over an SDK read issue.
+    ui_sdk = None
+    sdk_id = dict(attrs).get("SdkId")
+    if sdk_id and ":" in sdk_id:
+        try:
+            ui_sdk = sdk_module.read_sdk(sdk_id.split(":", 1)[1])
+        except (FileNotFoundError, OSError, KeyError) as e:
+            warnings.append(f"Could not load SDK {sdk_id!r} ({e}) -- reflow will use legacy CSS-var scaling")
 
     existing_ids = [i for i in dict(attrs).get("DeviceResolutionIds", "").split(",") if i]
 
@@ -310,7 +326,7 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
             page_files = list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw"))
             for page_path in page_files:
                 try:
-                    result = reflow.reflow_file(page_path, target_resolution=numeric_r, source_resolution=source, mode="pin_existing")
+                    result = reflow.reflow_file(page_path, target_resolution=numeric_r, source_resolution=source, mode="pin_existing", sdk=ui_sdk)
                 except OSError as e:
                     warnings.append(f"{page_path.name}: {e} -- skipped")
                     continue

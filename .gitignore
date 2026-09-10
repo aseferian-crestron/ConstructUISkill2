@@ -16,4 +16,6 @@ generator/_test_output/Phase5bReflowSmoke/
 generator/_test_output/Phase5bReflowIntegration/
 generator/_test_output/ReflowPartialDeviceBlock/
 generator/_test_output/ReflowCenteringE2E/
+generator/_test_output/ReflowAspectLockDpad/
+generator/_test_output/ReflowForceCustomSize/
 generator/_test_output/out.txt

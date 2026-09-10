@@ -13,6 +13,7 @@ from pathlib import Path
 from devices import ORIENTATION_ENUM
 
 import layout
+import sdk as sdk_module
 
 
 class AxisFitError(Exception):
@@ -419,10 +420,71 @@ class ReflowResult:
     warnings: list[str] = field(default_factory=list)
 
 
+def _size_selector_mapping(sdk: "sdk_module.UiSdk", tag_name: str) -> list[dict] | None:
+    """The `idSelector` `classToVariableMapping` entry for `tag_name` (see
+    ch5_button.py::button_size_css_vars, which this generalizes) -- `None` if the SDK
+    has no such entry for this tag (most component types don't expose a size-mirroring
+    CSS var at all)."""
+    try:
+        ctx = sdk.context_for(tag_name)
+    except (KeyError, StopIteration):
+        return None
+    entry = next((e for e in ctx.get("classToVariableMapping", []) if e.get("className") == "idSelector"), None)
+    return entry["propertyMapping"] if entry else None
+
+
+def _component_size_css_vars(
+    sdk: "sdk_module.UiSdk", tag_name: str, *, width: int, height: int, orientation: str = "horizontal",
+) -> dict[str, str]:
+    """Generic version of ch5_button.py::button_size_css_vars, driven by the same SDK
+    `classToVariableMapping` schema for ANY component type, not just ch5-button --
+    ADDED 2026-09-10 after a real user-authored page (ReflowTest.cuig) exposed that
+    reflow's old scaling logic only recognized CSS var names containing the literal
+    substrings "width"/"height", silently leaving `--ch5-dpad--regular-size` (which
+    contains neither) unscaled -- the component kept rendering at its original size
+    regardless of what the fitted box computed, which is what actually produced the
+    visible overlap the user reported, not a flaw in the tier math itself. Returns
+    {css_var_name: "Npx"} for every var this tag's schema maps from width/height;
+    empty if the tag has no such mapping."""
+    mapping = _size_selector_mapping(sdk, tag_name)
+    if not mapping:
+        return {}
+    values = {"width": width, "height": height}
+    css_vars: dict[str, str] = {}
+    for prop_mapping in mapping:
+        target = prop_mapping["targetProperty"]
+        for cond in prop_mapping.get("condition", []):
+            if cond["property"] == "orientation" and cond["value"] == orientation and cond["action"] == "swaptarget":
+                target = cond["alternateTargetProperty"]
+        css_vars[target] = f"{values[prop_mapping['sourceProperty']]}px"
+    return css_vars
+
+
+def _is_aspect_locked(sdk: "sdk_module.UiSdk", tag_name: str) -> bool:
+    """True if `tag_name`'s rendered size is driven by a SINGLE axis-sourced CSS var
+    with no independent counterpart for the other axis -- e.g. ch5-dpad's
+    `--ch5-dpad--regular-size`, schema-mapped only from `width`, with no separate
+    height-sourced var at all. Confirmed against a real resized D-pad instance
+    (`C:\\Solutions\\ClaudeSamples\\Components\\Component - Keypad - DPad.cuig`, id
+    `ixo7`): width, height, and the var are always numerically identical -- real
+    Construct never lets this component's box go non-square. `_fit_group` uses this to
+    force width=height=min(fitted_width, fitted_height) for such an element after both
+    axes have been fit independently, since nothing else in this pipeline otherwise
+    keeps a square component square when its row (X) and row-stack (Y) are fit
+    separately -- only ever shrinking, so it can't introduce a new overlap (a smaller
+    box is always contained within space already proven safe for the bigger one)."""
+    mapping = _size_selector_mapping(sdk, tag_name)
+    if not mapping:
+        return False
+    source_props = {m["sourceProperty"] for m in mapping}
+    return source_props in ({"width"}, {"height"})
+
+
 def _fit_group(
     elements: dict[str, dict], target_width: int, target_height: int,
     source_width: int, source_height: int,
     path: Path, query: str, warnings: list[str],
+    id_to_tag: dict[str, str] | None = None, sdk: "sdk_module.UiSdk | None" = None,
 ) -> dict[str, dict] | None:
     """Fit one group of elements (all of source in full_refit, or just the new ones in
     pin_existing) into target_width x target_height: group into rows (detect_rows),
@@ -436,7 +498,18 @@ def _fit_group(
     absolute positions were authored against, needed to detect whether a row/row-stack
     was centered there. An untouched (non-wrap-split) row auto-detects against its own
     original margins; a wrap-split fragment row is always centered (see wrap_rows's
-    docstring)."""
+    docstring).
+
+    `id_to_tag`/`sdk` -- ADDED 2026-09-10 (real D-pad overlap bug, see
+    _is_aspect_locked's docstring): when given, aspect-locked components get
+    width=height=min(...) reconciliation, and every element's size-mirroring CSS vars
+    are recomputed from the FINAL width/height via the SDK schema
+    (_component_size_css_vars) instead of ratio-scaled by name-substring matching --
+    strictly more robust (no compounding rounding difference between the two methods)
+    and the only way `--ch5-dpad--regular-size`-style vars get scaled at all. Either
+    argument missing/`None` falls back to today's legacy substring-based scaling with
+    no aspect-lock reconciliation, unchanged -- existing callers/tests that don't know
+    about component types keep working exactly as before."""
     rows = detect_rows(elements)
     wrapped_rows = wrap_rows(rows, elements, target_width)
 
@@ -462,8 +535,19 @@ def _fit_group(
     fitted: dict[str, dict] = {}
     for eid, e in elements.items():
         x, y = x_fit[eid], y_fit[eid]
+        width, height = x["size"], y["height"]
+
+        tag = id_to_tag.get(eid) if id_to_tag else None
+        if sdk is not None and tag is not None and _is_aspect_locked(sdk, tag):
+            width = height = min(width, height)
+
+        size_vars = _component_size_css_vars(sdk, tag, width=width, height=height) if (sdk is not None and tag is not None) else {}
+
         extra_vars: dict[str, str] = {}
         for name, value in e.get("extra_vars", {}).items():
+            if name in size_vars:
+                extra_vars[name] = size_vars[name]
+                continue
             lname = name.lower()
             numeric = float(value[:-2]) if value.endswith("px") else None
             # CORRECTED 2026-09-09 (task review): must use int() truncation, matching
@@ -471,7 +555,9 @@ def _fit_group(
             # reintroducing the "outer width/height vs. --ch5-button--* var disagree"
             # class of bug this codebase already fixed once, Phase 4 -- a mirrored var
             # must equal the property it mirrors bit-for-bit, which only holds if both
-            # use the same rounding function).
+            # use the same rounding function). Legacy fallback path only -- see
+            # _component_size_css_vars above for the schema-driven replacement, used
+            # whenever `sdk` is available.
             if numeric is not None and "width" in lname:
                 extra_vars[name] = f"{max(1, int(numeric * x['scale']))}px"
             elif numeric is not None and "height" in lname:
@@ -479,7 +565,7 @@ def _fit_group(
             else:
                 extra_vars[name] = value  # not a width/height-mirroring var -- carry through unscaled
         fitted[eid] = {
-            "left": x["pos"], "top": y["top"], "width": x["size"], "height": y["height"],
+            "left": x["pos"], "top": y["top"], "width": width, "height": height,
             "z_index": e.get("z_index"), "extra_vars": extra_vars,
         }
     return fitted
@@ -519,7 +605,53 @@ def _fill_missing_size(
     return filled
 
 
-def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mode: str = "pin_existing") -> ReflowResult:
+_TAG_RE = re.compile(r"<[\w-]+[^>]*>")
+
+
+def _tag_index(html_text: str) -> dict[str, tuple[str, str]]:
+    """Map element_id -> (tag_name, full_opening_tag_text) for every element tag in
+    `html_text` -- ADDED 2026-09-10. Scans every tag rather than assuming a fixed
+    attribute order (a real Construct-authored tag can have `id=` anywhere among its
+    attributes), used both to look up a component's type (schema-driven var
+    scaling/aspect-lock, see _fit_group) and its current `size` attribute (the
+    size="regular"->size="custom" forcing check, see _force_custom_size)."""
+    index: dict[str, tuple[str, str]] = {}
+    for m in _TAG_RE.finditer(html_text):
+        tag_text = m.group(0)
+        id_match = re.search(r'\bid="([^"]*)"', tag_text)
+        if id_match:
+            tag_name = tag_text[1:].split(None, 1)[0].split(">", 1)[0].rstrip("/")
+            index[id_match.group(1)] = (tag_name, tag_text)
+    return index
+
+
+def _force_custom_size(html_text: str, page_attrs_text: str, element_id: str, tag_text: str) -> tuple[str, str]:
+    """If `tag_text` (this element's own opening tag, from _tag_index) has
+    size="regular", rewrite it to size="custom" in both the {Html} tag and the
+    matching [[Elements]] TOML block -- ADDED 2026-09-10, confirmed necessary by a
+    real user-authored page: size="regular" ignores explicit width/height CSS entirely
+    and renders at the theme's fixed preset dimensions, silently undoing whatever
+    reflow just computed. This is the same fix this generator's own element-creation
+    code already applies (see ch5_button.py::build_default_button_attributes); reflow
+    now applies it too, but only to elements it actually resizes (see reflow_file),
+    never touching an element it only repositions. Returns the (possibly unchanged)
+    html_text/page_attrs_text -- a no-op if `tag_text` isn't size="regular" (already
+    "custom", or a component type with no size attribute at all)."""
+    if 'size="regular"' not in tag_text:
+        return html_text, page_attrs_text
+    new_tag_text = tag_text.replace('size="regular"', 'size="custom"', 1)
+    html_text = html_text.replace(tag_text, new_tag_text, 1)
+
+    blocks = re.split(r"(?=\[\[Elements\]\])", page_attrs_text)
+    id_line = f'id = "{element_id}"'
+    for i, block in enumerate(blocks):
+        if id_line in block and 'size = "regular"' in block:
+            blocks[i] = block.replace('size = "regular"', 'size = "custom"', 1)
+            break
+    return html_text, "".join(blocks)
+
+
+def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mode: str = "pin_existing", sdk: "sdk_module.UiSdk | None" = None) -> ReflowResult:
     """Add or update `target_resolution`'s @media block(s) in `path` so it has a
     position rule for every element `source_resolution`'s block(s) have. See the
     spec's Algorithm section for `mode` semantics (pin_existing default vs.
@@ -563,7 +695,19 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     order depends on Python's per-process string-hash randomization, making the
     emitted rule order (and warning order) different on every run of the same input
     -- fixed by iterating `target_elements`/`source_elements` (dict insertion order,
-    deterministic) and testing membership in the sets instead."""
+    deterministic) and testing membership in the sets instead.
+
+    `sdk` -- ADDED 2026-09-10 (real D-pad overlap bug found live-testing in Construct;
+    see _is_aspect_locked's docstring for the full story): when given, this function
+    now also touches {Html} and [[Elements]] TOML for the first time (previously only
+    ever rewrote {Css}) -- any element this call actually resizes (fitted width/height
+    differs from its source width/height) that's currently `size="regular"` gets
+    forced to `size="custom"` in both places (see _force_custom_size), since
+    `size="regular"` ignores explicit CSS and silently undoes whatever was just
+    computed. `sdk` also enables schema-driven size-var scaling and aspect-lock
+    reconciliation in _fit_group. Omitting `sdk` reproduces today's exact behavior
+    (Css-only, legacy substring-based var scaling, no aspect-lock) -- existing
+    callers/tests are unaffected."""
     if mode not in ("pin_existing", "full_refit"):
         raise ValueError(f"unknown mode {mode!r} -- expected 'pin_existing' or 'full_refit'")
 
@@ -574,6 +718,11 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         warnings.append(f"{path.name}: no {{Css}} section found -- skipped")
         return ReflowResult(warnings=warnings)
     css_text = sections[css_index][2]
+
+    html_index = next((i for i, (name, _, _) in enumerate(sections) if name == "Html"), None)
+    page_attrs_index = next((i for i, (name, _, _) in enumerate(sections) if name == "PageAttributes"), None)
+    id_to_tag_and_text = _tag_index(sections[html_index][2]) if html_index is not None else {}
+    id_to_tag = {eid: t[0] for eid, t in id_to_tag_and_text.items()}
 
     source_orientation = _orientation_name(source_resolution)
     target_orientation = _orientation_name(target_resolution)
@@ -630,9 +779,24 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         to_fit, target_resolution["width"], target_resolution["height"],
         source_resolution["width"], source_resolution["height"],
         path, target_query, warnings,
+        id_to_tag=id_to_tag, sdk=sdk,
     )
     if fitted is None:
         return ReflowResult(warnings=warnings)
+
+    if html_index is not None and page_attrs_index is not None:
+        html_text = sections[html_index][2]
+        page_attrs_text = sections[page_attrs_index][2]
+        for eid, fit in fitted.items():
+            source = to_fit[eid]
+            if fit["width"] == source["width"] and fit["height"] == source["height"]:
+                continue  # only repositioned, not resized -- size="regular" is fine here
+            tag_info = id_to_tag_and_text.get(eid)
+            if tag_info is None:
+                continue
+            html_text, page_attrs_text = _force_custom_size(html_text, page_attrs_text, eid, tag_info[1])
+        sections[html_index] = ("Html", sections[html_index][1], html_text)
+        sections[page_attrs_index] = ("PageAttributes", sections[page_attrs_index][1], page_attrs_text)
 
     if mode == "pin_existing" and pinned:
         for new_id, pinned_id in check_overlaps(pinned, fitted):
