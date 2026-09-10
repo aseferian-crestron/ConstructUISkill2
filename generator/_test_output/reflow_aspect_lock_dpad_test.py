@@ -68,7 +68,15 @@ path = OUT / "DpadRow.cuig"
 make_file(path, html, css, elements_toml)
 
 result = reflow_file(path, target_resolution=target, source_resolution=source, mode="pin_existing", sdk=ui_sdk)
-assert result.warnings == [], f"expected no warnings, got {result.warnings}"
+# UPDATED 2026-09-10 (minimum-size floors): this shape now reports one expected
+# warning. Its single row pairs a 300px D-pad with 40px buttons whose own 30px floor
+# only lets them shrink 25%, which would force the row to stay 225px tall against a
+# 200px target -- so stack_rows relaxes that row's floor (see its docstring) and lays
+# it out exactly as before rather than skipping the block. The layout assertions below
+# are unchanged and still pass, which is the point: relaxation degrades to today's
+# behavior, it doesn't lose the block.
+assert len(result.warnings) == 1 and "too crowded to honor" in result.warnings[0], (
+    f"expected only the minimum-size relaxation warning, got {result.warnings}")
 assert compare.round_trip_check(path)
 
 new_css = compare.parse_file(path).sections[2][2]

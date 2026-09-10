@@ -6,6 +6,7 @@ and docs/architecture/10-reflow.md.
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -381,7 +382,11 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
     return result
 
 
-def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4, source_height: int | None = None) -> dict[str, dict]:
+def stack_rows(
+    rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4,
+    source_height: int | None = None, id_to_tag: dict[str, str] | None = None,
+    sdk: "sdk_module.UiSdk | None" = None, warnings: list[str] | None = None,
+) -> dict[str, dict]:
     """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09,
     corrected again same-day after a task review caught a real bug -- see below).
     Builds one pseudo-item per row -- natural height `max(top+height) - min(top)` over
@@ -424,7 +429,23 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
     `source_dim` so a vertically-centered source row-stack comes back centered in
     target_height instead of pinned to the top. One auto-detected decision for the
     whole stack (no fragment concept on this axis -- row-wrap only affects X-axis
-    grouping, not what a row contributes to this Y-axis pseudo-item list)."""
+    grouping, not what a row contributes to this Y-axis pseudo-item list).
+
+    `id_to_tag`/`sdk` -- ADDED 2026-09-10 (see docs/superpowers/specs/
+    2026-09-10-reflow-min-size-design.md): when both are given, each row pseudo-item
+    carries its own height floor into fit_axis's minimum-aware Tier 3. This is the axis
+    where minimum sizes actually change layouts -- unlike X, there's no wrap tier here to
+    peel a crowded stack apart, so Tier 3 genuinely scales every row by one factor and a
+    short button pays the same ratio as a tall D-pad (the real 28px-tall-button bug).
+    Since a row scales as ONE unit, a member's own minimum has to be converted into row
+    units first: the scale at which member m would hit its floor is
+    `min_height(m) / m.height`, so the row can't go below
+    `ceil(row_natural_height * max(that ratio over all members))` -- the most constrained
+    member decides, and the roomier rows absorb the difference. ceil, not round, because
+    each member's own height is later derived back out with int() truncation, and rounding
+    down here would let it land 1px under its floor. Omitting either argument passes
+    `min_sizes=None` (never `{}`) to fit_axis -- the untouched legacy Tier 3, exactly
+    today's behavior."""
     if not rows:
         return {}
     row_keys = [f"__row{i}" for i in range(len(rows))]
@@ -439,7 +460,59 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
         anchors.append(anchors[i - 1] + natural_height[i - 1] + (original_gap if original_gap >= 0 else min_gap))
 
     row_items = list(zip(row_keys, anchors, natural_height))
-    row_fit = fit_axis(row_items, target_height, min_gap=min_gap, source_dim=source_height)
+    row_min_sizes: dict[str, int] | None = None
+    if sdk is not None and id_to_tag:
+        natural_by_key = dict(zip(row_keys, natural_height))
+        derived: dict[str, int] = {}
+        for i, row in enumerate(rows):
+            tags = [id_to_tag.get(eid) for eid in row]
+            if not all(tags):
+                continue  # partial tag info -- this row just gets the default floor of 1
+            worst_ratio = 0.0
+            for eid, tag in zip(row, tags):
+                own_height = elements[eid]["height"]
+                if own_height > 0:
+                    worst_ratio = max(worst_ratio, _component_min_size(sdk, tag, "height") / own_height)
+            if worst_ratio > 0:
+                own_natural = max(1, natural_height[i])
+                derived[row_keys[i]] = max(1, min(math.ceil(own_natural * worst_ratio), own_natural))
+        # Feasibility relaxation -- ADDED 2026-09-10 while implementing this, after an
+        # existing regression test (reflow_aspect_lock_dpad_test.py) caught the spec's
+        # error handling doing real damage here. Unlike an X-axis floor (one element per
+        # column, a floor the component itself technically enforces), a Y floor is
+        # DERIVED: keeping a 40px button at its own 30px minimum forces its whole 300px
+        # row to stay 225px tall. So a crowded stack can demand more than target_height
+        # even when every individual component would be perfectly satisfiable, and the
+        # spec's plain AxisFitError there would skip the ENTIRE device block -- turning a
+        # legibility problem into missing components, the exact failure reflow_file exists
+        # to prevent. Relax instead of failing: drop the most aggressive demands first
+        # (largest floor as a fraction of the row's own natural height) until what remains
+        # fits, and report how many rows lost their floor. A relaxed row simply scales the
+        # way it does today.
+        available = target_height - (len(rows) - 1) * min_gap
+        relaxed = 0
+        for key in sorted(derived, key=lambda k: derived[k] / max(1, natural_by_key[k]), reverse=True):
+            if sum(derived.values()) <= available:
+                break
+            derived[key] = 1
+            relaxed += 1
+        if sum(derived.values()) > available:
+            # Even a 1px floor per row doesn't fit -- hand the whole axis back to the
+            # legacy tier (which has its own available_for_sizes check) rather than
+            # raising from the dict branch.
+            derived, relaxed = {}, len(rows)
+        if relaxed and warnings is not None:
+            warnings.append(
+                f"target_height {target_height} is too crowded to honor every component's "
+                f"minimum size -- {relaxed} of {len(rows)} row(s) fitted without a floor "
+                f"(their components may render below their minimum usable size)"
+            )
+        row_min_sizes = {k: v for k, v in derived.items() if v > 1} or None
+
+    row_fit = fit_axis(
+        row_items, target_height, min_gap=min_gap, source_dim=source_height,
+        min_sizes=row_min_sizes,
+    )
 
     result: dict[str, dict] = {}
     for i, row in enumerate(rows):
@@ -762,11 +835,16 @@ def _fit_group(
                 }
 
     row_lists = [[eid for column in columns for eid in column] for columns, _ in wrapped_rows]
+    y_warnings: list[str] = []
     try:
-        y_fit = stack_rows(row_lists, elements, target_height, source_height=source_height)
+        y_fit = stack_rows(
+            row_lists, elements, target_height, source_height=source_height,
+            id_to_tag=id_to_tag, sdk=sdk, warnings=y_warnings,
+        )
     except AxisFitError as e:
         warnings.append(f"{path.name}: Y axis for {query} -- {e}")
         return None
+    warnings.extend(f"{path.name}: Y axis for {query} -- {w}" for w in y_warnings)
 
     fitted: dict[str, dict] = {}
     for eid, e in elements.items():
