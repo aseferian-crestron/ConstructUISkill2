@@ -267,9 +267,9 @@ print("no-freeze case matches legacy output exactly: OK")
 # (Crowded enough that the flat 1px floor and the iterative algorithm would genuinely
 # disagree -- the legacy branch must not change.)
 items = [("a", 0, 100), ("b", 200, 100), ("c", 400, 100)]
-before = fit_axis(items, target_dim=30)   # available_for_sizes = 22 over 300
+before = fit_axis(items, target_dim=10)   # available_for_sizes = 2 over 300
 assert [before[i]["size"] for i in "abc"] == [1, 1, 1], before
-assert all(abs(before[i]["scale"] - 22 / 300) < 1e-9 for i in "abc"), "flat group scale"
+assert all(abs(before[i]["scale"] - 2 / 300) < 1e-9 for i in "abc"), "flat group scale"
 print("legacy branch (min_sizes omitted) unchanged, 1px floor + flat scale: OK")
 
 # --- Unsatisfiable: every minimum together doesn't fit -> AxisFitError --------------
@@ -284,11 +284,11 @@ else:
 # --- Cascading freeze: freezing one item pushes a second under its own floor --------
 # 4 items, sizes 100/100/100/100, target 250 -> available = 250 - 3*4 = 238.
 # Round 1: scale .595 -> a (min 100) freezes. Round 2: free 138/300 = .46 -> b (min 50)
-# freezes. Round 3: free 88/200 = .44 -> c,d = 38 each, no more freezes.
+# freezes. Round 3: free 88/200 = .44 -> c,d = 44 each, no more freezes.
 items4 = [("a", 0, 100), ("b", 200, 100), ("c", 400, 100), ("d", 600, 100)]
 r = fit_axis(items4, target_dim=250, min_sizes={"a": 100, "b": 50, "c": 1, "d": 1})
 assert r["a"]["size"] == 100 and r["b"]["size"] == 50, r
-assert r["c"]["size"] == 38 and r["d"]["size"] == 38, r
+assert r["c"]["size"] == 44 and r["d"]["size"] == 44, r
 assert r["d"]["pos"] + r["d"]["size"] <= 250, "must still fit target_dim"
 print("cascading freeze (a then b, c/d absorb the rest): OK")
 

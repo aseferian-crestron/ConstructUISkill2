@@ -38,6 +38,7 @@ def _center_result(result: dict[str, dict], target_dim: int) -> dict[str, dict]:
 def fit_axis(
     items: list[tuple[str, int, int]], target_dim: int, min_gap: int = 4,
     source_dim: int | None = None, center: bool | None = None,
+    min_sizes: dict[str, int] | None = None,
 ) -> dict[str, dict]:
     """3-tier fit for one axis of one group of items being fit together. `items` is
     [(item_id, pos, size)] in any order -- either elements (X axis, within one row) or
@@ -66,6 +67,24 @@ def fit_axis(
     `abs(left_margin - right_margin) <= max(4, round(0.01 * source_dim))`. A caller
     passing neither `source_dim` nor `center` gets `center=False` -- today's exact
     behavior, unchanged.
+
+    `min_sizes` -- ADDED 2026-09-10 (see docs/superpowers/specs/
+    2026-09-10-reflow-min-size-design.md): {item_id: minimum size in px}, the floor
+    Tier 3 may not scale that item below. `None` (the default, and what every legacy
+    caller passes) runs the ORIGINAL one-shot Tier 3 verbatim -- deliberately a
+    separate code path, not "the general path with every minimum defaulting to 1",
+    because the two genuinely disagree: the one-shot formula floors each item
+    independently at 1px and can therefore overshoot target_dim slightly, while the
+    iterative algorithm reserves each frozen item's exact floor and recomputes the
+    scale for the rest, so it doesn't. An actual dict (even empty) selects the
+    iterative path; an id absent from it gets a floor of 1. Every floor is clamped to
+    the item's OWN current size first, so Tier 3 stays shrink-only -- an item already
+    below its component type's minimum (or a row whose derived floor exceeds its
+    natural height) is left as-is rather than grown. `AxisFitError` if the floors
+    can't all be satisfied at once. In the dict branch each item's reported "scale"
+    is its OWN size ratio rather than one group-wide factor (a frozen item shrank
+    less than its neighbours); the legacy branch satisfies that contract trivially,
+    since uniform scaling makes every item's own ratio equal the group's.
     """
     if not items:
         return {}
@@ -145,27 +164,75 @@ def fit_axis(
             }
             return _center_result(result, target_dim) if center else result
 
-    # --- Tier 3: uniform scale-down, last resort, repacked at exactly min_gap -----
+    # --- Tier 3: scale-down, last resort, repacked at exactly min_gap -------------
     available_for_sizes = target_dim - (n - 1) * min_gap
-    if available_for_sizes <= 0:
-        raise AxisFitError(
-            f"target_dim {target_dim} can't fit even the mandatory {min_gap}px floor "
-            f"gaps for {n} items"
-        )
-    scale = available_for_sizes / total_size
-    # CORRECTED 2026-09-09 (task review): round() could push the packed total over
-    # target_dim (each item's round() can add up to 0.5px, compounding across many
-    # items). int() truncates toward zero, equivalent to floor for these non-negative
-    # values, and never overshoots -- the max(1, ...) floor is unchanged (never
-    # collapse to 0px; the only remaining, deliberate source of overflow is that 1px
-    # floor itself on a pathologically over-crowded axis).
-    new_sizes = [max(1, int(size * scale)) for size in sizes]
+    if min_sizes is None:
+        # LEGACY PATH -- byte-for-byte today's code. Do not "unify" this with the
+        # branch below (see the docstring): the two produce different, both-defensible
+        # numbers, and every existing caller/test depends on this one.
+        if available_for_sizes <= 0:
+            raise AxisFitError(
+                f"target_dim {target_dim} can't fit even the mandatory {min_gap}px floor "
+                f"gaps for {n} items"
+            )
+        scale = available_for_sizes / total_size
+        # CORRECTED 2026-09-09 (task review): round() could push the packed total over
+        # target_dim (each item's round() can add up to 0.5px, compounding across many
+        # items). int() truncates toward zero, equivalent to floor for these non-negative
+        # values, and never overshoots -- the max(1, ...) floor is unchanged (never
+        # collapse to 0px; the only remaining, deliberate source of overflow is that 1px
+        # floor itself on a pathologically over-crowded axis).
+        new_sizes = [max(1, int(size * scale)) for size in sizes]
+        scales = [scale] * n
+    else:
+        # Clamp every floor to the item's own size: Tier 3 only ever shrinks, so an
+        # item already below its type's minimum stays where it is instead of being
+        # "frozen" bigger than it started (which would also make the pre-check below
+        # reject axes that fit perfectly well today).
+        mins = {
+            item_id: min(max(1, int(min_sizes.get(item_id, 1))), max(1, size))
+            for item_id, size in zip(ids, sizes)
+        }
+        total_min = sum(mins.values())
+        if available_for_sizes < total_min:
+            raise AxisFitError(
+                f"target_dim {target_dim} can't fit the mandatory {min_gap}px floor gaps "
+                f"AND every item's own minimum size ({total_min}px total) for {n} items"
+            )
+        # Flexbox-style shrink-with-minimum: freeze whoever would fall through their own
+        # floor at the current uniform scale, reserve exactly that floor, redistribute
+        # what's left over everyone still free, repeat. Terminates (each pass freezes at
+        # least one of n items or stops) and can't go negative (the pre-check proved even
+        # the all-frozen case fits).
+        size_by_id = dict(zip(ids, sizes))
+        frozen: dict[str, int] = {}
+        free_ids = list(ids)
+        free_available, free_total = available_for_sizes, total_size
+        while free_total > 0:
+            scale = free_available / free_total
+            newly_frozen = [i for i in free_ids if size_by_id[i] * scale < mins[i]]
+            if not newly_frozen:
+                break
+            for item_id in newly_frozen:
+                frozen[item_id] = mins[item_id]
+                free_available -= mins[item_id]
+                free_total -= size_by_id[item_id]
+            free_ids = [i for i in free_ids if i not in frozen]
+        final_scale = free_available / free_total if free_total > 0 else 1.0
+        new_sizes = [
+            frozen[item_id] if item_id in frozen else max(1, int(size_by_id[item_id] * final_scale))
+            for item_id in ids
+        ]
+        scales = [
+            (new_size / size) if size else 1.0
+            for new_size, size in zip(new_sizes, sizes)
+        ]
     new_positions = [0]
     for size in new_sizes[:-1]:
         new_positions.append(new_positions[-1] + size + min_gap)
     result = {
-        item_id: {"pos": pos, "size": size, "scale": scale}
-        for item_id, pos, size in zip(ids, new_positions, new_sizes)
+        item_id: {"pos": pos, "size": size, "scale": item_scale}
+        for item_id, pos, size, item_scale in zip(ids, new_positions, new_sizes, scales)
     }
     return _center_result(result, target_dim) if center else result
 
