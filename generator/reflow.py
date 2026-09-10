@@ -232,11 +232,37 @@ def detect_columns(elements: dict[str, dict], row: list[str]) -> list[list[str]]
     return columns
 
 
-def _columns_fit(columns: list[list[str]], elements: dict[str, dict], target_width: int) -> bool:
-    ids = [eid for column in columns for eid in column]
-    lefts = [elements[eid]["left"] for eid in ids]
-    rights = [elements[eid]["left"] + elements[eid]["width"] for eid in ids]
-    return max(rights) - min(lefts) <= target_width
+def _column_bounds(column: list[str], elements: dict[str, dict]) -> tuple[int, int]:
+    """(left, width) of a column's own bounding box: min(left) across members, and
+    max(left+width) - min(left)."""
+    lefts = [elements[eid]["left"] for eid in column]
+    rights = [elements[eid]["left"] + elements[eid]["width"] for eid in column]
+    left = min(lefts)
+    return left, max(rights) - left
+
+
+def _columns_fit(columns: list[list[str]], elements: dict[str, dict], target_width: int, min_gap: int = 4) -> bool:
+    """True if `columns` fits `target_width` even in the WORST case fit_axis's own
+    later tiers (1/2) would actually produce -- not just at the columns' current (raw)
+    span, but at the MINIMUM achievable span after full compaction (every gap squeezed
+    to `min_gap`): `sum(column widths) + (n-1)*min_gap`.
+
+    CORRECTED 2026-09-10 (real bug, live-testing TSW-570 in Construct): the original
+    version checked only the RAW span (`max(rights) - min(lefts)` across every member),
+    which made wrap_rows peel a row whenever its columns weren't ALREADY packed tightly
+    together -- even when Tier 2 compaction alone (tried immediately after wrap, in the
+    approved move -> wrap -> compact -> scale order) would have closed the gap with no
+    peeling needed at all. Confirmed on the real D-pad row (raw span 690px, minimum
+    achievable span 552px, comfortably under a 640px target): peeling it into two
+    Y-stacking slots instead of one wasted vertical space that forced every other row
+    on the page to compress harder than necessary (21px, illegibly small, button
+    height). Using the achievable-span formula here means wrap_rows only ever peels
+    when compaction genuinely can't help -- exactly mirroring what fit_axis's own Tier
+    3 formula (`target_dim - (n-1)*min_gap`) already treats as the floor below which
+    only scaling can help, just checked one tier earlier, before committing to a peel."""
+    widths = [_column_bounds(column, elements)[1] for column in columns]
+    n = len(widths)
+    return sum(widths) + (n - 1) * min_gap <= target_width
 
 
 def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: int) -> list[tuple[list[list[str]], bool]]:
@@ -567,9 +593,8 @@ def _fit_group(
         row_items = []
         for idx, column in enumerate(columns):
             col_key = f"__col{idx}"
-            col_left = min(elements[eid]["left"] for eid in column)
-            col_right = max(elements[eid]["left"] + elements[eid]["width"] for eid in column)
-            row_items.append((col_key, col_left, col_right - col_left))
+            col_left, col_width = _column_bounds(column, elements)
+            row_items.append((col_key, col_left, col_width))
         try:
             if is_fragment:
                 col_fit = fit_axis(row_items, target_width, center=True)

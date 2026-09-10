@@ -68,11 +68,16 @@ assert fitted["im68at"]["left"] == fitted["i66ouw"]["left"], (
 )
 print("Both Up/Down pairs share a left position after reflow: OK")
 
-# Hand-traced in the design spec: Tier 2 compaction alone fits this -- no wrap needed,
-# so every element keeps its original TOP-level row structure (no element scaled down).
+# Hand-traced in the design spec (and confirmed by the compaction-aware wrap fix,
+# 2026-09-10): compaction alone fits this on BOTH axes -- no wrap needed at all, so
+# every element keeps its ORIGINAL size, width AND height (an earlier version of this
+# assertion only checked width, which is how the still-splitting Y-axis bug here went
+# unnoticed the first time around -- see reflow_compaction_aware_wrap_test.py).
+expected_wh = {"iha5b0": (106, 79), "i4rvpkl": (106, 79), "ilqek": (332, 332), "im68at": (106, 79), "i66ouw": (106, 79)}
 for eid in ids:
-    assert fitted[eid]["width"] in (106, 332), f"{eid} must not be scaled (Tier 2 alone should suffice), got {fitted[eid]}"
-print("No scaling needed -- Tier 2 compaction alone fits the row (confirms the spec's hand-trace): OK")
+    got = (fitted[eid]["width"], fitted[eid]["height"])
+    assert got == expected_wh[eid], f"{eid} must not be scaled on either axis (compaction alone suffices), got {got}, expected {expected_wh[eid]}"
+print("No scaling needed on either axis -- compaction alone fits the row completely: OK")
 
 # Zero overlaps, everything on-canvas.
 def overlaps(a, b):
