@@ -9,7 +9,100 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 5 continuation — multi-resolution reflow DONE, visually confirmed in
+**Reflow bug fix — device-specific blocks that omit width/height (real Construct-authored
+pages routinely do this) were silently dropping elements; fixed, verified against the
+user's real `ReflowTest.cuig`.** After adding TSW-770 + TST-1080 (Portrait) to
+`GenTestProject2` (see the `{DeviceResolutionSource}` fix below for that step), the user
+opened the project in Construct and reported the portrait layout was broken — most
+components weren't reflowed at all, several overflowing off the right edge of the canvas.
+Root cause: `layout.py::parse_position_rules` required a `width` declaration to accept an
+element's rule, but a real page authored directly in Construct (not by this generator,
+`ReflowTest.cuig`) only restates `width`/`height`/`z-index` in a device-specific block when
+they DIFFER from the catch-all block's value — most of its 21 elements had never been
+resized, so their landscape-block rule was just `left:Npx;top:Npx;position:absolute;`. 18
+of 21 elements were silently dropped from the source set as a result; reflow only ever fit
+the 3 elements whose device rule happened to redundantly restate their size. This
+generator's own output always restates the full property set, which is why 9+ prior tasks
+of reflow work never exercised this path — every test (and every generator-authored
+sample) had the shape the bug needed to hide behind, the same class of blind spot as the
+per-element-`@media`-block bug found in the original reflow closeout. Fixed:
+`parse_position_rules` now only requires `left`/`top` (width/height/z_index come back as
+`None` when absent); new `reflow.py::_fill_missing_size` fills any `None` width/height/
+z_index/extra_vars from the catch-all block's own value for that element id, dropping
+(with a warning, not a crash) the rare element still missing size after that. New
+regression test `reflow_partial_device_block_regression_test.py` (a hand-built page
+mirroring the real shape: one element with a fully-restated device rule, two with only
+left/top/position, one of *those* also carrying a catch-all-only `extra_vars` entry — the
+test's first run caught a second gap, `extra_vars` not being merged the same way
+width/height are, fixed in the same pass). Re-ran the portrait reflow against the real
+`ButtonVariants.cuig`/`ReflowTest.cuig`/`MyWidget.cuiw` with `mode="full_refit"` (not
+`add_resolutions_to_project` again, which would have duplicated the already-added
+resolution id) — verified programmatically: all 21 of `ReflowTest.cuig`'s elements now
+present in the portrait block, zero pairwise overlaps, everything fits the 800×1280 canvas
+(max right exactly 800px). Full existing suite (phases 2-5, reflow tasks 9-10) still
+passes clean. **Next**: user to re-check `ReflowTest.cuig`'s portrait layout in Construct.
+
+**Phase 5 bug fix, corrected version — `{DeviceResolutionSource}` should never contain a
+catalog-sourced resolution at all; the field-level "fix" earlier today was still wrong.**
+Full arc: user was live-testing resolution add + reflow in `GenTestProject`'s Resolution
+Manager and caught that an added resolution (TSW-570) looked wrong/duplicated. A first fix
+pass (see superseded entry below) treated this as a field-value bug (`IsCustom`/
+`resolutionType`/`resolutionName` mismatched vs. real sample files) and made
+`to_project_resolution` write those fields into `{DeviceResolutionSource}` to match ~62
+sampled real entries. The user then discovered the REAL root cause while fixing their own
+environment: their machine's `resolutionData.user.json` (this machine's saved custom
+resolutions) had an actual invalid duplicate resolution literally named "TSW-1070" —
+colliding with the real catalog device name, which Construct is supposed to prevent but
+evidently didn't always enforce — and that corruption had leaked into the reference sample
+project (`C:\Solutions\ClaudeSamples\Components`) too. After the user cleaned both up,
+`Components.cuip`'s `{DeviceResolutionSource}` became `[]` while `DeviceResolutionIds`
+kept its one real id — direct proof the two aren't meant to be kept in lockstep the way
+this module assumed. Traced this to source and confirmed definitively:
+`PersistenceHelper.cs`'s `WriteProject`/`SaveProject` only ever assign
+`uiProject.CustomDeviceResolutions` to `projectSource.DeviceResolutionSource` — catalog
+picks are represented purely by id in `DeviceResolutionIds`, resolved against the global
+catalog at runtime (`ResolutionHelper.cs::GenerateDeviceResolutionDto`); on load,
+`OpenProjectHandlerHelper.cs` copies `{DeviceResolutionSource}` verbatim into
+`CustomDeviceResolutions`, which the Resolution Manager renders as a second,
+separately-removable list — exactly the duplicate/deletable row the user saw. So the
+morning's field-level fix was solving the wrong problem: the real bug was ever writing a
+catalog resolution into `{DeviceResolutionSource}` at all. Rewrote
+`generator/devices.py::to_project_resolution` (no longer touches `IsCustom`/
+`resolutionType`/`resolutionName` — the dict is now purely an id/width/height/orientation
+carrier for `DeviceResolutionIds` + reflow math) and
+`generator/project.py::build_project_attributes`/`add_resolutions_to_project` (catalog
+resolutions only ever extend `DeviceResolutionIds`; `{DeviceResolutionSource}` is read and
+written back untouched; `add_resolutions_to_project`'s reflow source-resolution lookup now
+resolves existing ids against the global catalog, since it can no longer assume
+`{DeviceResolutionSource}` holds every existing resolution). Also added macOS support to
+`default_app_storage_path()` in both `devices.py` and `sdk.py` (confirmed via
+`EnvironmentUtility.cs`: `~/Library/Application Support/crestron-construct/AppStorage`,
+not the more commonly-documented `~/.config`), per the user's ask. Regenerated the
+already-broken `GenTestProject2.cuip` in place (same Id, `{DeviceResolutionSource}` now
+correctly `[]`) — flagged one unrelated, NOT fixed side-observation: the rewrite reset
+`ThemePageColor` to `""` (the generator's long-standing, un-investigated default) where
+real Construct-managed files (including this one, before the rewrite) show `"#ffffff"`;
+out of scope for this fix, not touched further. `docs/architecture/05-resolutions.md`
+updated with a correction section citing the exact source. **Not yet done**: this
+module still has no "create a genuinely custom resolution" builder — when one is added,
+it should validate that the resolution's name doesn't collide with a standard catalog
+device name (the exact rule Construct itself is supposed to, but evidently doesn't always,
+enforce). User is still mid-way through re-testing reflow in Construct; next step is
+waiting on their signal to add resolutions to whichever project they're now using.
+
+**Phase 5 bug fix (SUPERSEDED, see above — this fix was incomplete/wrong) —
+`to_project_resolution`'s catalog->project field mapping was wrong.** User was
+live-testing resolution add + reflow together in `GenTestProject` (Construct's Resolution
+Manager) and caught that a resolution added by `add_resolutions_to_project` (TSW-570)
+looked wrong/"custom" compared to the project's original TSW-1070 entry. Root cause,
+confirmed against 62 real `DeviceResolutionSource` entries across 30+ human-authored
+projects under `C:\Solutions` (not just the one reference project): Construct does NOT
+copy a catalog entry's `IsCustom`/`resolutionType`/`resolutionName` verbatim into a
+project. Fixed in `generator/devices.py::to_project_resolution` (hardcoded
+`IsCustom: True`/`resolutionType: "generic"`). **This survey's ground truth turned out to
+be contaminated** — see the superseding entry above for why, and the actual fix.
+
+**Phase 5 continuation (superseded above) — multi-resolution reflow DONE, visually confirmed in
 Construct.** All 10 tasks plus a final whole-branch review's fix wave are complete
 and merged to `master` (29 commits). The final review caught the most severe bug in
 the whole plan: the real generator emits one `@media` block PER ELEMENT even when
@@ -221,6 +314,49 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-10: **Reflow: device-specific blocks omitting width/height were silently
+  dropping elements -- found and fixed after the user's real `ReflowTest.cuig` reflowed
+  broken (most components not moved, several overflowing off-canvas) for TST-1080
+  Portrait.** Root cause: `layout.py::parse_position_rules` required `width` to accept a
+  rule; a real Construct-authored device block only restates width/height/z-index when
+  they differ from the catch-all's value, so 18 of `ReflowTest.cuig`'s 21 elements (whose
+  device rule was just `left/top/position`) were silently dropped. This generator's own
+  output always restates the full set, so no prior task/test ever exercised the omitted
+  case. Fixed: `parse_position_rules` now only requires left/top; new
+  `reflow.py::_fill_missing_size` fills missing width/height/z_index/extra_vars from the
+  catch-all block per element (the new regression test's first run also caught extra_vars
+  not being merged, fixed in the same pass). Re-ran the portrait reflow against the real
+  files with `mode="full_refit"`; verified programmatically (all 21 elements present, zero
+  pairwise overlaps, fits the 800x1280 canvas). See Current phase above for the full
+  writeup.
+- 2026-09-10: **`{DeviceResolutionSource}` architecture bug found and fixed (supersedes
+  the same-day field-level fix below, which was still wrong).** User fixed their own
+  corrupted environment (an invalid custom resolution named "TSW-1070", colliding with
+  the real device, in `resolutionData.user.json`, which had leaked into the reference
+  sample project too) and, watching `Components.cuip`'s `{DeviceResolutionSource}` become
+  `[]` after cleanup while `DeviceResolutionIds` stayed populated, that was the tell that
+  this module's whole model was backwards. Traced to source
+  (`PersistenceHelper.cs::WriteProject`/`SaveProject`): `{DeviceResolutionSource}` only
+  ever persists genuinely custom resolutions, never catalog picks — confirmed via a
+  `Grep` across `C:\Git\CCIDE` landing on the exact two-line assignment. Rewrote
+  `generator/devices.py::to_project_resolution` and
+  `generator/project.py::build_project_attributes`/`add_resolutions_to_project`
+  accordingly; `phase5_smoke_test.py`'s regression check rewritten to assert
+  `{DeviceResolutionSource}` stays `[]` for catalog-only adds (the opposite of what it
+  asserted a few hours earlier). Also added macOS support to `default_app_storage_path()`
+  in `devices.py`/`sdk.py` at the user's request, grounded in `EnvironmentUtility.cs`.
+  Regenerated the real `GenTestProject2.cuip` on disk to match (same Id, now-empty
+  `{DeviceResolutionSource}`). Full test suite (phases 2-4, reflow task 10, phase 5) still
+  passes clean. See Current phase above for the full writeup, including one flagged-but-
+  not-fixed side observation (`ThemePageColor` default).
+- 2026-09-10: **`to_project_resolution` catalog->project field bug "fixed" (SUPERSEDED —
+  wrong fix, see entry above).** User caught it live-testing in `GenTestProject`; root
+  cause was believed to be `IsCustom`/`resolutionType`/`resolutionName` field mismatches,
+  "confirmed" against 62 real `DeviceResolutionSource` entries scraped from 30+
+  human-authored `.cuip` files under `C:\Solutions`. That survey's ground truth turned out
+  to be contaminated by the same machine-level corruption described above — the real bug
+  was structural, not field-level. Left in the log for an honest record of how this was
+  actually debugged (two passes, not one).
 - 2026-09-09: **Correction: Construct projects are authored top-down, not
   smallest-first.** User corrected an assumption in the just-written "known
   limitation" note (cascade ordering risk when resolutions are added out of size
