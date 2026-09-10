@@ -202,7 +202,7 @@ def _row_fits(row: list[str], elements: dict[str, dict], target_width: int) -> b
     return max(rights) - min(lefts) <= target_width
 
 
-def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: int) -> list[list[str]]:
+def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: int) -> list[tuple[list[str], bool]]:
     """X-axis wrap tier, run between fit_axis's Tier 1 and Tier 2 (see spec). For each
     row (in order), check the same bounding-box test as fit_axis's own Tier 1 test,
     scoped to just that row's elements; a row that passes needs nothing further. A row
@@ -213,14 +213,23 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
     (so a very crowded row can split into more than two). A single-element row is
     always left as-is regardless of whether it fits -- wrapping can't help one element;
     that case falls through to fit_axis's own compact/scale tiers when X positions are
-    finalized per row (see the spec's Tiers 3/4 note)."""
+    finalized per row (see the spec's Tiers 3/4 note).
+
+    Returns `[(row, is_fragment), ...]` -- ADDED 2026-09-10 (see docs/superpowers/specs/
+    2026-09-10-reflow-centering-design.md): `is_fragment` is True for a row produced by
+    peeling (both the shrunk remainder and every peeled-off piece), False for a row that
+    passed through untouched. `_fit_group` uses this to decide whether a row's centering
+    is auto-detected from its own original margins (untouched) or always applied
+    (fragment -- a subset of a once-centered row has no meaningful "was it centered"
+    answer of its own)."""
     pending = list(rows)
-    result: list[list[str]] = []
+    pending_is_fragment = [False] * len(rows)
+    result: list[tuple[list[str], bool]] = []
     i = 0
     while i < len(pending):
         row = pending[i]
         if len(row) <= 1 or _row_fits(row, elements, target_width):
-            result.append(row)
+            result.append((row, pending_is_fragment[i]))
             i += 1
             continue
         remainder = row
@@ -229,7 +238,9 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
             peeled.insert(0, remainder[-1])
             remainder = remainder[:-1]
         pending[i] = remainder
+        pending_is_fragment[i] = True
         pending.insert(i + 1, peeled)
+        pending_is_fragment.insert(i + 1, True)
         # Don't advance i: re-check the shrunk `remainder` (now at pending[i]) next
         # iteration -- it passes immediately since peeling stopped exactly when it
         # started fitting (or dropped to one element).
