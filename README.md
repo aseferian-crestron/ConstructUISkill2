@@ -9,7 +9,41 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Reflow bug fix — a resized button's adorner showed the correct new size, but the
+**Reflow: column-aware row fitting + compaction-aware wrap decisions — DONE, verified
+against the real TSW-570 (640x360) block.** User's next question after the D-pad/
+missing-var fixes: "why do the Up/Down buttons move to a second row — there's certainly
+room to have them in the same row." Investigated and found a genuinely deeper gap:
+`detect_rows` correctly groups a D-pad with two Up/Down button pairs into one row (the
+D-pad's height Y-overlaps both pairs), but the row's own X-fitting had no concept that
+`iha5b0`/`i4rvpkl` (Up/Down, sharing the exact same source `left=292`) don't compete for
+horizontal space — they're a vertical stack. Went through the full brainstorm -> spec ->
+plan process (`docs/superpowers/specs/2026-09-10-reflow-columns-design.md`,
+`docs/superpowers/plans/2026-09-10-reflow-columns.md`) given this touches the row/wrap
+model and its overlap-safety proof, per the user's explicit choice of the general
+"sub-column" approach over a narrower patch. Built `detect_columns` (the X-axis
+transpose of `detect_rows`, grouping a row's members by source X-range overlap) and
+wired `wrap_rows`/`_fit_group`'s X-loop to fit/peel whole columns instead of individual
+elements — a stacked pair now always travels together. **Self-caught a second, deeper
+bug while re-verifying**: my own spec's hand-trace claimed compaction alone would fit
+the real D-pad row with no wrap needed, but the actual re-run still split it — because
+`wrap_rows` decides whether to peel using the row's RAW (uncompacted) span vs.
+target_width, never checking whether Tier 2 compaction alone (the very next tier, tried
+immediately after wrap) would have sufficed on its own. Fixed with the same floor
+formula Tier 3 already uses (`sum(widths) + (n-1)*min_gap <= target_width`), applied one
+tier earlier before committing to a peel. Together, both fixes eliminate an entire
+unnecessary Y-stacking slot on the real page, which is what had been forcing every other
+row to compress harder than necessary. 4 new regression tests (one per fix, including
+a hand-traced reproduction of the exact reported shape); full 19-file suite passes with
+zero regressions (confirmed during planning that every existing wrap_rows test case's
+outcome is unchanged under the new compaction-feasibility check — only genuinely-fits-
+after-compaction cases like this one behave differently). Re-verified against the real
+files: both Up/Down pairs still share their `left` position; source-row button height
+improved from 21px to 28px, D-pad from 166px to 228px (both real, measurable
+improvements, not just "no worse"); 21 elements, zero overlaps, everything within the
+640x360 canvas, zero CSS-var/box mismatches anywhere in the block. **Next**: user to
+re-check TSW-570 in Construct.
+
+**Reflow bug fix (superseded above) — a resized button's adorner showed the correct new size, but the
 button rendered much bigger — DONE.** Same session as the D-pad/aspect-lock work below,
 found immediately after by the user re-checking TSW-570 in Construct: a "Source 2"
 button's selection adorner correctly showed 21px height, but the button itself rendered
@@ -434,6 +468,21 @@ before any manual testing inside Construct itself.
 
 ## Log
 
+- 2026-09-10: **Reflow: column-aware row fitting + compaction-aware wrap decisions --
+  DONE, verified against real TSW-570.** User asked why Up/Down buttons still moved to
+  a second row when "there's certainly room." Found `detect_rows` correctly groups a
+  D-pad with two button pairs into one row (Y-overlap via the D-pad's height), but
+  X-fitting had no concept that a pair sharing the same source `left` doesn't compete
+  for horizontal space. Went through brainstorm -> spec -> plan (user chose the general
+  "sub-column" approach); built `detect_columns` (X-axis transpose of `detect_rows`)
+  and wired `wrap_rows`/`_fit_group` to fit/peel columns, not elements. Self-caught a
+  second bug re-verifying: `wrap_rows` decided to peel using the row's RAW span, never
+  checking whether Tier 2 compaction alone would have sufficed -- fixed with Tier 3's
+  own floor formula, applied one tier earlier. Together: an entire unnecessary
+  Y-stacking slot eliminated on the real page. 4 new tests, full 19-file suite passes.
+  Re-verified: pairs still share `left`; button height improved 21px->28px, D-pad
+  166px->228px; 21 elements, zero overlaps, zero var mismatches. See Current phase
+  above for the full writeup.
 - 2026-09-10: **Reflow: missing size-var bug (adorner right, button rendered bigger) --
   DONE.** User re-checked TSW-570 in Construct right after the D-pad/aspect-lock fix and
   caught it immediately: a resized button's adorner showed the new smaller size, but the
