@@ -418,6 +418,40 @@ def _fit_group(
     return fitted
 
 
+def _fill_missing_size(
+    elements: dict[str, dict], catchall: dict[str, dict], path: Path, query: str, warnings: list[str],
+) -> dict[str, dict]:
+    """A device-specific block only restates `width`/`height`/`z_index`/`extra_vars`
+    when they differ from the catch-all block's value for that element (see
+    layout.py::parse_position_rules's docstring) -- fill in whichever are `None`/absent
+    from the catch-all's own value for that element id. `z_index` staying `None` after
+    this is expected (real device blocks never repeat it at all, confirmed in
+    layout.py's module docstring); an element still missing `width`/`height` after the
+    merge (present in the device block but never in the catch-all -- shouldn't happen in
+    a well-formed file) is dropped with a warning rather than propagated as `None` into
+    size-dependent math. `extra_vars` (e.g. `--ch5-button--regular-width`) are merged
+    key-by-key with the device block's own values winning on a conflict, the same
+    precedence as width/height -- found by this function's own regression test: an
+    initial version left `extra_vars` untouched, silently dropping a catch-all-only var
+    for any element whose device rule omitted it."""
+    filled: dict[str, dict] = {}
+    for eid, e in elements.items():
+        fallback = catchall.get(eid, {})
+        width = e["width"] if e["width"] is not None else fallback.get("width")
+        height = e["height"] if e["height"] is not None else fallback.get("height")
+        if width is None or height is None:
+            warnings.append(f"{path.name}: {eid!r} has no width/height in {query} or the catch-all block -- skipped")
+            continue
+        filled[eid] = {
+            **e,
+            "width": width,
+            "height": height,
+            "z_index": e["z_index"] if e["z_index"] is not None else fallback.get("z_index"),
+            "extra_vars": {**fallback.get("extra_vars", {}), **e.get("extra_vars", {})},
+        }
+    return filled
+
+
 def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mode: str = "pin_existing") -> ReflowResult:
     """Add or update `target_resolution`'s @media block(s) in `path` so it has a
     position rule for every element `source_resolution`'s block(s) have. See the
@@ -481,6 +515,12 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     catch_all_query = "(max-width: 99999px)"
 
     try:
+        catchall_elements = layout.parse_all_position_rules(css_text, catch_all_query)
+    except (ValueError, KeyError) as e:
+        warnings.append(f"{path.name}: catch-all block didn't parse cleanly -- {e} -- skipped")
+        return ReflowResult(warnings=warnings)
+
+    try:
         source_elements = layout.parse_all_position_rules(css_text, source_query)
     except (ValueError, KeyError) as e:
         warnings.append(f"{path.name}: source block for {source_query} didn't parse cleanly -- {e} -- skipped")
@@ -488,11 +528,9 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     if not source_elements:
         # Fall back to the 99999px catch-all -- a page authored before the project
         # had any resolution only ever has this block (see the module docstring).
-        try:
-            source_elements = layout.parse_all_position_rules(css_text, catch_all_query)
-        except (ValueError, KeyError) as e:
-            warnings.append(f"{path.name}: catch-all block didn't parse cleanly -- {e} -- skipped")
-            return ReflowResult(warnings=warnings)
+        source_elements = catchall_elements
+    else:
+        source_elements = _fill_missing_size(source_elements, catchall_elements, path, source_query, warnings)
     if not source_elements:
         warnings.append(f"{path.name}: no source block (device or catch-all) had any position rules -- skipped")
         return ReflowResult(warnings=warnings)
@@ -507,6 +545,8 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     except (ValueError, KeyError) as e:
         warnings.append(f"{path.name}: target block for {target_query} didn't parse cleanly -- {e} -- skipped")
         return ReflowResult(warnings=warnings)
+    if target_elements:
+        target_elements = _fill_missing_size(target_elements, catchall_elements, path, target_query, warnings)
 
     if mode == "full_refit" or not target_elements:
         pinned, to_fit = {}, source_elements

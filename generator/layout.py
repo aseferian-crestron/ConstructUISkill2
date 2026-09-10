@@ -186,7 +186,19 @@ def parse_position_rules(block_css: str) -> dict[str, dict]:
     """Parse one block's flat `#id{...}` rules into position/size dicts. The regex
     requires `{` immediately after the id -- a nested/child selector like
     `#id .ch5-button :not(i):not(svg) {...}` has a space before its `{`, so it never
-    matches here and is correctly left alone (it carries no position data)."""
+    matches here and is correctly left alone (it carries no position data).
+
+    Only `left`/`top` are required. `width`/`height`/`z_index` come back as `None` when
+    absent -- CORRECTED 2026-09-10: confirmed against a real page authored directly in
+    Construct (not by this generator) that a device-specific block only restates
+    `width`/`height`/`z-index` when they differ from the catch-all block's value for that
+    element; most of that page's elements had never been resized away from their
+    catch-all size, so their device block was just `left:Npx;top:Npx;position:absolute;`.
+    Requiring `width` here (the original version) silently dropped those elements
+    entirely rather than treating them as "unchanged size" -- reflow.py::reflow_file is
+    responsible for filling in `None` width/height/z_index from the catch-all block's own
+    value for that element id before doing any size-dependent math.
+    """
     elements: dict[str, dict] = {}
     for m in _FLAT_RULE_RE.finditer(block_css):
         decls: dict[str, str] = {}
@@ -196,14 +208,14 @@ def parse_position_rules(block_css: str) -> dict[str, dict]:
                 continue
             key, _, value = decl.partition(":")
             decls[key.strip()] = value.strip()
-        if "left" not in decls or "width" not in decls:
+        if "left" not in decls or "top" not in decls:
             continue
         extra_vars = {k: v for k, v in decls.items() if k.startswith("--")}
         elements[m.group("id")] = {
             "left": int(decls["left"].rstrip("px")),
             "top": int(decls["top"].rstrip("px")),
-            "width": int(decls["width"].rstrip("px")),
-            "height": int(decls["height"].rstrip("px")),
+            "width": int(decls["width"].rstrip("px")) if "width" in decls else None,
+            "height": int(decls["height"].rstrip("px")) if "height" in decls else None,
             "z_index": int(decls["z-index"]) if "z-index" in decls else None,
             "extra_vars": extra_vars,
         }
