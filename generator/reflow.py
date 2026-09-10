@@ -232,45 +232,50 @@ def detect_columns(elements: dict[str, dict], row: list[str]) -> list[list[str]]
     return columns
 
 
-def _row_fits(row: list[str], elements: dict[str, dict], target_width: int) -> bool:
-    lefts = [elements[eid]["left"] for eid in row]
-    rights = [elements[eid]["left"] + elements[eid]["width"] for eid in row]
+def _columns_fit(columns: list[list[str]], elements: dict[str, dict], target_width: int) -> bool:
+    ids = [eid for column in columns for eid in column]
+    lefts = [elements[eid]["left"] for eid in ids]
+    rights = [elements[eid]["left"] + elements[eid]["width"] for eid in ids]
     return max(rights) - min(lefts) <= target_width
 
 
-def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: int) -> list[tuple[list[str], bool]]:
+def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: int) -> list[tuple[list[list[str]], bool]]:
     """X-axis wrap tier, run between fit_axis's Tier 1 and Tier 2 (see spec). For each
     row (in order), check the same bounding-box test as fit_axis's own Tier 1 test,
     scoped to just that row's elements; a row that passes needs nothing further. A row
-    that fails and has more than one element peels elements off its trailing
-    (right-most, by the left-to-right order detect_rows established) end -- ALL of them
-    in one pass -- until what remains passes; the peeled elements become one new row,
-    inserted immediately after, which itself gets the same check on a later iteration
-    (so a very crowded row can split into more than two). A single-element row is
-    always left as-is regardless of whether it fits -- wrapping can't help one element;
-    that case falls through to fit_axis's own compact/scale tiers when X positions are
-    finalized per row (see the spec's Tiers 3/4 note).
+    that fails and has more than one COLUMN peels columns off its trailing (right-most)
+    end -- ALL of them in one pass -- until what remains passes; the peeled columns
+    become one new row, inserted immediately after, which itself gets the same check on
+    a later iteration (so a very crowded row can split into more than two). A row
+    already down to one column is always left as-is regardless of whether it fits --
+    wrapping can't help split it further; that case falls through to fit_axis's own
+    compact/scale tiers when X positions are finalized per row (see the spec's Tiers
+    3/4 note).
 
-    Returns `[(row, is_fragment), ...]` -- ADDED 2026-09-10 (see docs/superpowers/specs/
-    2026-09-10-reflow-centering-design.md): `is_fragment` is True for a row produced by
-    peeling (both the shrunk remainder and every peeled-off piece), False for a row that
-    passed through untouched. `_fit_group` uses this to decide whether a row's centering
-    is auto-detected from its own original margins (untouched) or always applied
-    (fragment -- a subset of a once-centered row has no meaningful "was it centered"
-    answer of its own)."""
-    pending = list(rows)
+    Returns `[(columns, is_fragment), ...]` -- UPDATED 2026-09-10 (column-aware, see
+    docs/superpowers/specs/2026-09-10-reflow-columns-design.md): each input `row` is
+    first grouped into columns (detect_columns) before peeling -- a column's own
+    members (e.g. a vertically-stacked Up/Down button pair sharing a row only because a
+    taller neighbor bridges them) always travel together; a peel boundary may fall
+    between columns, never between two members of the same column. `is_fragment` is
+    True for a row produced by peeling (both the shrunk remainder and every peeled-off
+    piece), False for a row that passed through untouched. `_fit_group` uses this to
+    decide whether a row's centering is auto-detected from its own original margins
+    (untouched) or always applied (fragment -- a subset of a once-centered row has no
+    meaningful "was it centered" answer of its own)."""
+    pending: list[list[list[str]]] = [detect_columns(elements, row) for row in rows]
     pending_is_fragment = [False] * len(rows)
-    result: list[tuple[list[str], bool]] = []
+    result: list[tuple[list[list[str]], bool]] = []
     i = 0
     while i < len(pending):
-        row = pending[i]
-        if len(row) <= 1 or _row_fits(row, elements, target_width):
-            result.append((row, pending_is_fragment[i]))
+        columns = pending[i]
+        if len(columns) <= 1 or _columns_fit(columns, elements, target_width):
+            result.append((columns, pending_is_fragment[i]))
             i += 1
             continue
-        remainder = row
-        peeled: list[str] = []
-        while len(remainder) > 1 and not _row_fits(remainder, elements, target_width):
+        remainder = columns
+        peeled: list[list[str]] = []
+        while len(remainder) > 1 and not _columns_fit(remainder, elements, target_width):
             peeled.insert(0, remainder[-1])
             remainder = remainder[:-1]
         pending[i] = remainder
@@ -279,7 +284,7 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
         pending_is_fragment.insert(i + 1, True)
         # Don't advance i: re-check the shrunk `remainder` (now at pending[i]) next
         # iteration -- it passes immediately since peeling stopped exactly when it
-        # started fitting (or dropped to one element).
+        # started fitting (or dropped to one column).
     return result
 
 
