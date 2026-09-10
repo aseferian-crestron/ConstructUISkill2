@@ -197,6 +197,41 @@ def detect_rows(elements: dict[str, dict]) -> list[list[str]]:
     return rows
 
 
+def detect_columns(elements: dict[str, dict], row: list[str]) -> list[list[str]]:
+    """X-axis transpose of detect_rows (see docs/superpowers/specs/
+    2026-09-10-reflow-columns-design.md), scoped to one already-detected row's member
+    ids: sort by `left`, then greedily cluster -- an element joins the current column
+    if its [left, left+width) range overlaps the column's accumulated [column_left,
+    column_right) range so far (column_right grows to the widest member seen);
+    otherwise it starts a new column. Columns are returned left-to-right; within a
+    column, ids are ordered top-to-bottom by `top` (the transpose of detect_rows' own
+    left-to-right member ordering) -- natural reading order for a vertical stack like a
+    Up/Down button pair.
+
+    A row with no overlapping `left` ranges produces one single-element column per
+    element -- identical in effect to fitting each element independently, so this is
+    additive over today's flat per-element behavior for every row shape without this
+    kind of stacked sub-group."""
+    if not row:
+        return []
+    ordered = sorted(row, key=lambda eid: elements[eid]["left"])
+    columns: list[list[str]] = []
+    current_ids: list[str] = []
+    column_right = None
+    for element_id in ordered:
+        e = elements[element_id]
+        left, right = e["left"], e["left"] + e["width"]
+        if column_right is None or left < column_right:
+            current_ids.append(element_id)
+            column_right = right if column_right is None else max(column_right, right)
+        else:
+            columns.append(sorted(current_ids, key=lambda i: elements[i]["top"]))
+            current_ids = [element_id]
+            column_right = right
+    columns.append(sorted(current_ids, key=lambda i: elements[i]["top"]))
+    return columns
+
+
 def _row_fits(row: list[str], elements: dict[str, dict], target_width: int) -> bool:
     lefts = [elements[eid]["left"] for eid in row]
     rights = [elements[eid]["left"] + elements[eid]["width"] for eid in row]
