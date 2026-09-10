@@ -464,18 +464,22 @@ def stack_rows(
     if sdk is not None and id_to_tag:
         natural_by_key = dict(zip(row_keys, natural_height))
         derived: dict[str, int] = {}
+        schema_backed: dict[str, bool] = {}
         for i, row in enumerate(rows):
             tags = [id_to_tag.get(eid) for eid in row]
             if not all(tags):
                 continue  # partial tag info -- this row just gets the default floor of 1
-            worst_ratio = 0.0
+            worst_ratio, worst_tag = 0.0, None
             for eid, tag in zip(row, tags):
                 own_height = elements[eid]["height"]
                 if own_height > 0:
-                    worst_ratio = max(worst_ratio, _component_min_size(sdk, tag, "height") / own_height)
+                    ratio = _component_min_size(sdk, tag, "height") / own_height
+                    if ratio > worst_ratio:
+                        worst_ratio, worst_tag = ratio, tag
             if worst_ratio > 0:
                 own_natural = max(1, natural_height[i])
                 derived[row_keys[i]] = max(1, min(math.ceil(own_natural * worst_ratio), own_natural))
+                schema_backed[row_keys[i]] = _has_schema_min_size(sdk, worst_tag)
         # Feasibility relaxation -- ADDED 2026-09-10 while implementing this, after an
         # existing regression test (reflow_aspect_lock_dpad_test.py) caught the spec's
         # error handling doing real damage here. Unlike an X-axis floor (one element per
@@ -491,7 +495,12 @@ def stack_rows(
         # way it does today.
         available = target_height - (len(rows) - 1) * min_gap
         relaxed = 0
-        for key in sorted(derived, key=lambda k: derived[k] / max(1, natural_by_key[k]), reverse=True):
+        # Give up SOFT floors (FALLBACK_MIN_SIZE_PX -- this project's legibility choice
+        # for types the schema says nothing about) before schema-backed ones (a real
+        # technical limit: a ch5-dpad below 100px isn't just ugly, Construct doesn't
+        # support it). Within each group, drop the largest floor first, so the fewest
+        # rows have to be sacrificed to make the stack fit.
+        for key in sorted(derived, key=lambda k: (schema_backed.get(k, False), -derived[k])):
             if sum(derived.values()) <= available:
                 break
             derived[key] = 1
@@ -711,6 +720,22 @@ def _parse_min_size(value: object) -> int | None:
         return max(1, int(float(text)))
     except ValueError:
         return None
+
+
+def _has_schema_min_size(sdk: "sdk_module.UiSdk", tag_name: str) -> bool:
+    """True if `tag_name`'s floor comes from the SDK's own `minSizes` schema (a real,
+    Construct-enforced technical limit -- ch5-dpad, ch5-keypad, ch5-media-player...)
+    rather than from FALLBACK_MIN_SIZE_PX (a legibility preference this project chose
+    for the types Crestron publishes nothing for). stack_rows uses this to decide which
+    floors to give up first when a stack can't honor them all."""
+    try:
+        ctx = sdk.context_for(tag_name)
+    except (KeyError, StopIteration):
+        return False
+    min_sizes = ctx.get("minSizes") if isinstance(ctx, dict) else None
+    if not isinstance(min_sizes, dict):
+        return False
+    return any(_parse_min_size(min_sizes.get(k)) is not None for k in ("minWidth", "minHeight"))
 
 
 def _component_min_size(sdk: "sdk_module.UiSdk", tag_name: str, axis: str = "width") -> int:

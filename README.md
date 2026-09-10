@@ -9,6 +9,78 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Reflow: minimum-size floors for Tier 3 — DONE, implemented + verified against the
+real files; one real finding the user should know about.** User reviewed the min-size
+design spec (`docs/superpowers/specs/2026-09-10-reflow-min-size-design.md`, written at
+the end of the previous session after real buttons came out 28px tall at TSW-570) and
+asked to build it. Went spec -> plan (`docs/superpowers/plans/2026-09-10-reflow-min-size.md`)
+-> inline TDD execution, five tasks, one commit each. Tier 3 now takes an optional
+per-item floor: `fit_axis(min_sizes=...)` runs a flexbox-style iterative
+freeze-and-redistribute (freeze whoever falls through their own floor at the current
+uniform scale, reserve exactly that floor, recompute the scale for everyone still free,
+repeat to convergence), while `min_sizes=None` — every legacy caller — runs the original
+one-shot formula verbatim. That two-path split is load-bearing and now pinned by tests: at
+`target_dim=10` the legacy branch's independent 1px floors span 11px (its documented,
+deliberate overshoot) where the dict branch always packs to exactly `target_dim`. Floors
+come from two sources: the SDK's own `minSizes` schema (`ch5-dpad` 100px, `ch5-keypad`
+210px — real Construct-enforced limits) and `FALLBACK_MIN_SIZE_PX = 30` for the types
+Crestron publishes nothing for (`ch5-button`, `ch5-slider`).
+
+**Three corrections to the spec, all evidence-backed** (the spec was written from the
+dpad/keypad entries alone): (1) `minSizes` values are NOT uniformly `"Npx"` strings —
+`ch5-qrcode`'s is the unit-less `"160"` and `ch5-video-switcher`'s is a raw JSON **int**,
+so the spec's `int(v.rstrip("px"))` would have raised `AttributeError`; (2) three tags
+publish their own `minHeight` (`ch5-tab-button` is 110 wide / 68 tall), so the lookup is
+per-axis with `minWidth` as the height fallback rather than `minWidth` for both; (3) every
+floor is clamped to the item's own current size, keeping Tier 3 shrink-only — without it an
+element already below its type's minimum would be "frozen" LARGER than it started.
+
+**The X and Y axes turned out not to be symmetric, which the spec had assumed.** A row can
+only ever reach X-axis Tier 3 with ONE column, because `wrap_rows`' peel loop exits only
+when the remainder passes `_columns_fit` (Tier 2 compaction alone suffices) or when a
+single unpeelable column is left — verified directly and now pinned by an assertion. So
+freeze-and-redistribute never engages on X; there the floor only converts "silently emit a
+component narrower than its own technical minimum" into an `AxisFitError`, which needs a
+target narrower than the component's own floor (210px for a keypad) and so no real device
+reaches it. The Y axis (`stack_rows`, no wrap tier) is where floors actually change
+layouts.
+
+**Deviation from the spec's error handling, forced by an existing test.**
+`reflow_aspect_lock_dpad_test.py` immediately caught the spec's plain `AxisFitError`
+doing real damage: a Y floor is DERIVED, not technical — keeping a 40px button at its own
+30px minimum forces its whole 300px row to stay 225px tall — so a crowded stack can demand
+more than `target_height` even when every individual component is satisfiable, and the
+error made `_fit_group` skip the ENTIRE device block. That turns a legibility problem into
+missing components, the exact failure `reflow_file` exists to prevent. `stack_rows` now
+relaxes instead: it gives up SOFT (fallback) floors before schema-backed ones — a
+`ch5-dpad` under 100px isn't just ugly, Construct doesn't support it — largest floor first
+so the fewest rows are sacrificed, and warns how many rows lost their floor. A relaxed row
+lays out exactly as it does today, so this can never be worse than current behavior.
+
+**Verified against the real `GenTestProject2` (on a copy, the real files were NOT
+touched):** `ReflowTest.cuig` reflows to all 21 elements, zero overlaps, inside 640x360,
+zero elements under their own floor. **The finding worth knowing: the 28px buttons still
+sitting in that file are stale output.** Re-running *today's* code produces 36px even with
+floors disabled — the reported symptom was already fixed by the same-day column-aware +
+compaction-aware wrap work, and the file just still holds the pre-fix block. So the floors
+changed nothing on that page; they're a safety net, and the E2E test uses two fixtures that
+genuinely exercise them instead (a tall unconstrained `ch5-image` donating height so
+buttons hold 30px: 29px -> 30px; and an over-crowded page where relaxation takes
+components at a usable size from 0 to 15 while the dpad holds its 100px schema floor).
+5 new test files, full 30-file suite green with every pre-existing test unchanged except
+`reflow_aspect_lock_dpad_test.py`, which now expects the one relaxation warning (its layout
+assertions are untouched and still pass).
+
+**Also spotted, NOT fixed (needs its own decision):** `reflow_file` treats a non-empty
+source device block as the complete source, rather than the catch-all overridden by that
+block. `ReflowTest.cuig`'s 1280x800 block holds exactly ONE rule (Construct only restates
+a device rule when it differs from the catch-all), so a plain re-run from 1280x800 would
+reflow ONE element and drop the other 20. That's why the verification above deleted that
+block on its copy to source from the 21-element catch-all. **Next**: user decides whether
+to (a) have the real project refreshed so TSW-570 can be re-checked in Construct — worth
+doing, since the file's current block predates two rounds of fixes — and (b) whether the
+source-block/catch-all union above is the next thing to fix.
+
 **Reflow: column-aware row fitting + compaction-aware wrap decisions — DONE, verified
 against the real TSW-570 (640x360) block.** User's next question after the D-pad/
 missing-var fixes: "why do the Up/Down buttons move to a second row — there's certainly

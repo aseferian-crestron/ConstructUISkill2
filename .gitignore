@@ -21,3 +21,4 @@ generator/_test_output/ReflowForceCustomSize/
 generator/_test_output/ReflowMissingSizeVars/
 generator/_test_output/ReflowColumnsE2E/
 generator/_test_output/out.txt
+generator/_test_output/ReflowMinSizeE2E/
