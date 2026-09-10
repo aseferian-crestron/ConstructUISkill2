@@ -549,23 +549,46 @@ def _fit_group(
     and the only way `--ch5-dpad--regular-size`-style vars get scaled at all. Either
     argument missing/`None` falls back to today's legacy substring-based scaling with
     no aspect-lock reconciliation, unchanged -- existing callers/tests that don't know
-    about component types keep working exactly as before."""
+    about component types keep working exactly as before.
+
+    ADDED 2026-09-10 (column-aware, see docs/superpowers/specs/
+    2026-09-10-reflow-columns-design.md): the X-loop now fits one item PER COLUMN
+    (detect_columns' grouping of each row's elements by source X-range overlap), not
+    one item per element -- elements that share a column (e.g. a vertically-stacked
+    Up/Down pair) always get the SAME final `left`, each keeping its own width scaled
+    by the column's own scale factor. `stack_rows`' Y-axis is unaffected: `row_lists`
+    flattens each wrapped row's columns back into a plain element-id list, the same
+    shape `stack_rows` already expected."""
     rows = detect_rows(elements)
     wrapped_rows = wrap_rows(rows, elements, target_width)
 
     x_fit: dict[str, dict] = {}
-    for row, is_fragment in wrapped_rows:
-        row_items = [(eid, elements[eid]["left"], elements[eid]["width"]) for eid in row]
+    for columns, is_fragment in wrapped_rows:
+        row_items = []
+        for idx, column in enumerate(columns):
+            col_key = f"__col{idx}"
+            col_left = min(elements[eid]["left"] for eid in column)
+            col_right = max(elements[eid]["left"] + elements[eid]["width"] for eid in column)
+            row_items.append((col_key, col_left, col_right - col_left))
         try:
             if is_fragment:
-                x_fit.update(fit_axis(row_items, target_width, center=True))
+                col_fit = fit_axis(row_items, target_width, center=True)
             else:
-                x_fit.update(fit_axis(row_items, target_width, source_dim=source_width))
+                col_fit = fit_axis(row_items, target_width, source_dim=source_width)
         except AxisFitError as e:
             warnings.append(f"{path.name}: X axis for {query} -- {e}")
             return None
+        for idx, column in enumerate(columns):
+            fit = col_fit[f"__col{idx}"]
+            for eid in column:
+                own_width = elements[eid]["width"]
+                x_fit[eid] = {
+                    "pos": fit["pos"],
+                    "size": max(1, int(own_width * fit["scale"])) if fit["scale"] != 1.0 else own_width,
+                    "scale": fit["scale"],
+                }
 
-    row_lists = [row for row, _ in wrapped_rows]
+    row_lists = [[eid for column in columns for eid in column] for columns, _ in wrapped_rows]
     try:
         y_fit = stack_rows(row_lists, elements, target_height, source_height=source_height)
     except AxisFitError as e:
