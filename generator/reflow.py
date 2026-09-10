@@ -247,7 +247,7 @@ def wrap_rows(rows: list[list[str]], elements: dict[str, dict], target_width: in
     return result
 
 
-def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4) -> dict[str, dict]:
+def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: int, min_gap: int = 4, source_height: int | None = None) -> dict[str, dict]:
     """Y-axis row-stacking (see the spec's 'Y axis: row-stacking', revised 2026-09-09,
     corrected again same-day after a task review caught a real bug -- see below).
     Builds one pseudo-item per row -- natural height `max(top+height) - min(top)` over
@@ -283,7 +283,14 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
     via int() (never round(), per Task 3's fix), so using round() here would make that
     element's height mismatch its own row's fitted size. `top` keeps round() -- it has
     no equivalent identity to preserve. Returns {element_id: {"top": int, "height":
-    int, "scale": float}}."""
+    int, "scale": float}}.
+
+    `source_height` -- ADDED 2026-09-10 (see docs/superpowers/specs/
+    2026-09-10-reflow-centering-design.md): forwarded to the internal fit_axis call as
+    `source_dim` so a vertically-centered source row-stack comes back centered in
+    target_height instead of pinned to the top. One auto-detected decision for the
+    whole stack (no fragment concept on this axis -- row-wrap only affects X-axis
+    grouping, not what a row contributes to this Y-axis pseudo-item list)."""
     if not rows:
         return {}
     row_keys = [f"__row{i}" for i in range(len(rows))]
@@ -298,7 +305,7 @@ def stack_rows(rows: list[list[str]], elements: dict[str, dict], target_height: 
         anchors.append(anchors[i - 1] + natural_height[i - 1] + (original_gap if original_gap >= 0 else min_gap))
 
     row_items = list(zip(row_keys, anchors, natural_height))
-    row_fit = fit_axis(row_items, target_height, min_gap=min_gap)
+    row_fit = fit_axis(row_items, target_height, min_gap=min_gap, source_dim=source_height)
 
     result: dict[str, dict] = {}
     for i, row in enumerate(rows):
