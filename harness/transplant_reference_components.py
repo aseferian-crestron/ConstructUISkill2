@@ -6,10 +6,17 @@ each component's element/html/css is copied verbatim out of the user's reference
 (read-only). What this verifies is the part we DO own: the signals our contracts.py
 writes onto them, and ContractIsStale driving regeneration.
 
-Each component gets its per-type defaults from DEFAULT_SIGNALS plus one deliberately
-NON-default extra signal. If a complex component's own contract strategy ignores what
-the file says, the extra will be missing from the generated contract -- which is the
-failure mode this whole exercise is looking for.
+Each component gets EXACTLY its per-type defaults from DEFAULT_SIGNALS -- which are the
+signals the user set on that component in the reference project, nothing more. The page
+is meant to be a faithful restatement of their spec, so that opening it in Construct
+compares the generated contract against that spec directly.
+
+An earlier version also wrote one synthetic non-default signal per component
+(pd-receivestateenable) as a probe for whether a complex component's strategy honours
+the file. That was unnecessary and actively harmful: a strategy that overrides the file
+shows up as the contract having MORE or FEWER signals than the reference specifies, which
+is visible without inventing anything -- and the invented signal made the page stop
+matching the ground truth it exists to check.
 """
 import re
 import sys
@@ -32,15 +39,6 @@ PROJ = Path(r"C:\Solutions\ClaudeGenTest\GenTestProject2")
 HEADER_RE = re.compile(r"^\{(\w+)\}[ \t]*\r?\n?", re.MULTILINE)
 CATCH_ALL = "@media (max-width: 99999px){"
 
-# tag -> reference file. EXTRA is the deliberately non-default signal: "Enable"
-# (pd-receivestateenable) exists on all five and is a default on none of them, so its
-# presence in the generated contract can only have come from what we wrote to the file.
-# (pd-receivestateshow would not do -- its contract name varies by type: "Show" on the
-# dpad/keypad, "List Visible" on the button list, "Visible" on the tab button.)
-# Named by raw attribute rather than friendly name on purpose: the SAME attribute is
-# called "Enable" on the dpad/keypad/tab button, "List Enabled" on the button list.
-EXTRA = "pd-receivestateenable"
-
 # Explicit placement, hand-fitted to the project's primary 1280x800 (TSW-1070). Auto-flow
 # put the 800x600 media player at y=368, hanging 168px off the bottom of the panel.
 POSITIONS = {
@@ -51,11 +49,11 @@ POSITIONS = {
     "ch5-tab-button": (570, 670),    # 510x68
 }
 TARGETS = [
-    ("ch5-dpad", "Component - Keypad - DPad.cuig", EXTRA),
-    ("ch5-keypad", "Component - Keypad - Keypad.cuig", EXTRA),
-    ("ch5-button-list", "Component - Lists - Button Lis.cuig", EXTRA),
-    ("ch5-tab-button", "Component - TabButtons.cuig", EXTRA),
-    ("ch5-media-player", "Component-Widgets-Media Player.cuig", EXTRA),
+    ("ch5-dpad", "Component - Keypad - DPad.cuig"),
+    ("ch5-keypad", "Component - Keypad - Keypad.cuig"),
+    ("ch5-button-list", "Component - Lists - Button Lis.cuig"),
+    ("ch5-tab-button", "Component - TabButtons.cuig"),
+    ("ch5-media-player", "Component-Widgets-Media Player.cuig"),
 ]
 
 sdk = read_sdk("2.18.0")
@@ -204,7 +202,7 @@ page_html_parts: list[str] = []
 page_rules: list[str] = []
 
 x, y, row_height = 40, 40, 0
-for tag, filename, extra in TARGETS:
+for tag, filename in TARGETS:
     src = sections(REF / filename)
     nodes = tomllib.loads(src["PageAttributes"]).get("Elements", [])
     node = find_component(nodes, tag)
@@ -215,13 +213,18 @@ for tag, filename, extra in TARGETS:
     element_id = dict(element.attributes)["id"]
     ids = subtree_ids(node)
 
-    # signals: the per-type defaults, plus one non-default extra
-    known = signal_map(sdk, tag)
-    if extra not in known:
-        raise LookupError(f"{tag} has no {extra!r} signal to use as the extra")
-    wanted = tuple(DEFAULT_SIGNALS.get(tag, ())) + (extra,)
+    # Exactly the per-type defaults -- i.e. exactly what the reference project has.
+    wanted = DEFAULT_SIGNALS.get(tag, ())
     enable_contract_signals(element.attributes, sdk, tag, wanted)
     enabled = [k for k, v in element.attributes if v == CONTRACT_ENABLED]
+
+    # The transplanted element arrives with the reference's own signals already on it, so
+    # anything enabled beyond what we asked for would be a signal we failed to notice.
+    expected = {s.attribute for s in resolve_signals(sdk, tag, wanted)}
+    assert set(enabled) == expected, (
+        f"{tag}: page would carry {sorted(set(enabled) - expected)} beyond the "
+        f"reference's own signals" if set(enabled) - expected else
+        f"{tag}: missing {sorted(expected - set(enabled))}")
 
     # css for the whole subtree, from the catch-all block only
     rules = [(sel, decls) for sel, decls in catch_all_rules(src["Css"])
