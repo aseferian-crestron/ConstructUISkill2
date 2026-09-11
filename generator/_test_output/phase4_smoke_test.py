@@ -51,8 +51,14 @@ print("page with button: round-trip OK, position CSS present (regression test fo
 # every button in this file on 2026-09-10, which is where Phase 6's default comes from.
 # So the like-for-like comparison uses the default rather than suppressing it, and the
 # assertion below pins that the reference really does have exactly those two.
+# active_font="Crestron AV": the user set Button1's Font Family to a real, selectable
+# Crestron-bundled font (2026-09-11, demonstrating that ccid_ActiveFont legitimately
+# varies per component -- see generator/fonts.py's module docstring for why "Roboto"
+# is not the only valid value). Passed through explicitly, matching label="Button1"
+# right beside it, so this stays a same-instance comparison rather than a recorded delta.
 gen_attrs = build_default_button_attributes(
-    sdk, component_name="Button1", element_id="i9nb", label="Button1")
+    sdk, component_name="Button1", element_id="i9nb", label="Button1",
+    active_font="Crestron AV")
 
 raw = (REF_DIR / "Component - Button.cuig").read_text(encoding="utf-8")
 headers = list(re.finditer(r"^\{(\w+)\}[ \t]*\r?\n?", raw, re.MULTILINE))

@@ -3,7 +3,9 @@
 Verified against a copy of the real, live GenTestProject2 harness project (not a
 synthetic fixture) -- it already has ccid_ActiveFont and font-family CSS on real
 components (buttons, dpad, keypad, toggle, text, textinput, media player), which is a
-stronger check than anything hand-built here could be.
+stronger check than anything hand-built here could be. That is exactly how this test
+caught the two casing/quoting bugs AND how the user, applying the first version live,
+caught the validation gap this file now pins.
 """
 import re
 import shutil
@@ -16,7 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
 
 import compare  # noqa: E402
 import fonts  # noqa: E402
-from fonts import replace_font_in_text, set_page_font, set_project_font  # noqa: E402
+from fonts import available_fonts, replace_font_in_text, set_page_font, set_project_font  # noqa: E402
+from sdk import read_sdk  # noqa: E402
+
+sdk = read_sdk("2.18.0")
 
 OUT = Path(__file__).resolve().parent / "FontsGlobalSwap"
 SRC = Path(r"C:\Solutions\ClaudeGenTest\GenTestProject2")
@@ -25,7 +30,7 @@ if OUT.exists():
     shutil.rmtree(OUT)
 shutil.copytree(SRC, OUT)
 
-# --- unit-level: the raw text substitution -----------------------------------------
+# --- unit-level: the raw text substitution (no validation -- see set_page_font for that) --
 html = '<ch5-button ccid_ActiveFont="\'Roboto\'" id="i1"></ch5-button>'
 new_html, n = replace_font_in_text(html, "Arial")
 assert n == 1 and new_html == '<ch5-button ccid_ActiveFont="\'Arial\'" id="i1"></ch5-button>', new_html
@@ -77,24 +82,54 @@ out, n = replace_font_in_text(plain, "Arial")
 assert n == 0 and out == plain
 print("text with no font mention is untouched: OK")
 
-# --- file-level: FileMetadata is never touched ----------------------------------------
+# --- available_fonts: exactly the SDK's system default + Crestron custom list --------
+# The user applied an earlier version with "Montserrat" and every component's Font
+# Family field went EMPTY in the Properties Grid: the attribute/CSS were written
+# correctly, but that dropdown only ever offers these names (plus imported webfonts,
+# which this phase defers) -- see fonts.py's module docstring for the client-side trace.
+fonts_list = available_fonts(sdk)
+assert fonts_list == ["Roboto", "Crestron AV", "Crestron General",
+                      "Crestron Lighting-HVAC", "Crestron Simple Icons"], fonts_list
+print(f"available_fonts: {fonts_list}: OK")
+
+# --- set_page_font / set_project_font now REFUSE anything not on that list -----------
 button_page = OUT / "ButtonVariants.cuig"
+before_bytes = button_page.read_bytes()
+try:
+    set_page_font(button_page, "Montserrat", sdk)
+except ValueError as e:
+    assert "Montserrat" in str(e) and "Crestron AV" in str(e), str(e)
+    assert button_page.read_bytes() == before_bytes, "a rejected font must not touch the file"
+    print("set_page_font refuses a non-selectable font and leaves the file untouched: OK")
+else:
+    raise AssertionError("set_page_font must reject a font not in available_fonts")
+
+cuip = OUT / "GenTestProject2.cuip"
+before_cuip_bytes = cuip.read_bytes()
+try:
+    set_project_font(cuip, "Montserrat", sdk)
+except ValueError:
+    assert cuip.read_bytes() == before_cuip_bytes, ".cuip must not change on a rejected font"
+    print("set_project_font refuses project-wide and leaves the .cuip untouched: OK")
+else:
+    raise AssertionError("set_project_font must reject a font not in available_fonts")
+
+# --- file-level: FileMetadata is never touched, using a VALID font -------------------
 before = button_page.read_text(encoding="utf-8")
 before_metadata = re.search(r"\{FileMetadata\}.*?(?=\{Html\})", before, re.DOTALL).group(0)
 
-count = set_page_font(button_page, "Inter")
-assert count > 0, "ButtonVariants.cuig is expected to mention Roboto"
+page_starting_font = re.search(r"ccid_ActiveFont=\"'([^']*)'\"", before).group(1)
+count = set_page_font(button_page, "Crestron General", sdk)
+assert count > 0, "ButtonVariants.cuig is expected to mention some font"
 after = button_page.read_text(encoding="utf-8")
 after_metadata = re.search(r"\{FileMetadata\}.*?(?=\{Html\})", after, re.DOTALL).group(0)
 assert before_metadata == after_metadata, "FileMetadata (Modified timestamp) must not change"
-assert "Roboto" not in after and after.count('"Inter"') >= 1
+assert page_starting_font not in after and after.count('"Crestron General"') >= 1
 print("set_page_font rewrites Html/Css/PageAttributes only, never FileMetadata: OK")
 
-# Idempotent: swapping to the same font twice makes the second call a no-op count-wise
-# in terms of content (re-running finds the NEW font already in place, so it re-replaces
-# with itself -- count is still > 0, but the file content is unchanged).
+# Idempotent: swapping to the same font twice is a byte-for-byte no-op.
 after2 = button_page.read_text(encoding="utf-8")
-set_page_font(button_page, "Inter")
+set_page_font(button_page, "Crestron General", sdk)
 assert button_page.read_text(encoding="utf-8") == after2
 print("re-applying the same font is a content no-op: OK")
 
@@ -108,27 +143,30 @@ for i, m in enumerate(headers):
 page = tomllib.loads(sections["PageAttributes"])
 toml_fonts = {e["Attributes"].get("ccid_ActiveFont") for e in page["Elements"]
               if "ccid_ActiveFont" in e["Attributes"]}
-assert toml_fonts == {"'Inter'"}, toml_fonts
+assert toml_fonts == {"'Crestron General'"}, toml_fonts
 html_fonts = set(re.findall(r'ccid_ActiveFont="([^"]*)"', sections["Html"]))
-assert html_fonts == {"'Inter'"}, html_fonts
+assert html_fonts == {"'Crestron General'"}, html_fonts
 print("Html and TOML element attributes agree after the swap: OK")
 
 # --- round-trip: only content changed, structure survives ------------------------------
 assert compare.round_trip_check(button_page)
 print("the rewritten file still round-trips section-for-section: OK")
 
-# --- project-wide: .cuip + every page/widget in one call -------------------------------
-cuip = OUT / "GenTestProject2.cuip"
+# --- project-wide: .cuip + every page/widget in one call, with a valid font ------------
+# The starting font is whatever the live source project currently holds -- not assumed
+# to be "Roboto". (This is not academic: an earlier manual run of this session's own
+# unvalidated fonts.py against the real GenTestProject2 left its DefaultFontFamily as
+# the invalid "Montserrat", which a hardcoded "Roboto" assumption here would have missed.)
 before_cuip = cuip.read_text(encoding="utf-8")
-assert 'DefaultFontFamily = "Roboto"' in before_cuip
+starting_font = re.search(r'DefaultFontFamily = "([^"]*)"', before_cuip).group(1)
 
-results = fonts.set_project_font(cuip, "Montserrat")
+results = fonts.set_project_font(cuip, "Crestron AV", sdk)
 assert results[cuip.name] == 1
 assert sum(v for k, v in results.items() if k != cuip.name) > 0, \
     "at least one page/widget in the project should have mentioned a font"
 
 after_cuip = cuip.read_text(encoding="utf-8")
-assert 'DefaultFontFamily = "Montserrat"' in after_cuip
+assert 'DefaultFontFamily = "Crestron AV"' in after_cuip
 print(f"set_project_font touched {len(results)} files: {results}")
 
 # Every page/widget in the project now mentions the new font wherever it mentioned any.
@@ -136,21 +174,21 @@ for name, count in results.items():
     if name == cuip.name or count == 0:
         continue
     text = (OUT / name).read_text(encoding="utf-8")
-    assert "Roboto" not in text, f"{name} still mentions Roboto after the swap"
-    assert "Montserrat" in text, f"{name} does not mention the new font"
+    assert starting_font not in text, f"{name} still mentions {starting_font} after the swap"
+    assert "Crestron AV" in text, f"{name} does not mention the new font"
 print("every touched file carries the new font and none carries the old one: OK")
 
 # Re-applying the SAME font project-wide is a no-op on the .cuip (count 0) and leaves
-# every page byte-identical (already-Montserrat text substituted with itself).
+# every page byte-identical (already-in-place text substituted with itself).
 before_snapshot = {p.name: p.read_text(encoding="utf-8")
                    for p in OUT.glob("*.cuig")}
-results2 = fonts.set_project_font(cuip, "Montserrat")
+results2 = fonts.set_project_font(cuip, "Crestron AV", sdk)
 assert results2[cuip.name] == 0, "re-applying the same project font must not touch the .cuip"
 for p in OUT.glob("*.cuig"):
     assert p.read_text(encoding="utf-8") == before_snapshot[p.name], f"{p.name} changed on a no-op swap"
 print("re-applying the same project-wide font is a true no-op: OK")
 
-# --- FileMetadata (Modified) is untouched on files that mention no font at all --------
+# --- files with no font mention are left untouched -------------------------------------
 untouched = [name for name, count in results.items() if name != cuip.name and count == 0]
 if untouched:
     print(f"files with no font mention, left untouched: {untouched}")

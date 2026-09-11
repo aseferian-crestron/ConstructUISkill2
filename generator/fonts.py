@@ -6,6 +6,36 @@ machine has ever done it, so there is no real file to verify a `webfonts/` folde
 shape against, and shipping that unverified is exactly the mistake this project's own
 README now calls out (see its Approach section).
 
+**CORRECTION (2026-09-11, user-caught):** the first version of this module accepted any
+string as `new_font` and wrote it everywhere. The user applied it (Roboto -> Montserrat)
+and every component's Font Family field showed EMPTY in the Properties Grid -- the
+attribute and CSS were written correctly, but Construct had nowhere to display them.
+
+The Font Family trait is a CLOSED dropdown (`addFontFamilyTrait` in
+`pd-ch5-components\\mixins\\common\\commonDynamicLabelMixins.ts`, `type: 'select'`), whose
+options come from exactly three sources (`pd-utils\\src\\utilities.ts::getAllFonts`):
+  1. `GlobalVars.SystemDefaultFont` -- **not** the project's own `DefaultFontFamily`.
+     It is hardcoded from the SDK's `component-context.json`
+     `global.defaults.attributes.UiEditorFont`, confirmed to be `"Roboto"` for SDK
+     2.18.0 (`apiV1.ts::createEditorInstance`). Renaming a project's `DefaultFontFamily`
+     does not move this.
+  2. `GlobalVars.CrestronCustomFonts` -- the SDK's own `global.defaults.attributes.
+     CrestronCustomFont` array, exactly 4 names for SDK 2.18.0: "Crestron AV",
+     "Crestron General", "Crestron Lighting-HVAC", "Crestron Simple Icons".
+  3. `editor.CustomWebFonts` -- fonts actually imported as project/machine webfonts,
+     which is the deferred half of this phase.
+
+So a font not in (1) or (2), and not actually present as a webfont, has NO dropdown
+entry to select -- the value being written is not wrong, there is simply nothing for
+Construct to show it as. `set_page_font`/`set_project_font` now validate `new_font`
+against `available_fonts(sdk)` (system default + the SDK's Crestron custom list) and
+raise, naming the valid choices, rather than silently writing a value the Properties
+Grid can never display. The user's own edit to the reference project (`Component -
+Button.cuig`, two buttons set to "Crestron AV" and "Stylish Comic") is what proved
+`ccid_ActiveFont` legitimately varies PER COMPONENT, independent of the project
+default -- "Crestron AV" is catalog source (2) above; "Stylish Comic" is presumably a
+webfont, outside this phase's scope.
+
 Grounded in `C:\\Git\\CCIDE\\Crestron.IDE\\Projects\\UiEditor\\UiEditor.Server\\Helpers\\
 FontUpgradeHelper.cs`, which is Construct's own font-family-writing code (its `AddFontSupport`
 upgrade path, not a live editing command, but the same two things it writes are what
@@ -39,6 +69,18 @@ import re
 from pathlib import Path
 
 from project import override_attr, read_cuip, write_cuip
+from sdk import UiSdk
+
+
+def available_fonts(sdk: UiSdk) -> list[str]:
+    """The fonts a component's Font Family dropdown can actually show a selection for,
+    without webfont import: the SDK's fixed system default plus its Crestron-bundled
+    custom fonts (`component-context.json`'s `global.defaults.attributes`,
+    `UiEditorFont` + `CrestronCustomFont` -- see module docstring for the client-side
+    trace that pins these as the two non-webfont sources `getAllFonts` draws from).
+    """
+    attributes = sdk.component_context["global"]["defaults"]["attributes"]
+    return [attributes["UiEditorFont"], *attributes.get("CrestronCustomFont", [])]
 
 #: Same section-splitting convention as project.py::read_cuip / reflow.py's own copy --
 #: kept local per this project's precedent of each writer owning its small section
@@ -106,7 +148,17 @@ def replace_font_in_text(text: str, new_font: str) -> tuple[str, int]:
     return text, n1 + n2
 
 
-def set_page_font(path: Path, new_font: str) -> int:
+def _validate_font(sdk: UiSdk, new_font: str) -> None:
+    valid = available_fonts(sdk)
+    if new_font not in valid:
+        raise ValueError(
+            f"{new_font!r} is not selectable in the Font Family dropdown -- it is "
+            f"neither the SDK's system default nor one of its Crestron-bundled fonts, "
+            f"and webfont import is not built yet (see fonts.py's module docstring). "
+            f"Valid choices for {sdk.version}: {', '.join(valid)}")
+
+
+def set_page_font(path: Path, new_font: str, sdk: UiSdk) -> int:
     """Rewrite one .cuig/.cuiw's Html and Css sections (never FileMetadata or
     PageAttributes' non-attribute parts) to use `new_font`. Returns the replacement
     count; 0 means the file mentioned no font at all and was left untouched on disk
@@ -114,7 +166,11 @@ def set_page_font(path: Path, new_font: str) -> int:
 
     PageAttributes IS touched -- component elements' `ccid_ActiveFont` lives in its
     `[Elements.Attributes]` tables, mirroring the Html view (see replace_font_in_text).
+
+    Raises ValueError if `new_font` is not a selectable choice (see `available_fonts`)
+    -- writing it anyway would produce a Font Family field with nothing to show.
     """
+    _validate_font(sdk, new_font)
     preamble, sections = _read_sections(path)
     total = 0
     new_sections = []
@@ -130,11 +186,15 @@ def set_page_font(path: Path, new_font: str) -> int:
     return total
 
 
-def set_project_font(cuip_path: Path, new_font: str) -> dict[str, int]:
+def set_project_font(cuip_path: Path, new_font: str, sdk: UiSdk) -> dict[str, int]:
     """Change a project's font everywhere: the `.cuip`'s `DefaultFontFamily`, and every
     `*.cuig`/`*.cuiw` sitting beside it. Returns {filename: replacement_count} for every
     file actually touched (the `.cuip` itself keyed as its own filename, count 1 if the
     attribute changed, 0 if it already held `new_font`).
+
+    Raises ValueError if `new_font` is not a selectable choice -- see `set_page_font`;
+    checked ONCE up front so a partially-applied project (the `.cuip` changed but only
+    some pages) can never happen.
 
     Does NOT mark the project's contract stale -- a font is not a contract-relevant
     change (no component added/removed, no signal enabled/disabled, no rename; see
@@ -143,6 +203,8 @@ def set_project_font(cuip_path: Path, new_font: str) -> dict[str, int]:
     marks unconditionally on every write, which is the right default for component
     changes and the wrong one for this.
     """
+    _validate_font(sdk, new_font)
+
     attrs, device_resolution_source, metadata = read_cuip(cuip_path)
     changed = dict(attrs).get("DefaultFontFamily") != new_font
     if changed:
@@ -151,15 +213,18 @@ def set_project_font(cuip_path: Path, new_font: str) -> dict[str, int]:
 
     results: dict[str, int] = {cuip_path.name: 1 if changed else 0}
     for page in sorted(cuip_path.parent.glob("*.cuig")) + sorted(cuip_path.parent.glob("*.cuiw")):
-        results[page.name] = set_page_font(page, new_font)
+        results[page.name] = set_page_font(page, new_font, sdk)
     return results
 
 
 if __name__ == "__main__":
     import sys
 
+    from sdk import read_sdk
+
     if len(sys.argv) != 3:
         print("usage: python fonts.py <project.cuip> <NewFontName>")
         raise SystemExit(1)
-    for name, count in set_project_font(Path(sys.argv[1]), sys.argv[2]).items():
+    sdk = read_sdk("2.18.0")
+    for name, count in set_project_font(Path(sys.argv[1]), sys.argv[2], sdk).items():
         print(f"  {name}: {count} replacement(s)")
