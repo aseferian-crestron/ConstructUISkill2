@@ -9,8 +9,14 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Complex-component contracts staged for live verification -- AWAITING THE USER'S CHECK
-IN CONSTRUCT.** Only the simple path (ch5-button) had ever been opened in Construct,
+**CONFIRMED IN CONSTRUCT 2026-09-10**: the user opened `GenTestProject2` after the
+correction below and reported the components look correct -- i.e. they now carry exactly
+the signals their reference project specifies, with the synthetic `Enable` gone. Still
+open on this page: whether the generated CONTRACT lists exactly those five components'
+signals, which is the question the page was built to answer (a complex component's
+strategy forcing or dropping signals would show up there, not on the canvas).
+
+**Complex-component contracts verified on the canvas; contract listing still to check.** Only the simple path (ch5-button) had ever been opened in Construct,
 while dpad, keypad, button list, tab button and media player each go through their own
 contract strategy, some of which force signals on regardless of the file
 (`DpadStrategy.cs:91`, `KeypadStrategy.cs:94`). We have no generator builders for those
