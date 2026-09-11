@@ -9,6 +9,60 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 6 corrected against the user's updated reference project — DONE.** The user
+confirmed live that Construct generates Press and Selected for the buttons, then went
+further and set the intended contract signals on EVERY component in
+`C:\Solutions\ClaudeSamples\Components`, noting that some types need none. Checking our
+discovery against that ground truth immediately found **two defects in what had just
+shipped** — both of which had passed a green suite, because the suite only tested the
+model against itself:
+
+1. **Only the component's own `attributeProperties` was read.** Construct reads the
+   tag's entry and then falls back to `global`; `JoinNameProviderHelper.cs` says so in
+   its own comment, *"search more specific first, then global"*. `ch5-color-picker`
+   declares no signal entries at all, so all six signals the user enabled on it were
+   unnameable. `ch5-button` went from 5 signals to **10**, gaining `Enable` — which the
+   real hand-authored i12 Multicam button has enabled and we previously could not name.
+2. **The gate was `extenderPosition`.** That governs the project-level extender, not
+   what a component can expose. `ch5-dpad`/`ch5-keypad`'s `sendeventonclickstart`
+   ("Digital Start") have none — they are `removeOnContractUse` — yet the user enabled
+   them. The gate is now the category prefix (`Send `/`Receive `), because merely having
+   a category is far too loose: 179 entries are "Interactions" (`orientation`,
+   `customvstheme`, `z-index`) and admitting those offers signals Construct cannot
+   generate.
+
+**The standing check that would have caught both**, now a test: walk every component in
+the reference project and assert all 95 enabled signals are nameable.
+
+**Attribute placement was also wrong, and the reference settled it.** Signals go LAST,
+after the `ccid_sync_*` block — all six reference buttons end with exactly
+`sendeventontouch`, `pd-receivestateselected`. The old position (between common wiring
+and sync) was flagged in the code as a guess. `phase4_smoke_test`'s exact key-order diff
+against the real `Button1` now passes with the default signals present rather than
+suppressed, which is a stronger check than before.
+
+**`DEFAULT_SIGNALS` now covers 15 component types**, transcribed from the reference, plus
+six the user confirmed should expose none by design (video, video switcher, subpage
+reference list, background, datetime, qrcode — each HAS signals available, so "none" is
+a decision). The table is not trusted on its own: the test recomputes it from the
+reference files every run, so if the user changes a component in Construct the test
+reports the difference instead of us drifting.
+
+Also fixed a latent hazard the extraction exposed: three tags have two distinct signals
+sharing one friendly name (`ch5-button-list` "ItemSelected", `ch5-spinner` "Selected
+Item", `ch5-video-switcher` "_Label"). The old lookup silently kept whichever came last;
+ambiguous names now raise and list the attributes to choose between.
+
+Full 37-file suite green. **Next / open threads** (nothing in flight): (1) contract
+enablement for the COMPLEX components is still unverified in Construct — dpad, keypad,
+button list, tab button, widget list, video switcher and media player each have their own
+contract strategy, and some force signals on regardless of the file
+(`DpadStrategy.cs:91`, `KeypadStrategy.cs:94`); the defaults are transcribed from the
+user's files but no generated complex component has been opened in Construct yet;
+(2) whether `FALLBACK_MIN_SIZE_PX = 35` holds across more pages and resolutions; (3) the
+remaining generator phases — themes (7), fonts (8), languages (10), hard buttons (11),
+and the skill layer.
+
 **Phase 6 (contracts) — DONE, and far smaller than the phase index implied.** The user
 corrected the scope up front: we never author a `.cuic`. Construct generates it, and all
 we have to leave behind is (1) the signals enabled on each component and (2)

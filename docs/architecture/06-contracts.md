@@ -64,20 +64,44 @@ button carries exactly `pd-receivestateenable`, `sendeventontouch` and
 Both questions are answered by SDK data, so `contracts.py` hardcodes nothing
 per-component:
 
-- **Which:** `component-context.json`'s per-tag `attributeProperties` entries that carry
-  an `extenderPosition`. This matches Construct's own gate in
-  `ContractGenerationHelper.CreateProjectComponent` (`SignalDetails.ExtenderPosition > 0`).
-  In SDK 2.18.0 that is 28 tags and 157 signals.
-- **Under what name:** those keys already carry the storage prefix. The rule behind them
-  (`PageDesigner.Server\Providers\JoinPropertyProvider.cs:151`, and the client-side twin
-  at `pd-metadata-resolver\MetaDataResolver.ts:201`) is that a `direction="state"` join is
-  stored as `pd-<name>`, so the design-time canvas is not driven by live CH5 signals,
-  while a `direction="event"` join keeps its bare name. Construct strips a leading `pd-`
-  before any schema lookup (`JoinPropertyProvider.GetCh5AttributeDef`).
+- **Which:** an attribute that is a join in `schema.json` AND has a signal entry in
+  `component-context.json`. A signal entry is one whose `category` starts with `Send ` or
+  `Receive ` ("Send Digital Command", "Receive Analog Feedback", ...). The entry is looked
+  up on the component's own tag first and then on the shared `global` entry -- exactly
+  what `Helpers\JoinNameProviderHelper.cs::GetAttributeContractInfo` does, in its own
+  words: *"search more specific first, then global"*.
+- **Under what name:** those context keys already carry the storage prefix. The rule
+  behind them (`PageDesigner.Server\Providers\JoinPropertyProvider.cs:151`, and the
+  client-side twin at `pd-metadata-resolver\MetaDataResolver.ts:201`) is that a
+  `direction="state"` join is stored as `pd-<name>`, so the design-time canvas is not
+  driven by live CH5 signals, while a `direction="event"` join keeps its bare name.
+  Construct strips a leading `pd-` before any schema lookup
+  (`JoinPropertyProvider.GetCh5AttributeDef`).
+
+### Two gates that look right and are not
+
+Both of these shipped wrong first, and were caught only when the user set the intended
+signals across the reference project and some turned out to be unnameable:
+
+- **`extenderPosition` is not the signal gate.** It is tempting -- `CreateProjectComponent`
+  does test `SignalDetails.ExtenderPosition > 0` -- but that governs the project-level
+  extender, not what a component can expose. `GetJoinsFromAttributes`, which actually
+  turns attributes into joins, needs only a resolvable `SignalDetails`. `ch5-dpad` and
+  `ch5-keypad`'s `sendeventonclickstart` ("Digital Start") carry no `extenderPosition`
+  at all -- they are marked `removeOnContractUse` -- yet the reference project enables
+  them. `ContractSignal.extender_position` is 0 for these; it is an ordering hint, not a
+  filter.
+- **A tag's own `attributeProperties` is not the whole list.** `ch5-color-picker`
+  declares no signal entries whatsoever, and all six signals the reference enables on it
+  come from `global`. Reading only the per-tag entry also cost `ch5-button` five of its
+  ten signals, including `Enable` -- which a real hand-authored button in
+  `C:\Solutions\CustomerIssues\i12 Multicam` has enabled. A global entry applies only
+  where the tag's own schema has that join, so colour and animation signals do not leak
+  onto components that lack them.
 
 `contract_signals()` cross-checks every context key against `schema.json`'s own join
 direction and raises if they disagree — writing the wrong one would produce an attribute
-Construct silently ignores, with an empty contract as the only symptom. All 132
+Construct silently ignores, with an empty contract as the only symptom. All 238
 schema-backed signals in SDK 2.18.0 agree.
 
 ### Signal names are not attribute names
@@ -92,27 +116,48 @@ Each signal's contract name comes from `contractFriendlyName` where present, els
 `resolve_signals()` therefore accepts either the friendly name or the raw attribute, and
 raises listing the valid options rather than silently skipping a name it does not know.
 
-### ch5-button's five signals
+### ch5-button's ten signals
 
-| Position | Signal | Attribute | Category |
+| Position | Signal | Attribute | Source |
 |---|---|---|---|
-| 1 | Visibility | `sendeventonshow` | Send Digital Command |
-| 1 | Visibility_fb | `pd-receivestateshow` | Receive Digital Feedback |
-| 3 | Press | `sendeventontouch` | Send Digital Command |
-| 3 | Selected | `pd-receivestateselected` | Receive Digital Feedback |
-| 9 | Mode | `pd-receivestatemode` | Receive Analog Feedback |
+| 1 | Visibility | `sendeventonshow` | own |
+| 1 | Visibility_fb | `pd-receivestateshow` | own |
+| 1 | Indirect Text | `pd-receivestatelabel` | global |
+| 1 | Indirect Rich Text | `pd-receivestatescriptlabelhtml` | global |
+| 2 | Enable | `pd-receivestateenable` | global |
+| 2 | Icon | `pd-receivestateiconclass` | global |
+| 3 | Press | `sendeventontouch` | own |
+| 3 | Selected | `pd-receivestateselected` | own |
+| 6 | Icon URL | `pd-receivestateiconurl` | global |
+| 9 | Mode | `pd-receivestatemode` | own |
 
 Signals sharing an `extenderPosition` are one logical group — `Selected` names `Press` as
 its `groupName` — so emission orders the send event ahead of its own feedback.
 
-`DEFAULT_BUTTON_SIGNALS = ("Press", "Selected")`: what a new button gets unless the caller
-says otherwise, `()` disabling contracts entirely (the state of a freshly-dropped button
-in Construct's own UI). An enabled signal nobody wires still consumes joins from the pool,
-so the rest stay opt-in.
+## Defaults per component type
+
+`DEFAULT_SIGNALS` records what a newly-generated component of each type exposes,
+transcribed from the user's reference project, where they set the intended signals on
+every component by hand (2026-09-10). `contracts_task6_defaults_test.py` recomputes the
+table from those files on every run, so the reference stays the ground truth rather than
+a one-time copy. For a button that is `("Press", "Selected")`.
+
+Six types deliberately expose none (`NO_SIGNALS_BY_DESIGN`): video, video switcher,
+subpage reference list, background, datetime and qrcode. Each of them *has* signals
+available -- this is a judgement that a generated instance should not enable any. A type
+absent from the table defaults to `()` on the same reasoning: no signals is always a
+valid component, whereas guessing puts joins in a contract nobody asked for.
+
+### Naming signals
+
+Three tags have two distinct signals sharing one name (`ch5-button-list`'s
+"ItemSelected", `ch5-spinner`'s "Selected Item", `ch5-video-switcher`'s "_Label").
+`resolve_signals` raises on those rather than picking one -- picking would silently
+enable the wrong signal -- and the raw attribute name always disambiguates.
 
 ## Gotchas found while building this
 
-- **`component-context.json` is authoritative over `schema.json`, not the reverse.**
+- **`component-context.json` can name a signal `schema.json` does not have.**
   `ch5-media-player`'s `pd-receivestateusemessage` has no `schema.json` attribute at all,
   yet the hand-authored reference project
   (`C:\Solutions\ClaudeSamples\ClaudeCustomModeProject\Page3.cuig`) writes it as a live
@@ -139,7 +184,9 @@ so the rest stay opt-in.
 
 ## Attribute placement
 
-Signals are written between the common wiring (`devicesVisited`) and the `ccid_sync_*`
-block. That position is **our choice, not confirmed against a Construct-authored file** —
-real samples place signal attributes inconsistently, and order within an element matters
-only to our own reference diffing, not to Construct, which reads the block as TOML.
+Signals are written **last**, after the `ccid_sync_*` block and any icon keys. Confirmed
+against all six real buttons in the reference project, every one of which ends with
+exactly `sendeventontouch`, `pd-receivestateselected`. An earlier version placed them
+between the common wiring and the sync block, flagged in the code as a guess; it was the
+wrong guess, and `phase4_smoke_test`'s exact key-order diff against the real `Button1`
+now passes with the default signals present rather than suppressed.
