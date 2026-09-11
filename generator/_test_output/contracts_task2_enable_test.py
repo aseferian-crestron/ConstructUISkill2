@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contracts import CONTRACT_ENABLED, enable_contract_signals, resolve_signals  # noqa: E402
+from contracts import CONTRACT_ENABLED, enable_contract_signals, resolve_signals, signal_map  # noqa: E402
 from sdk import read_sdk  # noqa: E402
 
 sdk = read_sdk("2.18.0")
@@ -18,6 +18,14 @@ print("friendly name / raw attribute / any case all resolve: OK")
 # A name given twice yields one signal, not a duplicated attribute.
 assert len(resolve_signals(sdk, "ch5-button", ["Press", "sendeventontouch"])) == 1
 print("de-duplicated across naming styles: OK")
+
+# signal_map keys friendly names in the SDK's own spelling, not lower-cased. (It briefly
+# did the latter, which made `"Enable" in signal_map(...)` false for every component.)
+mapping = signal_map(sdk, "ch5-dpad")
+assert "Enable" in mapping and "enable" not in mapping, sorted(mapping)
+assert mapping["Enable"].attribute == "pd-receivestateenable"
+assert mapping["Digital Start"].attribute == "sendeventonclickstart"
+print("signal_map keys friendly names in their real spelling: OK")
 
 # --- an unknown name fails loudly, listing what IS valid -----------------------------
 try:

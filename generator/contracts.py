@@ -269,9 +269,10 @@ def signal_map(sdk: UiSdk, tag_name: str) -> dict[str, ContractSignal]:
     mapping: dict[str, ContractSignal] = {}
     for signal in contract_signals(sdk, tag_name):
         mapping[signal.attribute] = signal
-    for name, signals in _name_index(sdk, tag_name).items():
-        if len(signals) == 1 and name not in mapping:
-            mapping[name] = signals[0]
+    for signals in _name_index(sdk, tag_name).values():
+        # keyed by the signal's own spelling, not the index's lower-cased key
+        if len(signals) == 1 and signals[0].friendly_name not in mapping:
+            mapping[signals[0].friendly_name] = signals[0]
     return mapping
 
 

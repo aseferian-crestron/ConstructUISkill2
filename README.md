@@ -9,6 +9,58 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Complex-component contracts staged for live verification -- AWAITING THE USER'S CHECK
+IN CONSTRUCT.** The gap left by the last entry was that only the simple path (ch5-button)
+had ever been opened in Construct, while dpad, keypad, button list, tab button and media
+player each go through their own contract strategy -- and some force signals on
+regardless of the file (`DpadStrategy.cs:91`, `KeypadStrategy.cs:94`). We have no
+generator builders for those types yet (Phase 4 built only the button), so the user chose
+the transplant route: copy each component's element/html/css out of the reference project
+and let OUR `contracts.py` write the signals.
+
+`harness/transplant_reference_components.py` builds
+`GenTestProject2/ComplexContracts.cuig` from five reference components and marks the
+project stale. Each gets its `DEFAULT_SIGNALS` set **plus one deliberately non-default
+extra** -- `pd-receivestateenable`, which is a default on none of them. That extra is the
+actual experiment: if a complex component's strategy ignores what the file says, it will
+be missing from the generated contract.
+
+| component | signals written |
+|---|---|
+| ch5-dpad | Digital Start + **Enable** |
+| ch5-keypad | Digital Start + **Enable** |
+| ch5-button-list | ItemPress + **List Enabled** |
+| ch5-tab-button | _Press, _Selected + **Enable** |
+| ch5-media-player | its 7 defaults + **Enable** |
+
+Verified on disk before handing over: page round-trips byte-identically, all 5 elements
+present, the TOML `[Elements.Attributes]` and the Html view agree signal-for-signal on
+every component (a page where those disagree renders one thing and contracts another),
+every component has position CSS, all five fit inside the 1280x800 primary, no element-id
+collides with another page in the project, and the `.cuip` reads `ContractIsStale =
+"true"`.
+
+**Three things the transplant exposed:**
+
+1. **`signal_map`'s friendly-name keys had been lower-cased** by the ambiguity refactor,
+   so `"Enable" in signal_map(...)` was false for every component. Found by using the API
+   for real rather than through a test that already knew the answer. Fixed and pinned.
+2. **The reference files are not uniformly formatted.** Most are compact CSS
+   (`#id{left:105px;...}`); `Component-Widgets-Media Player.cuig` is spaced
+   (`#it8l { left: 124px; ... }`). Every pattern in the transplant tolerates both.
+3. **That same spacing is an unfixed latent bug in reflow** -- see open threads.
+
+**Next / open threads:** (1) **the live check** -- open `GenTestProject2` and confirm the
+Contract Editor shows the table above for `ComplexContracts`, the bolded extras
+especially; (2) **`layout.py::parse_position_rules` only matches compact CSS** --
+`parse_position_rules("#it8l { left: 124px; ... }")` returns `{}`, so reflowing a real
+Construct-authored page written in the spaced format would silently do nothing, with no
+error (verified directly; not fixed, since it is reflow rather than contract work);
+(3) whether `FALLBACK_MIN_SIZE_PX = 35` holds across more pages and resolutions; (4) the
+remaining generator phases -- themes (7), fonts (8), languages (10), hard buttons (11),
+and the skill layer; (5) real generator builders for the complex component types, which
+is what would let us stop transplanting.
+
 **Phase 6 corrected against the user's updated reference project — DONE.** The user
 confirmed live that Construct generates Press and Selected for the buttons, then went
 further and set the intended contract signals on EVERY component in
