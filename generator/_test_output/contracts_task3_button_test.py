@@ -33,15 +33,16 @@ keys = [k for k, _ in attrs]
 assert len(keys) == len(set(keys)), f"duplicate attribute keys: {sorted({k for k in keys if keys.count(k) > 1})}"
 print(f"{len(keys)} attributes, all unique: OK")
 
-# Signals sit after the common wiring and before the ccid_sync_* block, so the sync
-# attributes stay contiguous (they are read as a group when diffing against real files).
+# Signals come LAST, after everything including the ccid_sync_* block -- which is where
+# Construct itself puts them: all six real buttons in the reference project end with
+# exactly `sendeventontouch`, `pd-receivestateselected` (verified 2026-09-10; before that
+# the position was a guess, and it was the wrong one).
+assert keys[-2:] == ["sendeventontouch", "pd-receivestateselected"], keys[-4:]
 sync_first = next(i for i, k in enumerate(keys) if k.startswith("ccid_sync_"))
 sync_last = max(i for i, k in enumerate(keys) if k.startswith("ccid_sync_"))
-signal_positions = [i for i, k in enumerate(keys) if dict(attrs)[k] == CONTRACT_ENABLED]
-assert all(i < sync_first for i in signal_positions), (signal_positions, sync_first)
 assert all(keys[i].startswith("ccid_sync_") for i in range(sync_first, sync_last + 1)), \
     "the ccid_sync_* block must stay contiguous"
-print("signals precede an unbroken ccid_sync_* block: OK")
+print("signals emitted last, after an unbroken ccid_sync_* block: OK")
 
 # --- opting out, and opting in to more ------------------------------------------------
 attrs = build_default_button_attributes(

@@ -144,12 +144,11 @@ def build_default_button_attributes(
 
     `contract_signals` names the signals to expose to the contract (see
     generator/contracts.py -- friendly names like "Press"/"Selected", or raw attribute
-    names; pass `()` for a button with no contract signals, as a freshly-dropped button
-    in Construct's own UI has). They are written between the common wiring and the
-    ccid_sync_* block; that POSITION is our choice, not confirmed against a
-    Construct-authored file -- real samples place signal attributes inconsistently, and
-    attribute order within an element matters only to our own reference diffing, not to
-    Construct, which reads the block as TOML key/values.
+    names; pass `()` for a button with no contract signals). They are written LAST, after
+    the sync block and any icon keys -- confirmed against all six real buttons in the
+    reference project (2026-09-10, after the user enabled the per-component default
+    signals there), each of which ends with exactly
+    `sendeventontouch`, `pd-receivestateselected`.
     """
     label = label if label is not None else component_name
     ctx = sdk.context_for("ch5-button")
@@ -184,7 +183,6 @@ def build_default_button_attributes(
         ("devicesVisited", devices_visited),
     ]
     attrs.extend(common_wiring)
-    enable_contract_signals(attrs, sdk, "ch5-button", contract_signals)
 
     current = dict(attrs)
     attrs.extend(build_sync_attributes(sdk, "ch5-button", current))
@@ -192,6 +190,11 @@ def build_default_button_attributes(
     if image_icon_type == "iconclass" and icon_class is not None:
         attrs.append(("ccid_iconlibrary", icon_library or ""))
         attrs.append(("iconclass", icon_class))
+
+    # Signals go LAST, after the sync block and any icon keys -- confirmed against all
+    # six real buttons in the reference project, every one of which ends
+    # ..., sendeventontouch, pd-receivestateselected.
+    enable_contract_signals(attrs, sdk, "ch5-button", contract_signals)
 
     return attrs
 

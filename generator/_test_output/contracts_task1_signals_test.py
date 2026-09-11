@@ -24,11 +24,22 @@ sdk = read_sdk("2.18.0")
 signals = contract_signals(sdk, "ch5-button")
 by_attr = {s.attribute: s for s in signals}
 
+# Ten signals: five from ch5-button's own attributeProperties, five inherited from the
+# shared `global` entry (Indirect Text, Indirect Rich Text, Enable, Icon, Icon URL) --
+# see contracts_task5_global_signals_test.py for the inheritance rule itself. `Enable` is
+# the one that proves the point: the real hand-authored button in
+# "C:\Solutions\CustomerIssues\i12 Multicam\IV Auto-Switch Set ID.cuig" has
+# pd-receivestateenable enabled, which an own-entries-only lookup could not even name.
 expected = {
     "sendeventonshow": ("Visibility", "event", 1),
+    "pd-receivestatelabel": ("Indirect Text", "state", 1),
+    "pd-receivestatescriptlabelhtml": ("Indirect Rich Text", "state", 1),
     "pd-receivestateshow": ("Visibility_fb", "state", 1),
+    "pd-receivestateenable": ("Enable", "state", 2),
+    "pd-receivestateiconclass": ("Icon", "state", 2),
     "sendeventontouch": ("Press", "event", 3),
     "pd-receivestateselected": ("Selected", "state", 3),
+    "pd-receivestateiconurl": ("Icon URL", "state", 6),
     "pd-receivestatemode": ("Mode", "state", 9),
 }
 assert set(by_attr) == set(expected), (

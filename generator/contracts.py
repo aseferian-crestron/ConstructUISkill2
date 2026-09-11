@@ -63,8 +63,9 @@ class ContractSignal:
     direction: str          # "state" (receive/feedback) or "event" (send)
     category: str           # e.g. "Send Digital Command", "Receive Analog Feedback"
     event_type: str         # "boolean" | "numeric" | "string"
-    extender_position: int
+    extender_position: int  # 0 when the entry declares none (see _is_signal_entry)
     schema_backed: bool     # False for the context-only signals (see module docstring)
+    remove_on_contract_use: bool  # Construct's own strategy supplies the join instead
 
 
 def _signal_order(signal: "ContractSignal") -> tuple:
@@ -89,9 +90,47 @@ def _schema_element(sdk: UiSdk, tag_name: str) -> dict:
         f"than an element of its own")
 
 
+def _is_signal_entry(props) -> bool:
+    """Whether a component-context `attributeProperties` entry describes a contract signal.
+
+    The gate is the entry's `category`, not `extenderPosition`. An earlier version
+    required `extenderPosition`, copying
+    `ContractGenerationHelper.CreateProjectComponent`'s `ExtenderPosition > 0` -- but that
+    gate governs only the project-level extender, not what a component can expose.
+    `GetJoinsFromAttributes`, the method that actually turns attributes into joins, needs
+    nothing more than a resolvable `SignalDetails`. It cost two real signals: `ch5-dpad`
+    and `ch5-keypad`'s `sendeventonclickstart` ("Digital Start") carry no
+    `extenderPosition` -- they are marked `removeOnContractUse` instead -- yet the
+    reference project enables them.
+
+    Merely HAVING a category is not enough either: 179 entries in SDK 2.18.0 are
+    categorised "Interactions" (others "Button Attributes"/"Transitions") -- ordinary
+    design-time properties like `orientation`, `customvstheme` and `z-index` that carry a
+    friendlyName too. Every real signal's category names a direction and a type instead:
+    "Send Digital Command", "Receive Analog Feedback", "Receive Serial Feedback", and so
+    on. That prefix is the discriminator.
+    """
+    if not isinstance(props, dict):
+        return False
+    category = props.get("category", "")
+    return category.startswith(("Send ", "Receive "))
+
+
 def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
     """Every contract-capable signal of `tag_name`, ordered by `extenderPosition` so that
     emitted attributes land in a stable, Construct-like order.
+
+    Signals come from TWO places, exactly as Construct resolves them in
+    `Helpers\\JoinNameProviderHelper.cs::GetAttributeContractInfo` -- "search more specific
+    first, then global": the tag's own `attributeProperties`, then `component-context`'s
+    shared `global` entry for anything the tag's own entry does not define. The global
+    half is not optional -- `ch5-color-picker` has no per-tag entries whatsoever, and all
+    six signals the reference project enables on it resolve through `global`.
+
+    A global entry only applies where the tag's own `schema.json` actually has that join
+    (the global list spans colour, animation, focus and url signals that most components
+    do not have), which is the same restriction Construct gets from
+    `JoinPropertyProvider.GetElementsJoinProperties` driving which attributes it consults.
 
     Raises KeyError if `tag_name` is not a real CH5 element (see `_schema_element`).
     """
@@ -103,11 +142,39 @@ def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
     # traits and have no signals of their own. No context means no contract signals.
     context = sdk.component_context.get(tag_name) or {}
 
-    signals: list[ContractSignal] = []
-    for key, props in (context.get("attributeProperties") or {}).items():
-        if not isinstance(props, dict) or "extenderPosition" not in props:
-            continue
+    def is_join_key(key: str) -> bool:
+        """A contract signal must be a JOIN. Plenty of ordinary attributes (orientation,
+        shape, size, ...) carry a friendlyName and category in component-context too, and
+        admitting those would offer the caller signals Construct cannot generate. An
+        attribute absent from schema.json ENTIRELY is the context-only case and is kept
+        (see the module docstring's ch5-media-player note)."""
+        base = key[3:] if key.startswith("pd-") else key
+        if base not in attr_defs:
+            return True
+        return bool((attr_defs[base].get("join") or {}).get("direction"))
 
+    own = {
+        k: v for k, v in (context.get("attributeProperties") or {}).items()
+        if _is_signal_entry(v) and is_join_key(k)
+    }
+
+    # Global entries, keyed the way this tag would store them, minus anything the tag
+    # defines itself (more specific wins).
+    inherited: dict[str, dict] = {}
+    global_props = (sdk.component_context.get("global") or {}).get("attributeProperties") or {}
+    for name, attr_def in attr_defs.items():
+        direction = (attr_def.get("join") or {}).get("direction")
+        if not direction:
+            continue
+        key = f"pd-{name}" if direction == "state" else name
+        if key in own:
+            continue
+        props = global_props.get(key)
+        if _is_signal_entry(props):
+            inherited[key] = props
+
+    signals: list[ContractSignal] = []
+    for key, props in {**own, **inherited}.items():
         base = key[3:] if key.startswith("pd-") else key
         join = (attr_defs.get(base) or {}).get("join") or {}
         direction = join.get("direction")
@@ -135,8 +202,9 @@ def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
             direction=direction,
             category=props.get("category", ""),
             event_type=props.get("eventType", ""),
-            extender_position=int(props["extenderPosition"]),
+            extender_position=int(props.get("extenderPosition", 0)),
             schema_backed=bool(join),
+            remove_on_contract_use=bool(props.get("removeOnContractUse", False)),
         ))
 
     signals.sort(key=_signal_order)
