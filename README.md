@@ -9,6 +9,32 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Showcase components are FRESH, unconfigured instances again.** The user asked why the
+widget list arrived with a widget reference already assigned: it should be added empty.
+They are right, and it defeated the purpose -- the question these pages answer is
+whether a newly CREATED component matches a newly DROPPED one, and a pre-configured
+instance cannot answer it. The override (a widget reference and 3 items, added while
+chasing the wrong diagnosis) is gone, and `OVERRIDES` is now deliberately empty with
+that reasoning recorded in the file so it is not "helpfully" repopulated later.
+
+The widget list is once again `widgetid=""`, `numberofitems=1`, positioned with no
+explicit size -- which is the actual fix, and is independent of whether a widget is
+assigned.
+
+`widget_reference_id()` stays in component.py: the `w{GUID}` convention is verified
+against the reference project and any real widget list will need it. It is simply not
+something the showcase should apply.
+
+**One operational note:** a write to `AllComponents - Media 2.cuig` failed with
+`PermissionError` while Construct had it open, so the regeneration silently left that
+page stale until retried. Worth remembering when a regenerated page appears not to have
+changed -- and worth handling in the harness if this recurs.
+
+Full 42-file suite green; all six pages regenerated.
+
+**Confirmed good in Construct:** Buttons, Keypads, Gauges, Media. **Pending re-check:**
+Media 2 and Text.
+
 **Widget list corrected -- and my diagnosis of it was wrong.** I attributed its wrong
 size to an empty `widgetid` (nothing referenced, so nothing rendered inside the box).
 The user disproved that directly: dropping an EMPTY widget list in Construct gives

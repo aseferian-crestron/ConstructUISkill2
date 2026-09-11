@@ -19,7 +19,7 @@ GEN = Path(r"C:\ClaudeProjects\ConstructUISkill2\generator")
 sys.path.insert(0, str(GEN))
 
 import layout  # noqa: E402
-from component import PROFILES, build_component, widget_reference_id  # noqa: E402
+from component import PROFILES, build_component  # noqa: E402
 from page import build_page_attributes, generate_element_id, write_cuig  # noqa: E402
 from sdk import read_sdk  # noqa: E402
 
@@ -47,26 +47,12 @@ GROUPS = {
 
 FALLBACK_SIZE = (200, 120)
 
-#: Per-type instance values the showcase supplies, where a component needs configuring
-#: before it renders as anything. A widget list with no widgetid references no widget,
-#: so it draws nothing inside its box -- which reads as a sizing bug.
-OVERRIDES = {
-    "ch5-subpage-reference-list": {"numberofitems": "3"},
-}
-
-
-def project_widget_id() -> str | None:
-    """The `widgetid` for the first widget in the target project, if it has one."""
-    for widget in sorted(PROJ.glob("*.cuiw")):
-        raw = widget.read_text(encoding="utf-8")
-        headers = list(HEADER_RE.finditer(raw))
-        for i, m in enumerate(headers):
-            if m.group(1) == "PageAttributes":
-                end = headers[i + 1].start() if i + 1 < len(headers) else len(raw)
-                guid = tomllib.loads(raw[m.end():end])["Attributes"].get("Id")
-                if guid:
-                    return widget_reference_id(guid)
-    return None
+#: Deliberately empty. Every component here is a FRESH one, exactly as dropping it in
+#: Construct would give you -- that is the whole point of the comparison. An earlier
+#: version pre-assigned the widget list a widget reference and 3 items, which made it
+#: unusable as a check: the question is whether a newly created widget list matches a
+#: newly dropped one, and a configured one cannot answer that.
+OVERRIDES: dict[str, dict[str, str]] = {}
 
 
 def reference_sizes() -> dict[str, tuple[int, int]]:
@@ -117,13 +103,6 @@ def shelf_pack(items: list[tuple[str, int, int]]) -> list[list[tuple[str, int, i
         pages.append(page)
     return pages
 
-
-widget_id = project_widget_id()
-if widget_id:
-    OVERRIDES["ch5-subpage-reference-list"]["widgetid"] = widget_id
-    print(f"widget list will reference {widget_id}")
-else:
-    print("WARNING: the project has no widget, so the widget list will render empty")
 
 sizes = reference_sizes()
 missing = sorted(set(PROFILES) - set(sizes))
