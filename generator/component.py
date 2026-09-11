@@ -136,8 +136,12 @@ PROFILES: dict[str, ComponentProfile] = {
     # Containers (see CONTAINER_TAGS / build_children), plus the subpage reference list,
     # whose only child is a textnode so it builds flat.
     "ch5-dpad": ComponentProfile("Dpad", vstheme="theme"),
+    # css_height=False: a keypad's height follows its container width (it is
+    # aspect-locked, see is_aspect_locked), so an explicit one is a guess -- the user
+    # saw the adorner disagree with the render because of it.
     "ch5-keypad": ComponentProfile("Keypad", vstheme="theme", active_font=True,
-                                   extras=(("ccid_customSizeSet", "true"),)),
+                                   extras=(("ccid_customSizeSet", "true"),),
+                                   css_height=False),
     "ch5-button-list": ComponentProfile("Button List", vstheme="theme", active_font=True,
                                         label=True, extras=(("assetid", "0"),
                                                             ("ccid_imageIconType", "iconclass"))),
@@ -182,6 +186,35 @@ def _schema_element(sdk: UiSdk, tag_name: str) -> dict:
         if element.get("tagName") == tag_name:
             return element
     raise KeyError(f"{tag_name!r} is not a CH5 element in schema.json")
+
+
+def can_resize(sdk: UiSdk, tag_name: str) -> bool:
+    """Whether this type can be given a size at all.
+
+    `componentProperties.canResize` is the SDK's own answer, and it names exactly the
+    four types the user identified as fixed-size: ch5-animation, ch5-segmented-gauge,
+    ch5-signal-level-gauge, ch5-wifi-signal-level-gauge ("signal level and wifi only
+    support fixed sizes"). An earlier version inferred this from an empty render-size
+    `propertyMapping`, which happened to pick the same four -- this is the published
+    flag rather than a proxy for it.
+    """
+    properties = (sdk.component_context.get(tag_name) or {}).get("componentProperties") or {}
+    return bool(properties.get("canResize", True))
+
+
+def is_aspect_locked(sdk: UiSdk, tag_name: str) -> bool:
+    """True when the rendered size is driven by a SINGLE axis -- the type's render-size
+    variables are all sourced from `width` (or all from `height`), with nothing driving
+    the other axis. See reflow.py::_is_aspect_locked, which uses the same test.
+
+    ch5-dpad, ch5-keypad, ch5-toggle and ch5-video are all in this class: their height
+    follows from their width, so an explicit height in CSS is a guess that sizes the
+    canvas adorner around a component that ignored it.
+    """
+    mapping = ((sdk.component_context.get(tag_name) or {}).get("classToVariableMapping") or [])
+    id_selector = next((e for e in mapping if e.get("className") == "idSelector"), None)
+    sources = {m.get("sourceProperty") for m in (id_selector or {}).get("propertyMapping", [])}
+    return sources in ({"width"}, {"height"})
 
 
 def size_css_vars(sdk: UiSdk, tag_name: str, *, width: int, height: int,
@@ -328,11 +361,10 @@ def build_component_attributes(
     # report, after the first fix over-applied this to every preset-sized type.
     # Both conditions: the type must HAVE a preset `size` attribute (ch5-color-chip has
     # render-size variables but no size attribute at all -- setting one would invent an
-    # attribute no real instance carries), and must have variables to drive.
+    # attribute no real instance carries), and must be resizable at all.
     has_preset_size = any(a["name"] == "size" and a.get("value")
                           for a in _schema_element(sdk, tag_name)["attributes"])
-    if has_preset_size and size_css_vars(sdk, tag_name, width=0, height=0,
-                                         attributes=dict(attributes)):
+    if has_preset_size and can_resize(sdk, tag_name):
         _set(attributes, "size", "custom")
 
     _set(attributes, "customvstheme", profile.vstheme) if profile.vstheme else None
@@ -475,6 +507,14 @@ def build_component(
     attributes = build_component_attributes(
         sdk, tag_name, component_name=component_name, element_id=element_id,
         active_font=kwargs.pop("active_font", "Roboto"), **kwargs)
+
+    # A dpad is aspect-locked at 1:1 -- every real instance is square (118x118, 221x221)
+    # and Construct never lets its box go otherwise. Honouring a non-square request would
+    # render a square component inside a rectangular adorner, so square it here rather
+    # than emit a size the component will not use. (reflow.py does the same thing when
+    # fitting one to a new resolution.)
+    if tag_name == "ch5-dpad" and width != height:
+        width = height = min(width, height)
 
     children = build_children(sdk, tag_name, dict(attributes),
                               devices_visited=kwargs.get("devices_visited", '["TSW-1070, TSW-1070"]'))

@@ -17,7 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from component import PROFILES, build_component, size_css_vars  # noqa: E402
+from component import (  # noqa: E402
+    PROFILES, build_component, can_resize, is_aspect_locked, size_css_vars,
+)
 from sdk import read_sdk  # noqa: E402
 
 sdk = read_sdk("2.18.0")
@@ -63,6 +65,11 @@ print("a toggle writes width and no height, matching its reference instance: OK"
 # preset that does not exist and leaves the adorner disagreeing with the render, which
 # is what the first version of this fix did by applying custom to every preset-sized
 # type.
+# `canResize` is the SDK's own published flag and names exactly those four.
+assert [t for t in sorted(PROFILES) if not can_resize(sdk, t)] == [
+    "ch5-animation", "ch5-segmented-gauge", "ch5-signal-level-gauge",
+    "ch5-wifi-signal-level-gauge"], [t for t in sorted(PROFILES) if not can_resize(sdk, t)]
+
 customisable, fixed = [], []
 for tag in sorted(PROFILES):
     _, css, element = build_component(
@@ -71,7 +78,7 @@ for tag in sorted(PROFILES):
     attributes = dict(element.attributes)
     expected = size_css_vars(sdk, tag, width=150, height=150, attributes=attributes)
 
-    if expected:
+    if can_resize(sdk, tag) and expected:
         customisable.append(tag)
         assert attributes.get("size") in (None, "custom"),             f"{tag} has render-size variables, so its size must be custom, not {attributes.get('size')!r}"
         for name, value in expected.items():
@@ -100,6 +107,28 @@ for tag in ("ch5-segmented-gauge", "ch5-signal-level-gauge", "ch5-wifi-signal-le
     assert "width:" not in rule and "height:" not in rule, f"{tag}: {rule}"
     assert "left: 5px" in rule and "top: 5px" in rule, rule
 print("the three gauges are positioned but never given a size: OK")
+
+# --- aspect-locked types do not assert a height they cannot know ---------------------
+# A keypad's height follows its container width, so an explicit one sizes the adorner
+# around a component that ignored it -- the user's third report. A dpad is the same
+# class but locked 1:1, so it is squared instead: every real instance is square, and
+# honouring a non-square request would render a square inside a rectangle.
+assert is_aspect_locked(sdk, "ch5-keypad") and is_aspect_locked(sdk, "ch5-dpad")
+
+_, keypad_css, _ = build_component(sdk, "ch5-keypad", component_name="K", element_id="ik1",
+                                   x=0, y=0, width=310, height=200, z_index=1,
+                                   resolution=(1280, 800))
+keypad_rule = id_rule(keypad_css, "ik1")
+assert "width: 310px" in keypad_rule and "height:" not in keypad_rule, keypad_rule
+print("a keypad writes width and no height: OK")
+
+_, dpad_css, _ = build_component(sdk, "ch5-dpad", component_name="D", element_id="id1",
+                                 x=0, y=0, width=310, height=200, z_index=1,
+                                 resolution=(1280, 800))
+dpad_rule = id_rule(dpad_css, "id1")
+assert "width: 200px" in dpad_rule and "height: 200px" in dpad_rule, dpad_rule
+assert "--ch5-dpad--regular-size: 200px" in dpad_rule, dpad_rule
+print("a dpad squares a non-square request rather than rendering inside a wrong box: OK")
 
 # --- the conditions in the mapping are honoured ---------------------------------------
 # A horizontal slider IGNORES its height mapping; a vertical button SWAPS width into the
