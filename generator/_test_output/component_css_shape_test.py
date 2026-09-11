@@ -41,7 +41,13 @@ def dimension_shape(declarations: str) -> dict[str, str]:
 
 #: Types whose real instances disagree with each other, or where the reference has no
 #: instance to compare. Recorded rather than skipped silently.
-NO_REFERENCE: set[str] = set()
+NO_REFERENCE: set[str] = {
+    # No instance anywhere in THIS reference project -- see component_flat_types_
+    # test.py's NO_REFERENCE_IN_THIS_PROJECT (same gap, same reason, 2026-09-11).
+    # Confirmed instead via component.py::writes_css_size(sdk, "ch5-image") ==
+    # (True, True) -- resizable, writes both width and height, no aspect lock.
+    "ch5-image",
+}
 
 reference_shapes: dict[str, dict[str, str]] = {}
 for path in sorted(REF.glob("*.cuig")):

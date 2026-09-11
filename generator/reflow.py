@@ -1038,6 +1038,18 @@ def _fill_missing_size(
 
 _TAG_RE = re.compile(r"<[\w-]+[^>]*>")
 
+# Marker this project's OWN generator writes (see background.py) on a page/widget
+# background element (a ch5-image or ch5-background placed at 0,0, full canvas size,
+# lowest z-order, per the user's standing "page background" rule, 2026-09-11). Not a
+# real CH5/Construct attribute -- purely internal, read back here so reflow_file can
+# recognize and re-pin it on every newly-added resolution without the caller
+# (project.py::add_resolutions_to_project) needing to know or pass anything extra.
+BACKGROUND_MARKER_ATTR = 'ccid_pageBackground="true"'
+
+
+def _is_background_element(tag_text: str) -> bool:
+    return BACKGROUND_MARKER_ATTR in tag_text
+
 
 def _tag_index(html_text: str) -> dict[str, tuple[str, str]]:
     """Map element_id -> (tag_name, full_opening_tag_text) for every element tag in
@@ -1087,6 +1099,14 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     position rule for every element `source_resolution`'s block(s) have. See the
     spec's Algorithm section for `mode` semantics (pin_existing default vs.
     full_refit).
+
+    ADDED 2026-09-11 (user's standing "page background" rule): any element carrying
+    `BACKGROUND_MARKER_ATTR` (written by background.py at initial placement) is
+    excluded from the normal row/column fit and forced directly to (0,0) at exactly
+    `target_resolution`'s own width/height, on every newly-added resolution --
+    a background covers the whole canvas, it isn't a member of any row alongside
+    other elements, and letting `_fit_group` treat it as one would badly distort
+    fitting for whatever real elements it's reflowed alongside.
 
     CORRECTED 2026-09-09 (task review): every failure mode below must produce a
     warning and a clean ReflowResult return, never raise -- per the spec's Error
@@ -1238,14 +1258,35 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         warnings.append(f"{path.name}: no new elements to fit for {target_query} -- skipped")
         return ReflowResult(warnings=warnings)
 
-    fitted = _fit_group(
-        to_fit, target_resolution["width"], target_resolution["height"],
-        source_resolution["width"], source_resolution["height"],
-        path, target_query, warnings,
-        id_to_tag=id_to_tag, sdk=sdk,
-    )
-    if fitted is None:
-        return ReflowResult(warnings=warnings)
+    # A page/widget background element (see BACKGROUND_MARKER_ATTR) is never run
+    # through the normal row/column fit -- it isn't part of any "row" with other
+    # elements, it's meant to cover the WHOLE canvas. Forced directly to (0,0) at
+    # exactly the target resolution's own size on every new resolution, same
+    # placement rule background.py uses at initial creation. Excluded from
+    # `_fit_group`'s input entirely so it can't distort row/column detection for the
+    # real new elements sharing this target block.
+    background_ids = {eid for eid in to_fit if _is_background_element(id_to_tag_and_text.get(eid, ("", ""))[1])}
+    to_fit_normal = {eid: e for eid, e in to_fit.items() if eid not in background_ids}
+
+    fitted: dict[str, dict] = {}
+    if to_fit_normal:
+        fitted = _fit_group(
+            to_fit_normal, target_resolution["width"], target_resolution["height"],
+            source_resolution["width"], source_resolution["height"],
+            path, target_query, warnings,
+            id_to_tag=id_to_tag, sdk=sdk,
+        )
+        if fitted is None:
+            return ReflowResult(warnings=warnings)
+
+    for eid in background_ids:
+        source = to_fit[eid]
+        tag = id_to_tag.get(eid)
+        width, height = target_resolution["width"], target_resolution["height"]
+        size_vars = _component_size_css_vars(sdk, tag, width=width, height=height) if (sdk is not None and tag is not None) else {}
+        extra_vars = {**source.get("extra_vars", {}), **size_vars}
+        fitted[eid] = {"left": 0, "top": 0, "width": width, "height": height,
+                        "z_index": source.get("z_index"), "extra_vars": extra_vars}
 
     if html_index is not None and page_attrs_index is not None:
         html_text = sections[html_index][2]
@@ -1262,7 +1303,11 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         sections[page_attrs_index] = ("PageAttributes", sections[page_attrs_index][1], page_attrs_text)
 
     if mode == "pin_existing" and pinned:
-        for new_id, pinned_id in check_overlaps(pinned, fitted):
+        # A background element covering the whole canvas overlaps EVERY pinned
+        # element by design -- that's not a real placement conflict, so it's
+        # excluded from this check rather than producing noise on every reflow.
+        overlap_candidates = {eid: f for eid, f in fitted.items() if eid not in background_ids}
+        for new_id, pinned_id in check_overlaps(pinned, overlap_candidates):
             warnings.append(
                 f"{path.name}: new element {new_id!r} may overlap pinned element "
                 f"{pinned_id!r} in {target_query} -- review placement in Construct"

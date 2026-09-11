@@ -33,6 +33,9 @@ EXPECTED_DELTAS: dict[str, tuple[set[str], set[str]]] = {
     # Content the user typed into the instance; a fresh component has none of it.
     "ch5-qrcode": ({"qrcode", "size"}, set()),
     "ch5-text": ({"labelinnerhtml"}, set()),
+    # `backgroundcolor="#ff0000"`: an arbitrary fallback color the reference author
+    # picked for their own test content, not a schema default -- 2026-09-11.
+    "ch5-background": ({"backgroundcolor"}, set()),
     "ch5-toggle": ({"label", "labeloff", "labelon", "ccid_customSizeSet"}, set()),
     # State flags Construct sets when the user acts on the instance: demoMode is the
     # media player's preview toggle, disabled is set from the properties panel.
@@ -54,6 +57,16 @@ reference: dict[str, dict] = {}
 
 
 FLAT_TAGS = set(PROFILES) - set(CONTAINER_TAGS)
+
+#: ch5-image has no instance anywhere in THIS reference project (C:\Solutions\
+#: ClaudeSamples\Components) -- confirmed by grep, 2026-09-11 -- so it can't be verified
+#: against this file's own oracle. Its PROFILES entry was instead transcribed from a
+#: real instance in a DIFFERENT reference project (C:\Solutions\ClaudeSamples\
+#: ClaudeCustomModeProject\Page1.cuig) and is verified separately by
+#: background_test.py against that file, the same attribute-set-and-value rigor this
+#: test applies here, just a different oracle. Not a guess -- a documented exception,
+#: same spirit as EXPECTED_DELTAS/UNIVERSAL_DELTAS below.
+NO_REFERENCE_IN_THIS_PROJECT = {"ch5-image"}
 
 
 def walk(elements: list[dict]) -> None:
@@ -77,7 +90,7 @@ for path in sorted(REF.glob("*.cuig")):
             end = headers[i + 1].start() if i + 1 < len(headers) else len(raw)
             walk(tomllib.loads(raw[m.end():end]).get("Elements", []))
 
-missing_types = sorted(FLAT_TAGS - set(reference))
+missing_types = sorted(FLAT_TAGS - set(reference) - NO_REFERENCE_IN_THIS_PROJECT)
 assert not missing_types, f"no reference instance found for {missing_types}"
 print(f"reference project: a flat instance of all {len(reference)} profiled types")
 

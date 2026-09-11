@@ -95,9 +95,9 @@ def build_project_attributes(
     component_key: str = COMPONENT_KEY_UI,
     themes: list[str] | None = None,
     default_theme: str | None = None,
-    theme_page_color: str = "",
+    theme_page_color: str = "#000000",
     include_unused_asset: bool = False,
-    override_theme_color: bool = False,
+    override_theme_color: bool = True,
     sdk_id: str,
     runtime_theme_join: str = DEFAULT_THEME_LANGUAGE_JOIN,
     runtime_language_join: str = DEFAULT_THEME_LANGUAGE_JOIN,
@@ -130,6 +130,17 @@ def build_project_attributes(
     `CustomDeviceResolutions`, never catalog-sourced picks (see
     devices.py::to_project_resolution's docstring for the full citation and the real
     corruption this caused when an earlier version got it backwards).
+
+    `theme_page_color`/`override_theme_color` default to `"#000000"`/`True` --
+    standing rule, user 2026-09-11: "the Override Theme Color in the project
+    properties should always be set to black... necessary since between page flips
+    you see the default theme color and black is more pleasing." Confirmed from
+    `ProjectItemThemePageColor.razor.cs`: `OverrideThemeColor=False` makes Construct
+    continuously auto-sync `ThemePageColor` to whatever the CURRENTLY SELECTED
+    theme's own default page color is (so it silently drifts if the theme is ever
+    changed); `True` pins `ThemePageColor` to an explicit value regardless of theme.
+    Only `True` + an explicit color actually guarantees the page-flip color stays
+    black no matter what theme the project uses.
     """
     themes = themes or [PROJECT_DEFAULT_THEME.get(component_key, PROJECT_DEFAULT_THEME[COMPONENT_KEY_UI])]
     theme_id = default_theme or themes[0]

@@ -65,9 +65,14 @@ print("a toggle writes width and no height, matching its reference instance: OK"
 # preset that does not exist and leaves the adorner disagreeing with the render, which
 # is what the first version of this fix did by applying custom to every preset-sized
 # type.
-# `canResize` is the SDK's own published flag and names exactly those four.
+# `canResize` is the SDK's own published flag and names exactly those types.
+# ch5-background added 2026-09-11 (page/widget background rule, generator/
+# background.py): its own real canResize is also False, confirmed directly from
+# the SDK -- background.py always forces its width/height explicitly regardless,
+# so this doesn't affect it, but it's correctly excluded from size="custom"
+# auto-forcing the same way the three gauges and ch5-animation already are.
 assert [t for t in sorted(PROFILES) if not can_resize(sdk, t)] == [
-    "ch5-animation", "ch5-segmented-gauge", "ch5-signal-level-gauge",
+    "ch5-animation", "ch5-background", "ch5-segmented-gauge", "ch5-signal-level-gauge",
     "ch5-wifi-signal-level-gauge"], [t for t in sorted(PROFILES) if not can_resize(sdk, t)]
 
 customisable, fixed = [], []

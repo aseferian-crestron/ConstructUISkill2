@@ -100,16 +100,22 @@ class ComponentProfile:
 
 
 
-#: Transcribed from C:\Solutions\ClaudeSamples\Components (2026-09-10). Recomputed and
-#: asserted by component_flat_types_test.py -- if a reference component changes, the test
+#: Transcribed from C:\Solutions\ClaudeSamples\Components (2026-09-10), except
+#: ch5-background (C:\Solutions\ClaudeSamples\Components\Component - Images -
+#: Background.cuig) and ch5-image (no real instance in that project --
+#: C:\Solutions\ClaudeSamples\ClaudeCustomModeProject\Page1.cuig instead), both added
+#: 2026-09-11 for the "page background" rule -- see generator/background.py. Recomputed
+#: and asserted by component_flat_types_test.py -- if a reference component changes, the test
 #: reports it rather than the generator quietly drifting.
 PROFILES: dict[str, ComponentProfile] = {
     "ch5-animation": ComponentProfile("Animation", vstheme="theme"),
     "ch5-button": ComponentProfile("Button", vstheme="custom", active_font=True, label=True),
     "ch5-color-chip": ComponentProfile("Color Chip"),
     "ch5-color-picker": ComponentProfile("Color Picker"),
+    "ch5-background": ComponentProfile("Background", extras=(("assetid", "0"),)),
     "ch5-datetime": ComponentProfile("Date Time", active_font=True,
                                      extras=(("ccid_themeCSSSet", "true"),)),
+    "ch5-image": ComponentProfile("Image", vstheme="custom", extras=(("assetid", "0"),)),
     "ch5-media-player": ComponentProfile("Media Player", vstheme="theme", active_font=True),
     "ch5-qrcode": ComponentProfile("QR Code"),
     "ch5-segmented-gauge": ComponentProfile("Segmented Gauge"),

@@ -92,8 +92,16 @@ newer_css = style.set_component_style(
 )
 final = layout.parse_all_position_rules(newer_css, "(max-width: 99999px)")["ibtnicon"]
 assert final["extra_vars"]["--ch5-button--default-background-color"] == "#000000"
-raw_rule_count = newer_css.count("--ch5-button--default-background-color")
-assert raw_rule_count == 1, f"expected the var written exactly once, found {raw_rule_count}"
+# NOTE: count WITHIN ibtnicon's own #id{} rule specifically, not across the whole file --
+# the same var NAME can legitimately appear once per differently-styled button (each in
+# its own #id{} rule); a whole-file substring count would be a false positive once more
+# than one real button in the project has ever been given a custom background live.
+ibtnicon_span = layout.find_media_block_spans(newer_css, "(max-width: 99999px)")
+ibtnicon_rule = next(
+    newer_css[s:e] for s, e in ibtnicon_span if '#ibtnicon{' in newer_css[s:e] or '#ibtnicon {' in newer_css[s:e]
+)
+raw_rule_count = ibtnicon_rule.count("--ch5-button--default-background-color")
+assert raw_rule_count == 1, f"expected the var written exactly once within ibtnicon's own rule, found {raw_rule_count}"
 print("re-applying a style property updates in place, no duplicate declaration: OK")
 
 # --- per-resolution device block is untouched -- style is not resolution-dependent ----

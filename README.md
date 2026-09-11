@@ -9,6 +9,91 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Page/widget background rules (new capability, entered from a "before we get to
+Stage 3" detour, not itself a theming/Stage 3 piece).** User's standing rule,
+2026-09-11: *"Construct projects need to be 'page based', rules need to be
+applied. First rule is that the Override Theme Color in the project properties
+should always be set to black... Second, pages and widgets both support local
+controls for background colors so those should be used when a color needs to be
+applied at the page or widget level. When a custom image needs to be used as a
+page background, the rule is you use an image component at the lowest z-order at
+0,0 at the page size (this needs to be supported in your reflow logic)... If the
+user specifies that they need to have the video component supported in the
+project, then the image component should not be used and the background
+component used instead."*
+
+Three pieces:
+
+1. **`OverrideThemeColor`/`ThemePageColor` default to `"True"`/`"#000000"`**
+   (`project.py::build_project_attributes`), still explicitly overridable.
+   Confirmed from `ProjectItemThemePageColor.razor.cs`: `OverrideThemeColor=False`
+   makes Construct continuously auto-sync `ThemePageColor` to whatever the
+   CURRENTLY SELECTED theme's own default page color is, silently drifting if the
+   theme ever changes -- only `True` + an explicit value actually pins the
+   page-flip color to black regardless of theme. Fixed live on GenTestProject2 too
+   (was `False`/`"#ffffff"`).
+2. **Solid page/widget background color needs no new code** -- `page.py`'s
+   existing `DisplayBackgroundColor`/`BackgroundColor` `{PageAttributes}`
+   mechanism (Phase 3) is already the right tool; just documented as such.
+3. **`generator/background.py` (new): background IMAGE placement.** Two new
+   `component.py::PROFILES` entries, both transcribed from real instances (not
+   guessed): `ch5-background` from `C:\Solutions\ClaudeSamples\Components\
+   Component - Images - Background.cuig` (that reference project's own real CSS:
+   `width:100%;height:100%;z-index:-99;overflow:hidden;left:0;top:0` in the
+   catch-all block); `ch5-image` (no instance in that project) from
+   `C:\Solutions\ClaudeSamples\ClaudeCustomModeProject\Page1.cuig` instead --
+   `component_flat_types_test.py`/`component_css_shape_test.py` both got a
+   documented `NO_REFERENCE`-style carve-out for `ch5-image`, verified instead by
+   this feature's own `background_test.py` against that file. `choose_background_tag`
+   picks `ch5-background` when the project needs video (the user's own stated
+   reason: an image component conflicts with video), `ch5-image` otherwise.
+
+   `add_page_background` places it at (0,0), the project's landscape/portrait
+   primary resolution's exact size, `z-index: -99` (matching the real file
+   verbatim -- it parses fine, unlike the deliberately NOT-reproduced percentage
+   width/height, see below), inserts it into an EXISTING page/widget via direct
+   section-text splicing (append-before-trailing-whitespace, the same pattern
+   `reflow.py`'s own CSS-block insertion already uses -- a first version got this
+   backwards for the `{Html}` section specifically, silently eating the newline
+   before `{Css}` and breaking every later section read; caught by this feature's
+   own test, not a live mishap), then propagates into every OTHER
+   already-configured resolution via `reflow.reflow_file` (same mechanism
+   `add_resolutions_to_project` already uses, just resolution-vs-new-element
+   instead of new-resolution-vs-existing-elements).
+
+   **`reflow.py` extended** with `BACKGROUND_MARKER_ATTR`
+   (`ccid_pageBackground="true"`, a marker this project's own generator invents
+   and reads back, not a real CH5 attribute) and background-forcing inside
+   `reflow_file`: any element carrying it is excluded from the normal row/column
+   fit (it isn't a member of any "row", it covers the whole canvas) and forced
+   directly to `(0,0)` + the target resolution's exact size on every NEWLY-ADDED
+   resolution too -- proven end-to-end by `background_test.py`, which adds a
+   background to an existing page, THEN adds a brand-new resolution afterward and
+   confirms the background gets force-pinned into it as well, not just at initial
+   placement. Also excluded from `check_overlaps`'s new-vs-pinned check (a
+   full-canvas element overlapping everything is by design, not a real conflict).
+
+   Deliberately NOT matching the real file's exact CSS shape: PIXEL-exact
+   width/height/left/top instead of percentages/bare-zero, and no `overflow:
+   hidden` -- found while building this that `layout.py::_px()` can't parse a
+   percentage value, and `_fill_missing_size` (already-proven, unmodified) would
+   silently DROP the element from every future resolution add, treating an
+   unparseable width as "no size at all"; `overflow: hidden` has no home in
+   `parse_position_rules`'/`build_reflow_block`'s declaration model (no generic
+   non-var slot). Functionally identical (full canvas cover, lowest z-order);
+   documented divergence, not an oversight.
+
+`background_test.py` covers `choose_background_tag`, the `ch5-image` PROFILES
+entry matching its own real reference instance exactly, initial placement +
+propagation into all of GenTestProject2's pre-existing resolutions on a scratch
+copy (pre-existing elements untouched, round-trips), and a resolution added
+afterward still getting the background forced in. Full suite re-run clean except
+the one known pre-existing unrelated failure. Applied live: `GenTestProject2`'s
+`ThemePageColor`/`OverrideThemeColor` fixed, and a `ch5-image` background placed on
+`MainPage.cuig` (assetid left at "0" -- no real image assigned yet, this phase was
+about correct placement/reflow, not asset selection). Awaiting the user's live
+Construct confirmation.
+
 **Phase 7 (themes), Stage 2: a palette layer (`generator/palette.py`, new) sitting
 on top of Stage 1's raw per-property catalog.** User: *"go ahead and start Stage
 2."* A palette is a small set of logical keys (`background_color`, `border_color`,
