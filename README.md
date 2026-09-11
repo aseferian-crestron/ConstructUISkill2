@@ -47,8 +47,11 @@ keeping that test a same-instance comparison rather than a recorded delta.
 
 Full 44-file suite green.
 
-**Awaiting the live check:** open `GenTestProject2` and confirm every component's Font
-Family field now shows "Crestron General" (not empty).
+**CONFIRMED IN CONSTRUCT 2026-09-11**: the user opened `GenTestProject2` and reported
+every component is using Crestron General. Global font-swap is done and live-verified.
+
+**Next:** webfont import (deferred, needs a real sample to verify a `webfonts/` folder's
+shape against), then languages (10), hard buttons (11), and the skill layer.
 
 `generator/fonts.py::set_project_font(cuip_path, new_font)` rewrites, in one call: the
 `.cuip`'s `DefaultFontFamily`, and every `ccid_ActiveFont` attribute + Construct-generated
