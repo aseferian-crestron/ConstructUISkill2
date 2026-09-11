@@ -9,6 +9,21 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Custom language file support (Phase 10) removed from scope, at the user's
+direction: "we can remove the custom language support from this skill for now as
+well .. i will add that later."** Unlike Hard Buttons, this is a deferral, not a
+permanent descope -- the user intends to add it back later. No code had been
+written against it (only the base `RuntimeLanguageJoin`/`DefaultLanguageFile`/
+`ProjectLanguageFiles` project-attribute plumbing in `project.py` exists, which is
+part of core project-creation shape/round-tripping, not the language-file-import
+feature itself, so nothing there needed removal). `docs/ConstructUISkill.md`'s
+§8 skill-function list no longer lists it (removed at the user's own explicit
+request, matching the exact list they pasted back), and
+`docs/architecture/01-index.md`'s Language files row now says "Out of scope for
+now" / "deferred" rather than "Mapped"/"Not found". Current/forward-looking phase
+counts from here on: themes (7) and the skill layer (languages dropped entirely
+from the count, to be re-added when the user picks it back up).
+
 **Phase 5 (resolutions): genuinely custom (non-catalog) resolutions can now be added
 to a project and actually reflow -- the gap both `devices.py` and `project.py` had
 self-documented ("this module still has no 'add a genuinely custom resolution'

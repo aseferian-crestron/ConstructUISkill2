@@ -112,7 +112,6 @@ The following are a list of functions the skill should provide:
 * Ability to add/remove resolutions and reflow the project as required.
 * Ability to add and use custom them files to a project
 * Ability to add and use custom font files to a project
-* Ability to add and use custom language files to a project
 * Ability to add/edit/remove any component in the CH5 SDK to a page or widget. This includes understanding how to add a widget list and a widget reference to the widget list
 * Ability to customize the look of all components (using the components CSS properties) when the components are in custom mode
 * Ability to globally replace the font family across the entire project
