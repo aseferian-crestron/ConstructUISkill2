@@ -199,6 +199,31 @@ def enable_contract_signals(
     return attrs
 
 
+def mark_contract_stale(cuip_path) -> None:
+    """Set `ContractIsStale = "true"` on an existing project, so Construct regenerates the
+    contract the next time the project is opened (`ProjectOpenBehavior.cs:72-99`: it reads
+    the flag, schedules generation, clears the flag and saves).
+
+    Every byte of the file besides the flag is preserved, FileMetadata timestamps
+    included -- `Modified` belongs to whoever actually edited the design, and a rewrite
+    that refreshed it would misreport which of Construct and this generator touched the
+    project last.
+
+    Call this after ANY change to what the contract is derived from: signals enabled or
+    disabled, components added or removed, pages/widgets renamed (object names ARE the
+    contract's signal names). A newly-created project does not need it --
+    `project.py::build_project_attributes` already defaults the flag to "true".
+    """
+    # Deferred to avoid a circular import: project.py calls into this module.
+    import project
+
+    attrs, device_resolution_source, metadata = project.read_cuip(cuip_path)
+    if dict(attrs).get("ContractIsStale") == "true":
+        return
+    override_attr(attrs, "ContractIsStale", "true")
+    project.write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
+
+
 if __name__ == "__main__":
     from sdk import read_sdk
 

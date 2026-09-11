@@ -47,7 +47,12 @@ print("page with button: round-trip OK, position CSS present (regression test fo
       "user-reported 'auto' Left/Top/Width/Height bug)")
 
 # --- 2. structural comparison against the real reference file's plain button --------
-gen_attrs = build_default_button_attributes(sdk, component_name="Button1", element_id="i9nb", label="Button1")
+# contract_signals=(): the real Button1 has no contract signals enabled (nothing in the
+# reference project's Component - Button.cuig carries "Contract Enabled"), so the
+# like-for-like comparison is against a button with none either. Phase 6's default of
+# Press+Selected is asserted separately, in contracts_task3_button_test.py.
+gen_attrs = build_default_button_attributes(
+    sdk, component_name="Button1", element_id="i9nb", label="Button1", contract_signals=())
 
 raw = (REF_DIR / "Component - Button.cuig").read_text(encoding="utf-8")
 headers = list(re.finditer(r"^\{(\w+)\}[ \t]*\r?\n?", raw, re.MULTILINE))
@@ -59,6 +64,7 @@ for i, m in enumerate(headers):
 ref_page_attrs = tomllib.loads(sections["PageAttributes"])
 ref_button1 = ref_page_attrs["Elements"][-1]
 assert ref_button1["Attributes"]["id"] == "i9nb", "reference file's last button is expected to be Button1 (id i9nb)"
+assert not any(v == "Contract Enabled" for v in ref_button1["Attributes"].values()),     "the reference button is expected to have no contract signals -- if it gains one, "     "the contract_signals=() above is no longer the like-for-like comparison"
 
 gen_keys = [k for k, _ in gen_attrs]
 ref_keys = list(ref_button1["Attributes"].keys())
