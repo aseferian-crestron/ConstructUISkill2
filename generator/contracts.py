@@ -47,11 +47,57 @@ from toml_util import override_attr
 
 CONTRACT_ENABLED = "Contract Enabled"
 
-#: Written by default on a new button -- the two signals a programmer nearly always
-#: wires, and (minus `enable`) exactly what the real hand-authored button in
-#: "C:\Solutions\CustomerIssues\i12 Multicam\IV Auto-Switch Set ID.cuig" carries.
-#: Everything else stays opt-in: an enabled signal a nobody wires still consumes joins.
-DEFAULT_BUTTON_SIGNALS = ("Press", "Selected")
+#: Component types that deliberately expose NO contract signals by default. Each of these
+#: HAS signals available -- this is the user's judgement (2026-09-10) that a generated
+#: instance should not enable any, not an oversight or a component with nothing to offer.
+NO_SIGNALS_BY_DESIGN = (
+    "ch5-video",
+    "ch5-video-switcher",
+    "ch5-subpage-reference-list",
+    "ch5-background",
+    "ch5-datetime",
+    "ch5-qrcode",
+)
+
+#: The signals a newly-generated component of each type exposes, transcribed from the
+#: user's reference project (C:\Solutions\ClaudeSamples\Components), where they set the
+#: intended contract signals on every component by hand on 2026-09-10. That project is
+#: the ground truth: contracts_task6_defaults_test.py recomputes this table from those
+#: files on every run, so if the user changes their mind in Construct the test says so.
+#:
+#: Names are the SDK's own contract names; see `resolve_signals` for how they resolve
+#: (raw attribute names work too, and are required where a friendly name is ambiguous).
+DEFAULT_SIGNALS: dict[str, tuple[str, ...]] = {
+    "ch5-button": ("Press", "Selected"),
+    "ch5-button-list": ("ItemPress",),
+    "ch5-color-chip": ("Red Value", "Green Value", "Blue Value",
+                       "RedValue_fb", "GreenValue_fb", "BlueValue_fb"),
+    "ch5-color-picker": ("Red Value", "Green Value", "Blue Value",
+                         "RedValue_fb", "GreenValue_fb", "BlueValue_fb"),
+    "ch5-dpad": ("Digital Start",),
+    "ch5-keypad": ("Digital Start",),
+    "ch5-media-player": ("CRPC", "CRPC_FB", "Message_FB", "Refresh", "Offline",
+                         "Use_Message", "Player_Name"),
+    "ch5-segmented-gauge": ("Touch", "Touch fb"),
+    "ch5-signal-level-gauge": ("Signal Value",),
+    "ch5-slider": ("Lower Touch", "Lower Touch fb"),
+    "ch5-tab-button": ("_Press", "_Selected"),
+    "ch5-text": ("Indirect Rich Text",),
+    "ch5-textinput": ("Output Text", "Indirect Text"),
+    "ch5-toggle": ("Press", "Selected"),
+    "ch5-wifi-signal-level-gauge": ("Signal Value",),
+    **{tag: () for tag in NO_SIGNALS_BY_DESIGN},
+}
+
+#: Backwards-compatible alias for the button's entry (ch5_button.py's parameter default).
+DEFAULT_BUTTON_SIGNALS = DEFAULT_SIGNALS["ch5-button"]
+
+
+def default_signals_for(tag_name: str) -> tuple[str, ...]:
+    """The default signal names for `tag_name`, or `()` for a type the reference project
+    does not cover. `()` is the safe default: no signals enabled is always a valid
+    component, whereas guessing would put joins in a contract nobody asked for."""
+    return DEFAULT_SIGNALS.get(tag_name, ())
 
 
 @dataclass(frozen=True)
@@ -213,12 +259,28 @@ def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
 
 def signal_map(sdk: UiSdk, tag_name: str) -> dict[str, ContractSignal]:
     """`contract_signals` keyed by BOTH the stored attribute name and the friendly name,
-    so a caller can name a signal either way ("Press" or "sendeventontouch")."""
+    so a caller can name a signal either way ("Press" or "sendeventontouch").
+
+    Attribute keys are always present and always unambiguous. A friendly name shared by
+    two signals of the same component is OMITTED rather than resolved arbitrarily -- see
+    `_name_index`. Three exist in SDK 2.18.0 (`ch5-button-list`'s "ItemSelected",
+    `ch5-spinner`'s "Selected Item", `ch5-video-switcher`'s "_Label").
+    """
     mapping: dict[str, ContractSignal] = {}
     for signal in contract_signals(sdk, tag_name):
         mapping[signal.attribute] = signal
-        mapping[signal.friendly_name] = signal
+    for name, signals in _name_index(sdk, tag_name).items():
+        if len(signals) == 1 and name not in mapping:
+            mapping[name] = signals[0]
     return mapping
+
+
+def _name_index(sdk: UiSdk, tag_name: str) -> dict[str, list[ContractSignal]]:
+    """Lower-cased friendly name -> every signal of `tag_name` carrying it."""
+    index: dict[str, list[ContractSignal]] = {}
+    for signal in contract_signals(sdk, tag_name):
+        index.setdefault(signal.friendly_name.lower(), []).append(signal)
+    return index
 
 
 def resolve_signals(sdk: UiSdk, tag_name: str, names) -> list[ContractSignal]:
@@ -227,17 +289,29 @@ def resolve_signals(sdk: UiSdk, tag_name: str, names) -> list[ContractSignal]:
 
     Raises KeyError naming the valid options -- a typo'd signal name would otherwise
     produce a project whose contract is silently missing a signal, which is only
-    discoverable by opening Construct.
+    discoverable by opening Construct. A friendly name shared by two signals raises the
+    same way rather than picking one, since picking would silently enable the wrong
+    signal: use the raw attribute name to disambiguate.
     """
-    mapping = signal_map(sdk, tag_name)
-    lowered = {k.lower(): v for k, v in mapping.items()}
+    signals = contract_signals(sdk, tag_name)
+    by_attribute = {s.attribute.lower(): s for s in signals}
+    by_name = _name_index(sdk, tag_name)
 
     resolved: list[ContractSignal] = []
     for name in names:
-        signal = lowered.get(str(name).lower())
+        key = str(name).lower()
+        signal = by_attribute.get(key)
         if signal is None:
-            options = ", ".join(sorted({s.friendly_name for s in contract_signals(sdk, tag_name)}))
-            raise KeyError(f"{name!r} is not a contract signal of {tag_name} -- valid: {options}")
+            candidates = by_name.get(key, [])
+            if len(candidates) > 1:
+                raise KeyError(
+                    f"{name!r} is ambiguous on {tag_name} -- it names "
+                    f"{len(candidates)} signals ({', '.join(s.attribute for s in candidates)}); "
+                    f"use the attribute name to say which")
+            if not candidates:
+                options = ", ".join(sorted({s.friendly_name for s in signals}))
+                raise KeyError(f"{name!r} is not a contract signal of {tag_name} -- valid: {options}")
+            signal = candidates[0]
         if signal not in resolved:
             resolved.append(signal)
 
