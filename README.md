@@ -43,12 +43,15 @@ below it on a generated page.
 
 Full 43-file suite green.
 
-**`showtickvalues` resolved: we no longer emit it.** The user does not want tick values
-on a slider, which also matches the reference (no slider there carries the attribute).
-It was the one attribute difference from the reference that could not be explained as
-instance state; `OMIT_BY_TYPE` now drops it, and the recorded delta is gone rather than
-being carried as a known mismatch. A generated slider is 21 attributes, verified against
-the reference.
+**`showtickvalues` resolved -- after I first misread the instruction.** "I don't need
+you to generate a slider with ticks" means the attribute IS present and turned off, not
+that the attribute is dropped. My first pass removed it entirely. The schema default is
+`"false"`, so simply emitting it gives exactly what was asked: attribute there, ticks
+off. A generated slider is back to 22 attributes with `showtickvalues="false"`.
+
+The reference instance carries no such attribute, so this stays a recorded delta -- but
+a deliberate one with a reason, no longer the "unexplained, possibly a defect" it was
+listed as before.
 
 **Next / open threads:** (1) themes (7), fonts (8), languages (10), hard buttons (11);
 (2) the skill layer; (3) offered but not built -- a `Stop` hook that runs the suite so

@@ -156,14 +156,6 @@ SYNC_TAGS = ("ch5-button",)
 #: panel, not what a component is born with.
 NEVER_EMIT = frozenset({"disabled"})
 
-#: Per-type attributes a generated component does not carry, even though they are traits
-#: with a non-null schema default.
-OMIT_BY_TYPE: dict[str, frozenset[str]] = {
-    # The user does not want tick values on a slider, and no slider in the reference
-    # project carries the attribute either -- it was the one difference from the
-    # reference that could not be explained as instance state.
-    "ch5-slider": frozenset({"showtickvalues"}),
-}
 
 
 #: Defaults Construct overrides in code rather than reading from schema.json --
@@ -391,8 +383,6 @@ def base_attributes(sdk: UiSdk, tag_name: str) -> list[tuple[str, str]]:
     for attribute in _schema_element(sdk, tag_name)["attributes"]:
         name = attribute["name"]
         if name in defaults or name in NEVER_EMIT:
-            continue
-        if name in OMIT_BY_TYPE.get(tag_name, ()):
             continue
         if name not in traits and f"pd-{name}" not in traits:
             continue

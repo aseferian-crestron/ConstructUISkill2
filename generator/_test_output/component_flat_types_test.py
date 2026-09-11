@@ -38,6 +38,12 @@ EXPECTED_DELTAS: dict[str, tuple[set[str], set[str]]] = {
     # media player's preview toggle, disabled is set from the properties panel.
     "ch5-media-player": ({"demoMode"}, set()),
     "ch5-signal-level-gauge": ({"disabled"}, set()),
+    # `showtickvalues="false"`: the attribute belongs on a generated slider (schema
+    # default "false" = present, ticks off, which is what the user asked for), while the
+    # reference instance does not carry it at all. Recorded as a deliberate difference,
+    # not a defect -- an earlier version dropped the attribute entirely, which was a
+    # misreading of "i dont need you to generate a slider with ticks".
+    "ch5-slider": (set(), {"showtickvalues"}),
     # The reference's first childless button is the IMAGE variant (assetid, pageflip,
     # image sync sectors); build_component delegates to ch5_button.py, whose variants are
     # covered exactly by phase4_smoke_test against the plain Button1.
