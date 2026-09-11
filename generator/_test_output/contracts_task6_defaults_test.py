@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from contracts import (  # noqa: E402
-    DEFAULT_SIGNALS, NO_SIGNALS_BY_DESIGN, default_signals_for, resolve_signals, signal_map,
+    DEFAULT_SIGNALS, NO_SIGNALS_BY_DESIGN, REFERENCE_GAPS, default_signals_for,
+    resolve_signals, signal_map,
 )
 from sdk import read_sdk  # noqa: E402
 
@@ -58,9 +59,18 @@ assert set(DEFAULT_SIGNALS) - set(NO_SIGNALS_BY_DESIGN) == set(from_reference), 
 
 for tag, expected in sorted(from_reference.items()):
     resolved = {s.attribute for s in resolve_signals(sdk, tag, DEFAULT_SIGNALS[tag])}
-    assert resolved == expected, (
-        f"{tag}: default resolves to {sorted(resolved)}, reference has {sorted(expected)}")
-print("every default resolves to exactly the reference project's signals: OK")
+    # REFERENCE_GAPS: signals the user told us to default ON after checking a generated
+    # contract in Construct, which their sample does not have set yet. Recorded per-tag
+    # so every other type is still held to the reference exactly.
+    gaps = set(REFERENCE_GAPS.get(tag, ()))
+    assert resolved - gaps == expected, (
+        f"{tag}: default resolves to {sorted(resolved)}, reference has {sorted(expected)} "
+        f"(known gaps: {sorted(gaps)})")
+    assert gaps <= resolved, f"{tag}: REFERENCE_GAPS lists {sorted(gaps - resolved)}, which is not defaulted on"
+    assert not (gaps & expected), (
+        f"{tag}: the reference now HAS {sorted(gaps & expected)} -- drop it from "
+        f"REFERENCE_GAPS, the sample has caught up")
+print("every default resolves to the reference project's signals, plus recorded gaps: OK")
 
 # --- the types the user confirmed need none ------------------------------------------
 for tag in NO_SIGNALS_BY_DESIGN:

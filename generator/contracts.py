@@ -59,6 +59,16 @@ NO_SIGNALS_BY_DESIGN = (
     "ch5-qrcode",
 )
 
+#: Signals we default ON that the reference project does not (yet) have set, with why.
+#: Kept explicit so contracts_task6_defaults_test.py can still hold every OTHER type to
+#: the reference exactly, instead of the check being loosened for all of them.
+REFERENCE_GAPS: dict[str, tuple[str, ...]] = {
+    # The user checked the generated contract in Construct on 2026-09-10 and found the
+    # button list needs "Button Selected" -- they had missed it when setting up the
+    # sample. Fold this back in when the sample is next updated, and drop the entry.
+    "ch5-button-list": ("pd-buttonreceivestateselected",),
+}
+
 #: The signals a newly-generated component of each type exposes, transcribed from the
 #: user's reference project (C:\Solutions\ClaudeSamples\Components), where they set the
 #: intended contract signals on every component by hand on 2026-09-10. That project is
@@ -69,7 +79,12 @@ NO_SIGNALS_BY_DESIGN = (
 #: (raw attribute names work too, and are required where a friendly name is ambiguous).
 DEFAULT_SIGNALS: dict[str, tuple[str, ...]] = {
     "ch5-button": ("Press", "Selected"),
-    "ch5-button-list": ("ItemPress",),
+    # "Button Selected" is the display name of pd-buttonreceivestateselected; it contracts
+    # as "ItemSelected", a name it SHARES with pd-receivestateselectedbutton ("List Item
+    # Selected"), so the display name is the only unambiguous way to say it.
+    # Added 2026-09-10 at the user's direction after they checked the generated contract
+    # in Construct: their reference project is missing this one (see REFERENCE_GAPS).
+    "ch5-button-list": ("ItemPress", "Button Selected"),
     "ch5-color-chip": ("Red Value", "Green Value", "Blue Value",
                        "RedValue_fb", "GreenValue_fb", "BlueValue_fb"),
     "ch5-color-picker": ("Red Value", "Green Value", "Blue Value",
@@ -105,7 +120,8 @@ class ContractSignal:
     """One contract-capable signal of one component type."""
 
     attribute: str          # the key as stored in the .cuig/.cuiw, prefix already applied
-    friendly_name: str      # the name the contract uses, e.g. "Press", "Visibility_fb"
+    friendly_name: str      # the name the CONTRACT uses, e.g. "Press", "Visibility_fb"
+    display_name: str       # the name Construct's UI shows, e.g. "Button Selected"
     direction: str          # "state" (receive/feedback) or "event" (send)
     category: str           # e.g. "Send Digital Command", "Receive Analog Feedback"
     event_type: str         # "boolean" | "numeric" | "string"
@@ -245,6 +261,7 @@ def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
             # ContractGenerationHelper.GetJoinsFromAttributes, which passes
             # signalDetails.ContractFriendlyName as the join's contract name.
             friendly_name=props.get("contractFriendlyName") or props.get("friendlyName") or key,
+            display_name=props.get("friendlyName") or props.get("contractFriendlyName") or key,
             direction=direction,
             category=props.get("category", ""),
             event_type=props.get("eventType", ""),
@@ -258,61 +275,86 @@ def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
 
 
 def signal_map(sdk: UiSdk, tag_name: str) -> dict[str, ContractSignal]:
-    """`contract_signals` keyed by BOTH the stored attribute name and the friendly name,
-    so a caller can name a signal either way ("Press" or "sendeventontouch").
+    """`contract_signals` keyed by the stored attribute name and by any name that
+    identifies exactly one signal, so a caller can say "Press", "Button Selected" or
+    "sendeventontouch".
 
-    Attribute keys are always present and always unambiguous. A friendly name shared by
-    two signals of the same component is OMITTED rather than resolved arbitrarily -- see
-    `_name_index`. Three exist in SDK 2.18.0 (`ch5-button-list`'s "ItemSelected",
-    `ch5-spinner`'s "Selected Item", `ch5-video-switcher`'s "_Label").
+    Attribute keys are always present and always unambiguous. A name shared by two
+    signals is omitted from the layer it collides in rather than resolved arbitrarily --
+    see `_name_indexes` for which collisions exist and which layer resolves them.
     """
     mapping: dict[str, ContractSignal] = {}
     for signal in contract_signals(sdk, tag_name):
         mapping[signal.attribute] = signal
-    for signals in _name_index(sdk, tag_name).values():
-        # keyed by the signal's own spelling, not the index's lower-cased key
-        if len(signals) == 1 and signals[0].friendly_name not in mapping:
-            mapping[signals[0].friendly_name] = signals[0]
+    for index in _name_indexes(sdk, tag_name):
+        for signals in index.values():
+            if len(signals) == 1:
+                mapping.setdefault(_spelling(signals[0], index), signals[0])
     return mapping
 
 
-def _name_index(sdk: UiSdk, tag_name: str) -> dict[str, list[ContractSignal]]:
-    """Lower-cased friendly name -> every signal of `tag_name` carrying it."""
-    index: dict[str, list[ContractSignal]] = {}
+def _spelling(signal: ContractSignal, index: dict) -> str:
+    """Whichever of the signal's two names this index is keyed on."""
+    return (signal.friendly_name
+            if signal.friendly_name.lower() in index
+            and index[signal.friendly_name.lower()] == [signal]
+            else signal.display_name)
+
+
+def _name_indexes(sdk: UiSdk, tag_name: str) -> tuple[dict[str, list[ContractSignal]],
+                                                      dict[str, list[ContractSignal]]]:
+    """(by contract name, by display name), both lower-cased, in resolution order.
+
+    Two layers rather than one merged index, because each resolves collisions the other
+    has. `ch5-button-list` has two signals contracting as "ItemSelected" -- they are only
+    told apart by their display names, "Button Selected"
+    (`pd-buttonreceivestateselected`) and "List Item Selected"
+    (`pd-receivestateselectedbutton`); `ch5-video-switcher`'s four "_Label" signals are
+    likewise distinct only by display name. Pull the other way, `ch5-color-chip`'s send
+    and receive halves BOTH display as "Red Value" and are told apart only by their
+    contract names ("Red Value" vs "RedValue_fb"). Consulting contract names first and
+    display names only as a fallback resolves every case except `ch5-spinner`, whose
+    "Selected Item" is identical in both layers and still raises.
+    """
+    by_contract: dict[str, list[ContractSignal]] = {}
+    by_display: dict[str, list[ContractSignal]] = {}
     for signal in contract_signals(sdk, tag_name):
-        index.setdefault(signal.friendly_name.lower(), []).append(signal)
-    return index
+        by_contract.setdefault(signal.friendly_name.lower(), []).append(signal)
+        by_display.setdefault(signal.display_name.lower(), []).append(signal)
+    return by_contract, by_display
 
 
 def resolve_signals(sdk: UiSdk, tag_name: str, names) -> list[ContractSignal]:
-    """Resolve caller-supplied signal names (friendly or raw attribute, case-insensitive)
-    to `ContractSignal`s, in `extenderPosition` order and de-duplicated.
+    """Resolve caller-supplied signal names to `ContractSignal`s, in `extenderPosition`
+    order and de-duplicated. A name may be the raw attribute, the contract name, or the
+    name Construct's UI displays -- tried in that order, case-insensitively.
 
-    Raises KeyError naming the valid options -- a typo'd signal name would otherwise
-    produce a project whose contract is silently missing a signal, which is only
-    discoverable by opening Construct. A friendly name shared by two signals raises the
-    same way rather than picking one, since picking would silently enable the wrong
-    signal: use the raw attribute name to disambiguate.
+    Raises KeyError naming the valid options: a typo'd signal name would otherwise
+    produce a project whose contract is silently missing a signal, discoverable only by
+    opening Construct. A name that still identifies two signals after both layers raises
+    the same way rather than picking one.
     """
     signals = contract_signals(sdk, tag_name)
     by_attribute = {s.attribute.lower(): s for s in signals}
-    by_name = _name_index(sdk, tag_name)
+    indexes = _name_indexes(sdk, tag_name)
 
     resolved: list[ContractSignal] = []
     for name in names:
         key = str(name).lower()
         signal = by_attribute.get(key)
         if signal is None:
-            candidates = by_name.get(key, [])
-            if len(candidates) > 1:
-                raise KeyError(
-                    f"{name!r} is ambiguous on {tag_name} -- it names "
-                    f"{len(candidates)} signals ({', '.join(s.attribute for s in candidates)}); "
-                    f"use the attribute name to say which")
-            if not candidates:
-                options = ", ".join(sorted({s.friendly_name for s in signals}))
+            matches = next((index[key] for index in indexes if len(index.get(key, [])) == 1), None)
+            if matches is None:
+                collisions = next((index[key] for index in indexes if key in index), [])
+                if collisions:
+                    raise KeyError(
+                        f"{name!r} is ambiguous on {tag_name} -- it names "
+                        f"{len(collisions)} signals ({', '.join(s.attribute for s in collisions)}); "
+                        f"use the attribute name to say which")
+                options = ", ".join(sorted({s.friendly_name for s in signals} |
+                                           {s.display_name for s in signals}))
                 raise KeyError(f"{name!r} is not a contract signal of {tag_name} -- valid: {options}")
-            signal = candidates[0]
+            signal = matches[0]
         if signal not in resolved:
             resolved.append(signal)
 

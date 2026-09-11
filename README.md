@@ -9,12 +9,51 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**CONFIRMED IN CONSTRUCT 2026-09-10**: the user opened `GenTestProject2` after the
-correction below and reported the components look correct -- i.e. they now carry exactly
-the signals their reference project specifies, with the synthetic `Enable` gone. Still
-open on this page: whether the generated CONTRACT lists exactly those five components'
-signals, which is the question the page was built to answer (a complex component's
-strategy forcing or dropping signals would show up there, not on the canvas).
+**Complex-component contracts VERIFIED IN CONSTRUCT 2026-09-10, with one addition.** The
+user checked the generated contract in the actual program: dpad, keypad, tab button and
+media player all came out right, so the complex components' own contract strategies DO
+honour what the file says -- the open question from the last two entries is closed. The
+button list needed one more signal, **"Button Selected"**, which they had missed when
+setting up the sample; added to `DEFAULT_SIGNALS` and the page regenerated.
+
+**That signal is only sayable by its DISPLAY name**, which forced a better lookup.
+`pd-buttonreceivestateselected` contracts as "ItemSelected" -- a name it shares with
+`pd-receivestateselectedbutton` ("List Item Selected") -- so the contract name cannot
+pick it out. Names now resolve in three layers: raw attribute, then contract name, then
+the name Construct's UI displays. Two layers rather than one merged index, because each
+resolves collisions the other has: the button list's and the video switcher's duplicates
+are distinguished only by display name, while `ch5-color-chip`'s send/receive halves BOTH
+display as "Red Value" and are distinguished only by contract name ("Red Value" vs
+"RedValue_fb"). Only `ch5-spinner` is still genuinely ambiguous -- identical in both
+layers -- and still raises.
+
+**`REFERENCE_GAPS` records the one place we now deviate from the sample** (the button
+list's Button Selected) with the reason. The defaults test still holds every other type
+to the reference exactly, and will fail telling us to drop the entry once the sample
+catches up.
+
+**Correction earlier in this exchange, user-caught:** the first version of the
+verification page also wrote a synthetic non-default signal (`pd-receivestateenable`)
+onto all five components as a probe for whether a strategy honours the file. The user saw
+"Enable" enabled everywhere and asked where it came from. It was unnecessary as well as
+wrong -- an overriding strategy shows up as the contract having more or fewer signals
+than the reference specifies, no invented signal required -- and it made the page stop
+matching the ground truth it exists to check. Removed; the script now asserts the page
+carries exactly the intended set.
+
+Verified on disk after regenerating: TOML `[Elements.Attributes]` and the Html view agree
+signal-for-signal on all five components, page round-trips byte-identically, everything
+inside the 1280x800 primary, `.cuip` marked stale. Full 37-file suite green.
+
+**Phase 6 (contracts) is complete** -- simple and complex components both confirmed live.
+**Next / open threads:** (1) `layout.py::parse_position_rules` only matches compact CSS --
+`parse_position_rules("#it8l { left: 124px; ... }")` returns `{}`, so reflowing a
+Construct-authored page in the spaced format (as `Component-Widgets-Media Player.cuig`
+is) would silently do nothing, no error; verified directly, unfixed; (2) whether
+`FALLBACK_MIN_SIZE_PX = 35` holds across more pages and resolutions; (3) the remaining
+generator phases -- themes (7), fonts (8), languages (10), hard buttons (11), and the
+skill layer; (4) real builders for the complex component types, which is what would let
+us stop transplanting.
 
 **Complex-component contracts verified on the canvas; contract listing still to check.** Only the simple path (ch5-button) had ever been opened in Construct,
 while dpad, keypad, button list, tab button and media player each go through their own
