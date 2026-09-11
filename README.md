@@ -9,10 +9,46 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 8 (fonts), global swap slice -- BUILT, applied to the live project, AWAITING
-THE USER'S CHECK IN CONSTRUCT.** Scoped with the user to global font-swap only; webfont
-IMPORT deferred since no project anywhere on this machine has ever done it, so there is
-no real file to verify a `webfonts/` folder's shape against.
+**Phase 8 (fonts): global swap CORRECTED -- the first version accepted an arbitrary
+string, and Construct's Font Family field has no way to show one.** The user applied it
+(Roboto -> Montserrat) and every component's Font Family went EMPTY in the Properties
+Grid. They also updated the reference sample themselves (`Component - Button.cuig`,
+Button1 -> "Crestron AV", Button2 -> "Stylish Comic") as the clue: real per-component
+fonts DO vary, so the bug was not in ccid_ActiveFont being wrong -- it was in accepting
+a font name Construct has no way to display.
+
+**Root cause, traced client-side:** the Font Family trait is a CLOSED dropdown
+(`addFontFamilyTrait`, `type: 'select'`), whose options come from exactly three sources
+(`pd-utils\src\utilities.ts::getAllFonts`): `GlobalVars.SystemDefaultFont` (hardcoded
+from the SDK's `component-context.json` `global.defaults.attributes.UiEditorFont` --
+**not** the project's own `DefaultFontFamily`, confirmed by tracing
+`apiV1.ts::createEditorInstance`), `GlobalVars.CrestronCustomFonts` (that same JSON's
+`CrestronCustomFont` array -- exactly 4 names for SDK 2.18.0), and `editor.CustomWebFonts`
+(imported webfonts -- the deferred half of this phase). "Montserrat" is none of those, so
+the dropdown had nothing to select, even though the attribute and CSS were written
+correctly. "Crestron AV" is catalog source 2; "Stylish Comic" is presumably a webfont.
+
+**Fix:** `fonts.py::available_fonts(sdk)` returns the real catalog (`["Roboto",
+"Crestron AV", "Crestron General", "Crestron Lighting-HVAC", "Crestron Simple Icons"]`
+for SDK 2.18.0), and `set_page_font`/`set_project_font` now validate against it up front,
+raising and naming the valid choices rather than silently writing an unselectable value.
+`set_project_font` validates once before touching anything, so a rejected font can never
+leave a project half-changed (`.cuip` updated but pages not, or vice versa).
+
+**Consequence found while fixing this:** the live `GenTestProject2` was still carrying
+the invalid `"Montserrat"` from before validation existed (this session's own earlier,
+now-corrected mistake) -- caught only because the test copies the actual live project
+rather than a synthetic fixture, so a stale/invalid value there breaks a hardcoded
+assumption instead of silently passing. Fixed live: `DefaultFontFamily = "Crestron
+General"` everywhere, verified on disk (no file mentions Montserrat, all still
+round-trip). `phase4_smoke_test.py` also updated -- the user's own edit to Button1's
+font in the reference sample is passed through explicitly (`active_font="Crestron AV"`),
+keeping that test a same-instance comparison rather than a recorded delta.
+
+Full 44-file suite green.
+
+**Awaiting the live check:** open `GenTestProject2` and confirm every component's Font
+Family field now shows "Crestron General" (not empty).
 
 `generator/fonts.py::set_project_font(cuip_path, new_font)` rewrites, in one call: the
 `.cuip`'s `DefaultFontFamily`, and every `ccid_ActiveFont` attribute + Construct-generated
