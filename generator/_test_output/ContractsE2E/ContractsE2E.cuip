@@ -1,9 +1,9 @@
 {FileMetadata}
 Schema = "1.0.0.0"
 CreatedByAppHost = "2.1501.15.0"
-Created = 2026-09-10 21:55:46.562110-04:00
+Created = 2026-09-10 21:55:46.770255-04:00
 LastModifiedByAppHost = "2.1501.15.0"
-Modified = 2026-09-10 21:55:46.562110-04:00
+Modified = 2026-09-10 21:55:46.770255-04:00
 CreatedByProjectApp = "1.4801.18.0"
 LastModifiedByProjectApp = "1.4801.18.0"
 MinimumProjectApp = "1.2600.1"
@@ -16,18 +16,19 @@ MinimumAppHost = "2.901.0"
 
 [Attributes]
 ComponentKey = "UiEditor"
-Name = "Task3"
+Name = "ContractsE2E"
 ThemeId = "light-theme.css"
 ProjectThemeIds = "light-theme.css"
 ThemePageColor = ""
 IncludeUnusedAsset = "False"
 OverrideThemeColor = "False"
 SdkId = "CH5:2.18.0"
-Id = "06061b19-71cc-4302-9dc9-299c071e1256"
+Id = "47d210b5-8363-4d91-b7a4-595b77e9a9db"
 RuntimeThemeJoin = "0"
 RuntimeLanguageJoin = "0"
 DefaultComponentMode = "custom"
 DefaultFontFamily = "Roboto"
+DeviceResolutionIds = "D-L-TSW1070-1280-0800,D-L-TSW0770-1280-0800"
 ipId = "03"
 ProjectSchemaVersion = "13"
 ContractIsStale = "true"

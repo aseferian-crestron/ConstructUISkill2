@@ -265,6 +265,7 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     here would leave the .cuip write below never happening while some page files had
     already been rewritten, a silently inconsistent project. Wrapped per-file.
     """
+    import contracts
     import devices
     import reflow
     import sdk as sdk_module
@@ -339,7 +340,7 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
         override_attr(attrs, "DeviceResolutionIds", ids_csv)
     else:
         attrs.insert(keys.index("DefaultFontFamily") + 1, ("DeviceResolutionIds", ids_csv))
-    override_attr(attrs, "ContractIsStale", "true")
+    contracts.set_contract_stale(attrs)  # Construct regenerates the contract on open
 
     write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
     return warnings

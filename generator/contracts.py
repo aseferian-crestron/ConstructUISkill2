@@ -199,6 +199,16 @@ def enable_contract_signals(
     return attrs
 
 
+CONTRACT_IS_STALE = "ContractIsStale"
+
+
+def set_contract_stale(attrs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Mark an already-in-memory project attribute list stale (see `mark_contract_stale`
+    for the file-level version and for when to call either)."""
+    override_attr(attrs, CONTRACT_IS_STALE, "true")
+    return attrs
+
+
 def mark_contract_stale(cuip_path) -> None:
     """Set `ContractIsStale = "true"` on an existing project, so Construct regenerates the
     contract the next time the project is opened (`ProjectOpenBehavior.cs:72-99`: it reads
@@ -218,9 +228,9 @@ def mark_contract_stale(cuip_path) -> None:
     import project
 
     attrs, device_resolution_source, metadata = project.read_cuip(cuip_path)
-    if dict(attrs).get("ContractIsStale") == "true":
+    if dict(attrs).get(CONTRACT_IS_STALE) == "true":
         return
-    override_attr(attrs, "ContractIsStale", "true")
+    set_contract_stale(attrs)
     project.write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
 
 
