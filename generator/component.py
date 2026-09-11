@@ -97,21 +97,14 @@ class ComponentProfile:
     active_font: bool = False
     label: bool = False
     extras: tuple[tuple[str, str], ...] = field(default_factory=tuple)
-    #: Whether an explicit width/height belongs in this type's CSS at all. Transcribed
-    #: from the reference: a toggle carries width and no height (its height follows its
-    #: handle size), and the three gauges carry NEITHER -- they size themselves from
-    #: their own attributes (numberofsegments, numberofbars, the size preset), so an
-    #: explicit box just makes the canvas adorner disagree with what is rendered.
-    css_width: bool = True
-    css_height: bool = True
+
 
 
 #: Transcribed from C:\Solutions\ClaudeSamples\Components (2026-09-10). Recomputed and
 #: asserted by component_flat_types_test.py -- if a reference component changes, the test
 #: reports it rather than the generator quietly drifting.
 PROFILES: dict[str, ComponentProfile] = {
-    "ch5-animation": ComponentProfile("Animation", vstheme="theme",
-                                  css_width=False, css_height=False),
+    "ch5-animation": ComponentProfile("Animation", vstheme="theme"),
     "ch5-button": ComponentProfile("Button", vstheme="custom", active_font=True, label=True),
     "ch5-color-chip": ComponentProfile("Color Chip"),
     "ch5-color-picker": ComponentProfile("Color Picker"),
@@ -119,29 +112,21 @@ PROFILES: dict[str, ComponentProfile] = {
                                      extras=(("ccid_themeCSSSet", "true"),)),
     "ch5-media-player": ComponentProfile("Media Player", vstheme="theme", active_font=True),
     "ch5-qrcode": ComponentProfile("QR Code"),
-    "ch5-segmented-gauge": ComponentProfile("Segmented Gauge",
-                                        css_width=False, css_height=False),
-    "ch5-signal-level-gauge": ComponentProfile("Signal Gauge", vstheme="theme",
-                                           css_width=False, css_height=False),
+    "ch5-segmented-gauge": ComponentProfile("Segmented Gauge"),
+    "ch5-signal-level-gauge": ComponentProfile("Signal Gauge", vstheme="theme"),
     "ch5-slider": ComponentProfile("Slider", vstheme="theme"),
     "ch5-text": ComponentProfile("Formatted-Text", active_font=True, label=True,
                                  extras=(("ccid_themeCSSSet", "true"),)),
     "ch5-textinput": ComponentProfile("Textinput", vstheme="theme", active_font=True, label=True,
                                       extras=(("ccid_sizeInitialized", "true"),)),
-    "ch5-toggle": ComponentProfile("Toggle", vstheme="theme", active_font=True, label=True,
-                                   css_height=False),
+    "ch5-toggle": ComponentProfile("Toggle", vstheme="theme", active_font=True, label=True),
     "ch5-video": ComponentProfile("Video"),
-    "ch5-wifi-signal-level-gauge": ComponentProfile("Wifi Signal Level Gauge", vstheme="theme",
-                                                css_width=False, css_height=False),
+    "ch5-wifi-signal-level-gauge": ComponentProfile("Wifi Signal Level Gauge", vstheme="theme"),
     # Containers (see CONTAINER_TAGS / build_children), plus the subpage reference list,
     # whose only child is a textnode so it builds flat.
     "ch5-dpad": ComponentProfile("Dpad", vstheme="theme"),
-    # css_height=False: a keypad's height follows its container width (it is
-    # aspect-locked, see is_aspect_locked), so an explicit one is a guess -- the user
-    # saw the adorner disagree with the render because of it.
     "ch5-keypad": ComponentProfile("Keypad", vstheme="theme", active_font=True,
-                                   extras=(("ccid_customSizeSet", "true"),),
-                                   css_height=False),
+                                   extras=(("ccid_customSizeSet", "true"),)),
     "ch5-button-list": ComponentProfile("Button List", vstheme="theme", active_font=True,
                                         label=True, extras=(("assetid", "0"),
                                                             ("ccid_imageIconType", "iconclass"))),
@@ -188,6 +173,21 @@ def _schema_element(sdk: UiSdk, tag_name: str) -> dict:
     raise KeyError(f"{tag_name!r} is not a CH5 element in schema.json")
 
 
+def widget_reference_id(widget_guid: str) -> str:
+    """A widget's `Id` GUID as a `ch5-subpage-reference-list`'s `widgetid` refers to it:
+    the GUID with a literal "w" in front. Confirmed in the reference project --
+    WidgetListReference.cuiw has Id `eb72224e-90b4-4804-8c0a-4c347600530a` and the widget
+    lists pointing at it carry `widgetid="web72224e-90b4-4804-8c0a-4c347600530a"`. It is
+    the same `w{GUID}` convention a ch5-template uses for its `templateid`.
+
+    A widget list with an EMPTY widgetid references nothing, so it renders nothing while
+    its CSS box still sizes the canvas adorner -- which reads as the component being the
+    wrong size. Construct itself creates one that way (you pick the widget afterwards),
+    so the generator allows it, but anything meant to be looked at needs this set.
+    """
+    return f"w{widget_guid}"
+
+
 def can_resize(sdk: UiSdk, tag_name: str) -> bool:
     """Whether this type can be given a size at all.
 
@@ -215,6 +215,39 @@ def is_aspect_locked(sdk: UiSdk, tag_name: str) -> bool:
     id_selector = next((e for e in mapping if e.get("className") == "idSelector"), None)
     sources = {m.get("sourceProperty") for m in (id_selector or {}).get("propertyMapping", [])}
     return sources in ({"width"}, {"height"})
+
+
+#: The one aspect-locked type that still gets an explicit height: a dpad is locked at
+#: 1:1, so its height IS its width and stating it is not a guess (see build_component,
+#: which squares a non-square request rather than emitting a box the dpad will ignore).
+SQUARE_TAGS = ("ch5-dpad",)
+
+
+def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool, bool]:
+    """(write width, write height) for this type's `#id` rule.
+
+    Three rules, and every one of them came from a component rendering at a different
+    size than its selection adorner:
+
+    1. A type that cannot be resized gets NEITHER. `canResize: False` in the SDK names
+       animation and the three gauges -- they lay themselves out from their own
+       attributes, so any box we state is one they ignore.
+    2. An ASPECT-LOCKED type gets width only. Its rendered size is driven by a single
+       axis (see is_aspect_locked), so its height follows from its width and an explicit
+       one is a guess. This covers the toggle, keypad, video, video switcher and text
+       input -- the user reported the first three independently before the class was
+       recognised as one thing.
+    3. The dpad is aspect-locked but at 1:1, so its height is known exactly and is
+       written (SQUARE_TAGS).
+
+    Everything else -- button, slider, media player, the lists, the colour components --
+    lays out to its CSS box and gets both.
+    """
+    if not can_resize(sdk, tag_name):
+        return False, False
+    if is_aspect_locked(sdk, tag_name) and tag_name not in SQUARE_TAGS:
+        return True, False
+    return True, True
 
 
 def size_css_vars(sdk: UiSdk, tag_name: str, *, width: int, height: int,
@@ -513,8 +546,10 @@ def build_component(
     # render a square component inside a rectangular adorner, so square it here rather
     # than emit a size the component will not use. (reflow.py does the same thing when
     # fitting one to a new resolution.)
-    if tag_name == "ch5-dpad" and width != height:
+    if tag_name in SQUARE_TAGS and width != height:
         width = height = min(width, height)
+
+    write_width, write_height = writes_css_size(sdk, tag_name)
 
     children = build_children(sdk, tag_name, dict(attributes),
                               devices_visited=kwargs.get("devices_visited", '["TSW-1070, TSW-1070"]'))
@@ -537,8 +572,7 @@ def build_component(
         resolution=resolution,
         extra_vars=size_css_vars(sdk, tag_name, width=width, height=height,
                                  attributes=dict(attributes)),
-        write_width=PROFILES[tag_name].css_width,
-        write_height=PROFILES[tag_name].css_height,
+        write_width=write_width, write_height=write_height,
     )
     return html, css, element
 

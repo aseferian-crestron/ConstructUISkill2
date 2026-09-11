@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from component import (  # noqa: E402
-    PROFILES, build_component, can_resize, is_aspect_locked, size_css_vars,
+    PROFILES, build_component, can_resize, is_aspect_locked, size_css_vars, writes_css_size,
 )
 from sdk import read_sdk  # noqa: E402
 
@@ -88,9 +88,9 @@ for tag in sorted(PROFILES):
         assert attributes.get("size") != "custom",             f"{tag} has no render-size variables, so it cannot be custom-sized"
         # ...and nothing may claim a CSS box it does not render into.
         rule = id_rule(css, "iz9")
-        profile = PROFILES[tag]
-        assert ("width:" in rule) == profile.css_width, (tag, rule)
-        assert ("height:" in rule) == profile.css_height, (tag, rule)
+        write_width, write_height = writes_css_size(sdk, tag)
+        assert ("width:" in rule) == write_width, (tag, rule)
+        assert ("height:" in rule) == write_height, (tag, rule)
 
 assert "ch5-signal-level-gauge" in fixed and "ch5-wifi-signal-level-gauge" in fixed, fixed
 assert "ch5-segmented-gauge" in fixed, fixed
@@ -121,6 +121,26 @@ _, keypad_css, _ = build_component(sdk, "ch5-keypad", component_name="K", elemen
 keypad_rule = id_rule(keypad_css, "ik1")
 assert "width: 310px" in keypad_rule and "height:" not in keypad_rule, keypad_rule
 print("a keypad writes width and no height: OK")
+
+# The whole aspect-locked class behaves the same way -- the user reported the keypad,
+# then the video and video switcher independently, before the class was recognised as
+# one thing. ch5-textinput is in it too and is covered here rather than waiting for a
+# fourth report.
+for tag in ("ch5-video", "ch5-video-switcher", "ch5-textinput", "ch5-toggle"):
+    assert is_aspect_locked(sdk, tag), tag
+    _, css, _ = build_component(sdk, tag, component_name="A", element_id="ia1",
+                                x=0, y=0, width=240, height=160, z_index=1,
+                                resolution=(1280, 800))
+    rule = id_rule(css, "ia1")
+    assert "width: 240px" in rule and "height:" not in rule, f"{tag}: {rule}"
+print("every aspect-locked type writes width only (dpad excepted, it is 1:1): OK")
+
+# And the types confirmed good in Construct keep BOTH -- this rule must not regress them.
+for tag in ("ch5-button", "ch5-slider", "ch5-media-player", "ch5-button-list",
+            "ch5-tab-button", "ch5-dpad"):
+    write_width, write_height = writes_css_size(sdk, tag)
+    assert write_width and write_height, (tag, write_width, write_height)
+print("types already confirmed correct in Construct still get both dimensions: OK")
 
 _, dpad_css, _ = build_component(sdk, "ch5-dpad", component_name="D", element_id="id1",
                                  x=0, y=0, width=310, height=200, z_index=1,

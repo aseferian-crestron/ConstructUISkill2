@@ -9,6 +9,42 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Sizing resolved as a CLASS, plus a separate widget-list cause.** The user checked the
+remaining pages: Media good; Media 2 wrong on the video switcher, the video and the
+widget list. The first two turned out to be the keypad's problem again, and the third a
+different problem entirely.
+
+**The class.** Video, video switcher, keypad, toggle and text input are all
+ASPECT-LOCKED -- their render-size variables are sourced from a single axis, so height
+follows width and an explicit height is a guess. Having had three independent reports
+of the same class, the per-type flags are gone and `writes_css_size()` derives it:
+
+1. `canResize: False` (animation, the three gauges) -> no width, no height.
+2. Aspect-locked -> width only.
+3. Aspect-locked at 1:1 (the dpad) -> both, with a non-square request squared.
+4. Everything else -> both.
+
+That derivation reproduces every outcome already confirmed good in Construct (button,
+slider, media player, button list, tab button, dpad, the gauges) and fixes the two
+reported. **ch5-textinput is fixed by the same rule without waiting for a fourth
+report** -- it is in the class, and its variable is preset-named
+(`--ch5-textinput--small-width`), which made it suspect already.
+
+**The widget list was NOT a sizing bug.** Its `widgetid` was empty, so it referenced no
+widget and rendered nothing inside a box that still sized the adorner. `widgetid` is the
+widget's `Id` GUID with a literal "w" in front -- confirmed in the reference, where
+`WidgetListReference.cuiw` (`eb72224e-...`) is referenced as `web72224e-...`, the same
+`w{GUID}` convention a ch5-template uses for `templateid`. The generator still allows an
+empty one (Construct creates them that way, you pick the widget afterwards), but
+`widget_reference_id()` builds the reference and the showcase now points its widget list
+at the project's own MyWidget with 3 items.
+
+Full 42-file suite green; showcase regenerated.
+
+**Confirmed good in Construct:** Buttons, Keypads, Gauges, Media. **Pending re-check:**
+Media 2 (video, video switcher, widget list) and Text (text input, changed by the class
+rule above).
+
 **Sizing, third correction: aspect-locked types.** The user found the adorner mismatch
 on the keypad while the dpad looked right. Both are aspect-locked -- their rendered size
 is driven by a SINGLE axis, which `reflow.py::_is_aspect_locked` already had a test for

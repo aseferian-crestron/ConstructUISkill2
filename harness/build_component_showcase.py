@@ -19,7 +19,7 @@ GEN = Path(r"C:\ClaudeProjects\ConstructUISkill2\generator")
 sys.path.insert(0, str(GEN))
 
 import layout  # noqa: E402
-from component import PROFILES, build_component  # noqa: E402
+from component import PROFILES, build_component, widget_reference_id  # noqa: E402
 from page import build_page_attributes, generate_element_id, write_cuig  # noqa: E402
 from sdk import read_sdk  # noqa: E402
 
@@ -46,6 +46,27 @@ GROUPS = {
 }
 
 FALLBACK_SIZE = (200, 120)
+
+#: Per-type instance values the showcase supplies, where a component needs configuring
+#: before it renders as anything. A widget list with no widgetid references no widget,
+#: so it draws nothing inside its box -- which reads as a sizing bug.
+OVERRIDES = {
+    "ch5-subpage-reference-list": {"numberofitems": "3"},
+}
+
+
+def project_widget_id() -> str | None:
+    """The `widgetid` for the first widget in the target project, if it has one."""
+    for widget in sorted(PROJ.glob("*.cuiw")):
+        raw = widget.read_text(encoding="utf-8")
+        headers = list(HEADER_RE.finditer(raw))
+        for i, m in enumerate(headers):
+            if m.group(1) == "PageAttributes":
+                end = headers[i + 1].start() if i + 1 < len(headers) else len(raw)
+                guid = tomllib.loads(raw[m.end():end])["Attributes"].get("Id")
+                if guid:
+                    return widget_reference_id(guid)
+    return None
 
 
 def reference_sizes() -> dict[str, tuple[int, int]]:
@@ -97,6 +118,13 @@ def shelf_pack(items: list[tuple[str, int, int]]) -> list[list[tuple[str, int, i
     return pages
 
 
+widget_id = project_widget_id()
+if widget_id:
+    OVERRIDES["ch5-subpage-reference-list"]["widgetid"] = widget_id
+    print(f"widget list will reference {widget_id}")
+else:
+    print("WARNING: the project has no widget, so the widget list will render empty")
+
 sizes = reference_sizes()
 missing = sorted(set(PROFILES) - set(sizes))
 print(f"sizes from the reference for {len(sizes)} types"
@@ -111,7 +139,7 @@ for group_name, tags in GROUPS.items():
         html_parts, css_parts, elements = [], [], []
         for z, (tag, x, y, width, height) in enumerate(placements, start=1):
             html, css, element = build_component(
-                sdk, tag,
+                sdk, tag, overrides=OVERRIDES.get(tag),
                 component_name=tag.removeprefix("ch5-").replace("-", " ").title().replace(" ", ""),
                 element_id=generate_element_id(),
                 x=x, y=y, width=width, height=height, z_index=z, resolution=PANEL,
