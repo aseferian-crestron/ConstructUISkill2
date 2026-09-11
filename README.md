@@ -9,6 +9,58 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 5 (resolutions): genuinely custom (non-catalog) resolutions can now be added
+to a project and actually reflow -- the gap both `devices.py` and `project.py` had
+self-documented ("this module still has no 'add a genuinely custom resolution'
+builder") is closed.** User's own framing: *"we have tested adding standard
+resolutions but we have not tested adding a custom resolution and allowing the
+reflow to trigger."* Added `devices.py::to_custom_resolution(width, height,
+orientation, name)`, shaped against a real hand-authored entry (`C:\Solutions\
+Polkampally Project\Polkampally Project.cuip`'s own `{DeviceResolutionSource}`) --
+`id` format `Custom-<L|P>-<fresh uuid4>-<width>-<height>` (confirmed the embedded
+GUID is NOT the project's own `Id`), `resolutionId` `<L|P>-<width>-<height>`,
+`resolutionType: "custom"`, `IsCustom: true`. Fixed `project.py::
+add_resolutions_to_project`, which previously wrote `{DeviceResolutionSource}` back
+completely UNCHANGED regardless of what was added -- it now appends any new
+resolution carrying `IsCustom: true` there (and only those; catalog picks still
+never go there, preserving the 2026-09-10 phantom-duplicate fix), while every
+pre-existing `{DeviceResolutionSource}` entry survives untouched.
+
+Testing this against the real component-showcase pages (never previously reflowed)
+surfaced two real, pre-existing crash bugs in `reflow.py`, both the same root
+pattern -- catch-all-sourced elements reaching size-dependent math without going
+through `_fill_missing_size`, so a genuinely no-size element (content-sized, or a
+`canResize:false` type per `component.py::can_resize`, e.g. segmented/signal/wifi
+gauges) hit `TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'` in
+`detect_rows`: (1) the "no source block yet, fall back to the catch-all" branch
+assigned `catchall_elements` straight through; (2) the "inherited" catch-all-only
+elements merged into an existing device block did the same. Both now route through
+`_fill_missing_size` like every other path in the file, so a truly sizeless element
+is dropped with a warning instead of crashing -- not new behavior, just making an
+already-established pattern apply consistently. Also fixed
+`_component_size_css_vars`: it assumed every `classToVariableMapping` entry was a
+persisted width/height var and crashed (`KeyError: 'targetProperty'`) on
+`ch5-text`/`ch5-datetime`'s real schema, which also lists style-only entries
+(font-weight, border-radius, ...) with `persist: false` and no `targetProperty` --
+now skips anything whose `sourceProperty` isn't width/height or that has no
+`targetProperty`.
+
+`generator/_test_output/custom_resolution_test.py` (new) covers: `to_custom_resolution`
+shape vs. the real file, fresh GUID per call, portrait encoding, the
+`{DeviceResolutionSource}`-write fix itself, preservation of pre-existing custom
+entries, `.cuip` round-trip integrity, and -- the actual point -- confirming reflow
+produced a populated `@media` block for the new resolution across every page/widget
+in a scratch copy of GenTestProject2. Full suite re-run clean except the one known
+pre-existing unrelated failure (`phase5_smoke_test.py`'s 74-vs-75 catalog count).
+Then applied live to the real `C:\Solutions\ClaudeGenTest\GenTestProject2`: added a
+1000x700 landscape "Custom Panel" resolution, verified on disk (not from the
+function's return value) that `DeviceResolutionIds` includes it, its own definition
+is in `{DeviceResolutionSource}`, `ContractIsStale` is set, the `.cuip` still
+round-trips byte-identical, and every page/widget got a real populated `@media`
+block for `(orientation: landscape) and (max-width: 1001px) and (max-height:
+701px), (orientation: landscape) and (max-width: 999px)`. Awaiting the user's live
+Construct confirmation.
+
 **Hard buttons (`.cuib`) removed from scope, at the user's direction: "not needed in
 the skill."** Previously Phase 11, listed "Mapped" in the architecture index and
 recurring in every "remaining phases" list since. Descoped rather than deprioritized

@@ -237,20 +237,25 @@ def _numeric_resolution(r: dict) -> dict:
 
 
 def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> list[str]:
-    """Add one or more catalog-sourced resolution dicts (see generator/devices.py::
-    to_project_resolution) to an existing project's .cuip, updating `DeviceResolutionIds`
-    and marking `ContractIsStale`.
+    """Add one or more resolution dicts -- catalog-sourced (generator/devices.py::
+    to_project_resolution) or genuinely custom (devices.py::to_custom_resolution) -- to an
+    existing project's .cuip, updating `DeviceResolutionIds` and marking `ContractIsStale`.
 
-    `{DeviceResolutionSource}` is read and written back UNCHANGED -- confirmed from source
-    (see devices.py::to_project_resolution's docstring) that it only ever holds genuinely
-    CUSTOM resolutions, never catalog picks like the ones this function adds. An earlier
-    version of this function appended every new resolution to `{DeviceResolutionSource}`
-    regardless of source, which is what actually produced a real corrupted-looking project
-    (a catalog device appearing twice in Construct's own Resolution Manager -- once as
-    itself, once as a phantom deletable "custom" duplicate) that the user found and fixed
-    by hand in Construct (2026-09-10). `DeviceResolutionIds` (not `{DeviceResolutionSource}`)
-    is the authoritative membership list for a project's resolutions, both catalog and
-    custom -- read from there, not from `{DeviceResolutionSource}`.
+    `{DeviceResolutionSource}` only ever holds genuinely CUSTOM resolutions (confirmed from
+    source, see devices.py::to_project_resolution's docstring) -- catalog picks are read and
+    written back UNCHANGED there. An earlier version of this function appended EVERY new
+    resolution to `{DeviceResolutionSource}` regardless of source, which is what actually
+    produced a real corrupted-looking project (a catalog device appearing twice in
+    Construct's own Resolution Manager -- once as itself, once as a phantom deletable
+    "custom" duplicate) that the user found and fixed by hand in Construct (2026-09-10).
+    Fixed 2026-09-11: any of `new_resolutions` shaped by `to_custom_resolution` (identified
+    by `IsCustom: True`, the same field Construct's own persistence checks -- see
+    `to_project_resolution`'s docstring) IS appended to `{DeviceResolutionSource}`, since
+    that is precisely the class of resolution the real file only ever stores there; catalog
+    dicts (no `IsCustom` key) are still never appended. `DeviceResolutionIds` (not
+    `{DeviceResolutionSource}`) remains the authoritative membership list for a project's
+    resolutions, both catalog and custom -- read from there, not from
+    `{DeviceResolutionSource}`.
 
     Also reflows every existing *.cuig/*.cuiw in the project's folder so each newly-added
     resolution gets a correctly-fitted @media block for whatever elements already exist
@@ -341,6 +346,9 @@ def add_resolutions_to_project(cuip_path: Path, new_resolutions: list[dict]) -> 
     else:
         attrs.insert(keys.index("DefaultFontFamily") + 1, ("DeviceResolutionIds", ids_csv))
     contracts.set_contract_stale(attrs)  # Construct regenerates the contract on open
+
+    new_custom_source = [r for r in new_resolutions if r.get("IsCustom")]
+    device_resolution_source = device_resolution_source + new_custom_source
 
     write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
     return warnings

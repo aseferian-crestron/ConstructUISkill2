@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -190,6 +191,54 @@ def to_project_resolution(entry: dict, *, is_selected: bool = True) -> dict:
         "componentKeys": entry.get("componentKeys", []),
         "modes": entry.get("modes", []),
         "IsMode": entry.get("isMode", False),
+    }
+
+
+def to_custom_resolution(*, width: int, height: int, orientation: str, name: str, is_selected: bool = True) -> dict:
+    """Build a genuinely custom (non-catalog) resolution dict, shaped to match a real
+    hand-authored entry exactly -- grounded against `C:\\Solutions\\Polkampally Project\\
+    Polkampally Project.cuip`'s own `{DeviceResolutionSource}`:
+
+        {"ProjectId": "33c27476-...", "IsCustom": true, "IsSelected": true,
+         "VisitedName": "Tablet (Landscape) 1",
+         "id": "Custom-L-15cecc01-72fe-4aa9-94ea-9ed7dde33e89-1400-1050",
+         "idName": "Tablet (Landscape) 1", "resolutionId": "L-1400-1050",
+         "resolutionName": "Tablet (Landscape) 1", "resolutionType": "custom",
+         "deviceSpecId": "Tablet (Landscape) 1", "width": "1400px", "height": "1050px",
+         "widthMedia": "1400px", "heightMedia": "1050px", "orientation": 1,
+         "supportedDevices": "", "displayNameSuffix": "", "componentKeys": ["UiEditor"],
+         "modes": [], "IsMode": false}
+
+    The GUID embedded in `id` is confirmed NOT the project's own Id -- it's a fresh,
+    per-resolution GUID generated here (`uuid.uuid4()`), a new one on every call, matching
+    the real file (its own `id` GUID has no relation to that project's `Id`). Unlike
+    `to_project_resolution`, this dict IS meant to reach `{DeviceResolutionSource}` --
+    see that function's docstring for why catalog picks must never go there instead.
+    """
+    orientation_code = ORIENTATION_ENUM[orientation]
+    axis = "L" if orientation == "landscape" else "P"
+    resolution_id = f"{axis}-{width}-{height}"
+    res_guid = uuid.uuid4()
+    return {
+        "IsCustom": True,
+        "IsSelected": is_selected,
+        "VisitedName": name,
+        "id": f"Custom-{axis}-{res_guid}-{width}-{height}",
+        "idName": name,
+        "resolutionId": resolution_id,
+        "resolutionName": name,
+        "resolutionType": "custom",
+        "deviceSpecId": name,
+        "width": f"{width}px",
+        "height": f"{height}px",
+        "widthMedia": f"{width}px",
+        "heightMedia": f"{height}px",
+        "orientation": orientation_code,
+        "supportedDevices": "",
+        "displayNameSuffix": "",
+        "componentKeys": ["UiEditor"],
+        "modes": [],
+        "IsMode": False,
     }
 
 

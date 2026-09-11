@@ -735,6 +735,17 @@ def _component_size_css_vars(
     values = {"width": width, "height": height}
     css_vars: dict[str, str] = {}
     for prop_mapping in mapping:
+        # FIXED 2026-09-11 (custom-resolution reflow test against AllComponents - Text,
+        # a real page never previously reflowed): a tag's idSelector propertyMapping
+        # isn't exclusively width/height entries -- ch5-text/ch5-datetime's real SDK
+        # schema also lists style-only source properties (font-weight, border-radius,
+        # letter-spacing, ...) with `persist: false` and NO `targetProperty` at all,
+        # since they don't mirror into a CSS var. The old code assumed every entry was
+        # a persisted width/height var and crashed with `KeyError: 'targetProperty'`
+        # on the first non-size entry. Skip anything that isn't a width/height source
+        # (this function only ever fits width/height) or that has no targetProperty.
+        if prop_mapping.get("sourceProperty") not in values or "targetProperty" not in prop_mapping:
+            continue
         target = prop_mapping["targetProperty"]
         for cond in prop_mapping.get("condition", []):
             if cond["property"] == "orientation" and cond["value"] == orientation and cond["action"] == "swaptarget":
@@ -1164,7 +1175,20 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
     if not source_elements:
         # Fall back to the 99999px catch-all -- a page authored before the project
         # had any resolution only ever has this block (see the module docstring).
-        source_elements = catchall_elements
+        # FIXED 2026-09-11: this used to assign catchall_elements straight through,
+        # bypassing _fill_missing_size -- a genuinely no-size element (content-sized,
+        # e.g. an empty widget list, or a canResize:false type that never writes
+        # width/height CSS at all, see component.py::can_resize) kept `width`/`height`
+        # as `None` all the way into detect_rows's `e["top"] + e["height"]` arithmetic,
+        # crashing with `TypeError: unsupported operand type(s) for +: 'int' and
+        # 'NoneType'` -- found via the custom-resolution reflow test against the real
+        # component showcase pages (none of which had ever been reflowed before,
+        # so they hit this catch-all-only path where the standard-resolution tests
+        # hadn't). Route through _fill_missing_size here too, same as the non-empty
+        # branch below -- self-fallback is a no-op for elements that DO have a size,
+        # and correctly drops (with a warning) any element that has none anywhere,
+        # instead of propagating `None` into size math.
+        source_elements = _fill_missing_size(catchall_elements, catchall_elements, path, catch_all_query, warnings)
     else:
         source_elements = _fill_missing_size(source_elements, catchall_elements, path, source_query, warnings)
         # CORRECTED 2026-09-10: a device block is an OVERRIDE of the catch-all, not a
@@ -1180,6 +1204,11 @@ def reflow_file(path: Path, target_resolution: dict, source_resolution: dict, mo
         # prevent. Catch-all order first, so output stays deterministic.
         inherited = {eid: e for eid, e in catchall_elements.items() if eid not in source_elements}
         if inherited:
+            # FIXED 2026-09-11: `inherited` is pulled straight from catchall_elements,
+            # same unfiltered-None hazard as the fallback branch above (see its comment)
+            # -- an inherited element with no width/height anywhere (content-sized /
+            # canResize:false) must be dropped here too, not merged in with `None` size.
+            inherited = _fill_missing_size(inherited, catchall_elements, path, catch_all_query, warnings)
             source_elements = {**inherited, **source_elements}
     if not source_elements:
         warnings.append(f"{path.name}: no source block (device or catch-all) had any position rules -- skipped")
