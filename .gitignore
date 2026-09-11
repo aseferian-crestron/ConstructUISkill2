@@ -24,3 +24,4 @@ generator/_test_output/out.txt
 generator/_test_output/ReflowMinSizeE2E/
 generator/_test_output/CustomResolution/
 generator/_test_output/CustomStyle/
+generator/_test_output/CustomShape/

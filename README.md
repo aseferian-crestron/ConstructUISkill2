@@ -9,6 +9,50 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 1 extended: button `shape="custom"` + per-corner
+border-radius, at the user's direction before Stage 2 started.** User: *"buttons
+support fixed Shapes + a custom mode when the 4 radius need to be set custom... make
+sure you support the ability to set the button Shape to Custom so you can set the
+radius to custom values."* Confirmed: `shape`'s real schema enum is
+rounded-rectangle/rectangle/tab/circle/oval -- "custom" isn't in it, the same
+undocumented-but-real pattern already established for `size="custom"`
+(`component.py::build_component_attributes`). The 4 corner border-radius properties
+were ALREADY covered by Stage 1's existing catalog (`.ch5-button--rounded-rectangle`
+class, all `targetProperty`-backed) -- the missing piece was purely that
+`set_component_style` only ever touched CSS, never an HTML attribute, and flipping
+`shape` to `"custom"` is what the user says actually makes the per-corner values take
+effect instead of snapping back to the shape preset's own fixed radius.
+
+Added `style.py::set_html_attribute(html_text, element_id, attr_name, value)` --
+replaces or inserts one attribute on the one opening tag matching `id="element_id"`.
+Built via strict attribute-grammar regex first; replaced after it silently failed to
+match on a REAL live tag (`ButtonVariants.cuig`'s `ibtnimage`) carrying an unescaped
+embedded quote in `devicesVisited="["TSW-1070, TSW-1070"]"` (vs. the reference
+project's properly `&quot;`-escaped form) -- now boundary-finding instead (nearest
+`<` before the `id="..."` match, nearest `>` after), the same pragmatic
+no-literal-bracket-in-values assumption `layout.py`'s own CSS rule parsing already
+makes, not a general HTML parser.
+
+Incidentally confirmed while investigating: this live button's tag also carries a
+full `ccid_sync_{state}_{sector}_{property}="syncEnabled"/"syncDisabled"` attribute
+set (Construct's own per-property theme-sync bookkeeping, materialized once a
+button's property grid has been touched in the real app) -- border-color and label
+color were still `"syncEnabled"` on the FIRST button styled live in this project
+(`ibtnicon`) and their custom values still rendered correctly (per the user's
+confirmed screenshot), so `set_component_style` does not need to manage these sync
+attributes at all; they don't gate whether a CSS var override visually applies.
+
+`generator/_test_output/custom_shape_test.py` (new) covers: `shape`'s real enum
+excluding "custom", all 4 corners resolving to real CSS vars via the existing
+catalog, `set_html_attribute` replacing/inserting/raising correctly with a sibling
+element proven untouched, the full flow (flip shape + write 4 asymmetric corner
+values) against a real button in a scratch copy of GenTestProject2 with
+pre-existing position/size preserved, and the `.cuig` round-tripping. Full suite
+re-run clean except the one known pre-existing unrelated failure. Applied live to
+GenTestProject2's `ButtonVariants.cuig` (`ibtnimage`): `shape="custom"`, corners
+25px/0/0/25px (diagonal rounded look). Verified on disk, round-trips. Awaiting the
+user's live Construct confirmation.
+
 **Phase 7 (themes), Stage 1: custom-mode component styling (`generator/style.py`,
 new), entered from the "theme my projects" / custom-mode-CSS angle rather than a
 theme-file angle.** User's own framing: *"i want to work on custom mode CSS so you

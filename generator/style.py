@@ -33,6 +33,8 @@ not guessed at.
 """
 from __future__ import annotations
 
+import re
+
 import layout
 from sdk import UiSdk
 
@@ -107,6 +109,58 @@ def find_property(catalog: list[dict], class_name: str, source_property: str) ->
     if not matches:
         raise KeyError(f"No Stage-1 (targetProperty-backed) style property {source_property!r} on selector {class_name!r}")
     return matches[0]
+
+
+def set_html_attribute(html_text: str, element_id: str, attr_name: str, value: str) -> str:
+    """Set (replacing if present, inserting if not) `attr_name="value"` on the ONE
+    opening tag in `html_text` whose own `id="element_id"` attribute matches --
+    never a descendant's, since a literal `id="{element_id}"` substring match can only
+    occur where the closing quote immediately follows, and ids are unique per page/
+    widget (see docs/ConstructUISkill.md's "hard requirement" on component names/ids).
+
+    Needed for shape="custom" (see module docstring's border-radius note): unlike
+    `set_component_style`, which only ever touches an element's CSS, some Stage-1
+    style properties are gated by a plain HTML attribute the schema's own enum doesn't
+    list as a valid value (`shape`'s real enum is rounded-rectangle/rectangle/tab/
+    circle/oval -- "custom" isn't in it, exactly the same undocumented-but-real pattern
+    already established for `size="custom"` in component.py::build_component_attributes).
+    Writing `shape="custom"` is what actually lets the border-radius CSS custom
+    properties (already resolvable via style_property_catalog under the SAME
+    `.ch5-button--rounded-rectangle` selector class regardless of shape's literal
+    value) take visible effect, rather than being overridden back to the shape
+    preset's own fixed default radius.
+    """
+    # Deliberately NOT a full attribute-grammar regex (tried first, replaced 2026-09-11):
+    # a real live page's devicesVisited attribute was found carrying UNESCAPED embedded
+    # quotes (`devicesVisited="["TSW-1070, TSW-1070"]"`, vs. the reference project's
+    # properly `&quot;`-escaped form) -- a strict `[\w-]+(?:="[^"]*")?` attribute-by-
+    # attribute parse silently fails to match the whole tag the moment it hits that
+    # attribute, well before ever reaching `id`. Boundary-finding instead: locate the
+    # literal `id="element_id"` text, then walk outward to the nearest `<` before it and
+    # the nearest `>` after it. Assumes no attribute VALUE between them contains a
+    # literal `<`/`>` itself (true of every attribute value seen in real files so far --
+    # enum strings, booleans, colors, JSON-ish arrays -- same pragmatic-boundary
+    # assumption this project already makes for CSS declarations in layout.py's
+    # `_FLAT_RULE_RE`, not a claim of a general HTML parser).
+    id_needle = f'id="{element_id}"'
+    id_pos = html_text.find(id_needle)
+    if id_pos == -1:
+        raise KeyError(f"No opening tag with id={element_id!r} found in this Html text")
+    tag_start = html_text.rfind("<", 0, id_pos)
+    tag_end = html_text.find(">", id_pos)
+    if tag_start == -1 or tag_end == -1:
+        raise ValueError(f"Could not locate the opening/closing bracket of the tag with id={element_id!r}")
+    tag_end += 1  # include the '>' itself
+    tag_text = html_text[tag_start:tag_end]
+
+    attr_re = re.compile(r'(\s' + re.escape(attr_name) + r'=")[^"]*(")')
+    if attr_re.search(tag_text):
+        new_tag_text = attr_re.sub(rf'\g<1>{value}\g<2>', tag_text, count=1)
+    else:
+        # Insert right after the tag name -- attribute order carries no meaning here.
+        name_end = re.match(r"<[\w-]+", tag_text).end()
+        new_tag_text = tag_text[:name_end] + f' {attr_name}="{value}"' + tag_text[name_end:]
+    return html_text[:tag_start] + new_tag_text + html_text[tag_end:]
 
 
 def set_component_style(
