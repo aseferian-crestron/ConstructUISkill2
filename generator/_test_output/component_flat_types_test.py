@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from component import PROFILES, SYNC_TAGS, build_component_attributes  # noqa: E402
+from component import CONTAINER_TAGS, PROFILES, SYNC_TAGS, build_component_attributes  # noqa: E402
 from sdk import read_sdk  # noqa: E402
 
 sdk = read_sdk("2.18.0")
@@ -51,11 +51,18 @@ EXPECTED_DELTAS: dict[str, tuple[set[str], set[str]]] = {
 reference: dict[str, dict] = {}
 
 
+FLAT_TAGS = set(PROFILES) - set(CONTAINER_TAGS)
+
+
 def walk(elements: list[dict]) -> None:
     for element in elements:
         attributes = element.get("Attributes", {})
         tag = attributes.get("tagName") or name_to_tag.get(element.get("Type", ""))
-        if tag in PROFILES and not element.get("Components") and tag not in reference:
+        # "Flat" means no COMPONENT children; ch5-subpage-reference-list carries a lone
+        # textnode, which is not a component and does not make it a container.
+        component_children = [c for c in element.get("Components", [])
+                              if c.get("Type") != "textnode"]
+        if tag in FLAT_TAGS and not component_children and tag not in reference:
             reference[tag] = attributes
         walk(element.get("Components", []))
 
@@ -68,7 +75,7 @@ for path in sorted(REF.glob("*.cuig")):
             end = headers[i + 1].start() if i + 1 < len(headers) else len(raw)
             walk(tomllib.loads(raw[m.end():end]).get("Elements", []))
 
-missing_types = sorted(set(PROFILES) - set(reference))
+missing_types = sorted(FLAT_TAGS - set(reference))
 assert not missing_types, f"no reference instance found for {missing_types}"
 print(f"reference project: a flat instance of all {len(reference)} profiled types")
 
@@ -106,6 +113,9 @@ VALUE_DELTAS = {
     ("ch5-button", "ccid_imageIconType"), ("ch5-button", "assetid"),
     # Sizes the user chose on the instance; a fresh component gets the schema default.
     ("ch5-textinput", "size"), ("ch5-toggle", "size"),
+    # The reference widget list was configured: 5 items, pointed at a real widget.
+    ("ch5-subpage-reference-list", "numberofitems"),
+    ("ch5-subpage-reference-list", "widgetid"),
 }
 #: Per-instance identity/state, never expected to match.
 PER_INSTANCE = {"devicesVisited", "ccid_Label", "componentName", "id"}
@@ -134,14 +144,6 @@ for tag, real in reference.items():
         f"{tag}: reference {'has' if has_sync else 'has no'} ccid_sync_* but SYNC_TAGS says otherwise"
 print("only ch5-button carries the ccid_sync_* block, in reference and generator alike: OK")
 
-# --- container types refuse rather than emit a childless shell ------------------------
-for tag in ("ch5-dpad", "ch5-keypad", "ch5-button-list", "ch5-tab-button"):
-    try:
-        build_component_attributes(sdk, tag, component_name="X", element_id="i0")
-    except NotImplementedError:
-        pass
-    else:
-        raise AssertionError(f"{tag} is a container and must not build as a flat component")
-print("container types raise rather than emitting a childless shell: OK")
+# Container types are covered by component_container_types_test.py.
 
 print("\nFlat component types: all assertions passed.")

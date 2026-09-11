@@ -46,14 +46,37 @@ from elements import Element
 from layout import build_position_css
 from sdk import UiSdk
 
-#: Tags whose real instances carry nested [[Components]] -- out of scope for this slice.
+#: Tags whose instances carry nested [[Components]] children (see build_children).
+#: ch5-subpage-reference-list is NOT one: its only child in the reference is a textnode,
+#: so it builds as a flat component.
 CONTAINER_TAGS = (
     "ch5-dpad",
     "ch5-keypad",
     "ch5-button-list",
     "ch5-tab-button",
     "ch5-video-switcher",
-    "ch5-subpage-reference-list",
+)
+
+#: The dpad's five buttons, verbatim from `pd-metadata-resolver\MetaDataResolver.ts:107-111`,
+#: which pushes these child tags when the schema tag is ch5-dpad. `center` deliberately
+#: has no icon there. componentName/pressed/ccid_imageIconType are added by the dpad's
+#: own mixins afterwards, and are confirmed against the reference instance.
+DPAD_KEYS = (
+    ("up", "Up", "fas fa-caret-up"),
+    ("down", "Down", "fas fa-caret-down"),
+    ("left", "Left", "fas fa-caret-left"),
+    ("right", "Right", "fas fa-caret-right"),
+    ("center", "Center", None),
+)
+
+#: The keypad's thirteen buttons, verbatim from `MetaDataResolver.ts:120-132`.
+#: `buttonextra` is the phone key, iconclass rather than labels.
+KEYPAD_KEYS = (
+    ("button1", "1", ""), ("button2", "2", "ABC"), ("button3", "3", "DEF"),
+    ("button4", "4", "GHI"), ("button5", "5", "JKL"), ("button6", "6", "MNO"),
+    ("button7", "7", "PQRS"), ("button8", "8", "TUV"), ("button9", "9", "WXYZ"),
+    ("button0", "0", "+"), ("buttonstar", "*", None), ("buttonhash", "#", None),
+    ("buttonextra", None, None),
 )
 
 
@@ -98,6 +121,20 @@ PROFILES: dict[str, ComponentProfile] = {
     "ch5-toggle": ComponentProfile("Toggle", vstheme="theme", active_font=True, label=True),
     "ch5-video": ComponentProfile("Video"),
     "ch5-wifi-signal-level-gauge": ComponentProfile("Wifi Signal Level Gauge", vstheme="theme"),
+    # Containers (see CONTAINER_TAGS / build_children), plus the subpage reference list,
+    # whose only child is a textnode so it builds flat.
+    "ch5-dpad": ComponentProfile("Dpad", vstheme="theme"),
+    "ch5-keypad": ComponentProfile("Keypad", vstheme="theme", active_font=True,
+                                   extras=(("ccid_customSizeSet", "true"),)),
+    "ch5-button-list": ComponentProfile("Button List", vstheme="theme", active_font=True,
+                                        label=True, extras=(("assetid", "0"),
+                                                            ("ccid_imageIconType", "iconclass"))),
+    "ch5-tab-button": ComponentProfile("Tab Button", vstheme="theme", active_font=True,
+                                       label=True, extras=(("assetid", "0"),
+                                                           ("ccid_imageIconType", "iconclass"))),
+    "ch5-video-switcher": ComponentProfile("Video Switcher", active_font=True,
+                                           extras=(("assetid", "0"),)),
+    "ch5-subpage-reference-list": ComponentProfile("Widget List", vstheme="theme"),
 }
 
 
@@ -109,6 +146,14 @@ PROFILES: dict[str, ComponentProfile] = {
 #: button still carries 78 of them. `setSyncData` lives in commonButtonTraitsMixins, the
 #: button family's own mixin, which is consistent with what the files show.
 SYNC_TAGS = ("ch5-button",)
+
+
+#: Attributes that are instance STATE rather than a default, so a fresh component never
+#: carries them even though they are traits with a non-null schema default. `disabled`
+#: settles it by contradiction: the reference dpad and signal gauge have it, the
+#: reference video switcher does not -- it records what the user set in the properties
+#: panel, not what a component is born with.
+NEVER_EMIT = frozenset({"disabled"})
 
 
 #: Defaults Construct overrides in code rather than reading from schema.json --
@@ -125,6 +170,16 @@ def _schema_element(sdk: UiSdk, tag_name: str) -> dict:
         if element.get("tagName") == tag_name:
             return element
     raise KeyError(f"{tag_name!r} is not a CH5 element in schema.json")
+
+
+def _attr_str(value) -> str:
+    """A JSON value as Construct stores it in the file. component-context.json holds real
+    JSON booleans for some defaults (ch5-subpage-reference-list's `centeritems`), and
+    Python's str() would write those as "True"/"False" -- the file, and CH5, want
+    "true"/"false"."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def base_attributes(sdk: UiSdk, tag_name: str) -> list[tuple[str, str]]:
@@ -152,17 +207,17 @@ def base_attributes(sdk: UiSdk, tag_name: str) -> list[tuple[str, str]]:
     # from the trait pass, and the tags that miss them are precisely the ones that DO
     # declare defaults.attributes. Context defaults come first and win on value, matching
     # the key order of every real instance checked.
-    attributes: list[tuple[str, str]] = list(defaults.items())
+    attributes: list[tuple[str, str]] = [(k, _attr_str(v)) for k, v in defaults.items()]
     for attribute in _schema_element(sdk, tag_name)["attributes"]:
         name = attribute["name"]
-        if name in defaults:
+        if name in defaults or name in NEVER_EMIT:
             continue
         if name not in traits and f"pd-{name}" not in traits:
             continue
         default = TRAIT_DEFAULT_OVERRIDES.get(tag_name, {}).get(name, attribute.get("default"))
         if default in (None, "null", ""):
             continue
-        attributes.append((name, str(default)))
+        attributes.append((name, _attr_str(default)))
     return attributes
 
 
@@ -196,11 +251,6 @@ def build_component_attributes(
             devices_visited=devices_visited, active_font=active_font, label=label,
             **({} if contract_signals is None else {"contract_signals": contract_signals}),
         )
-    if tag_name in CONTAINER_TAGS:
-        raise NotImplementedError(
-            f"{tag_name} instances carry nested child components (see CONTAINER_TAGS); "
-            f"emitting one without them would produce a component that looks right and "
-            f"behaves wrong. Container support is the next slice.")
     profile = PROFILES.get(tag_name)
     if profile is None:
         raise KeyError(
@@ -234,6 +284,97 @@ def build_component_attributes(
     return attributes
 
 
+def _child(child_tag: str, attributes: list[tuple[str, str | None]]) -> Element:
+    """One nested child element, dropping any attribute whose value is None."""
+    from page import generate_element_id
+
+    resolved = [(k, generate_element_id() if v is _AUTO_ID else v)
+                for k, v in attributes if v is not None]
+    return Element(type=_CHILD_TYPE_NAMES[child_tag], editable=child_tag != "ch5-dpad-button",
+                   attributes=resolved)
+
+
+_AUTO_ID = object()
+
+#: `Type` as written in the file for each child tag -- the schema `name`, which for these
+#: is the tag title-cased ("Ch5 Dpad Button"), confirmed against the reference.
+_CHILD_TYPE_NAMES = {
+    "ch5-dpad-button": "Ch5 Dpad Button",
+    "ch5-keypad-button": "Ch5 Keypad Button",
+    "ch5-button-list-individual-button": "Ch5 Button List Individual Button",
+    "ch5-tab-button-individual-button": "Ch5 Tab Button Individual Button",
+    "ch5-video-switcher-source": "Ch5 Video Switcher Source",
+    "ch5-video-switcher-screen": "Ch5 Video Switcher Screen",
+}
+
+
+_CHILD_TAGS = {name: tag for tag, name in _CHILD_TYPE_NAMES.items()}
+
+
+def build_children(
+    sdk: UiSdk,
+    tag_name: str,
+    parent_attributes: dict[str, str],
+    *,
+    devices_visited: str = '["TSW-1070, TSW-1070"]',
+) -> list[Element]:
+    """The nested [[Components]] a container carries.
+
+    How MANY comes from the parent's own attributes, not from a guess: a button list has
+    `numberofitems` (10 by default), a tab button `numberofitems` (3), a video switcher
+    `numberofsources` (5) and `numberofscreens` (2) -- each matching its reference
+    instance's child count exactly. The dpad and keypad instead have FIXED child sets,
+    hardcoded in MetaDataResolver.ts rather than described in the SDK (see DPAD_KEYS /
+    KEYPAD_KEYS).
+
+    Per-child attribute order follows the reference instances.
+    """
+    def count(key: str) -> int:
+        return int(parent_attributes.get(key, 0) or 0)
+
+    if tag_name == "ch5-dpad":
+        return [_child("ch5-dpad-button", [
+            ("componentName", name), ("key", key), ("iconclass", icon),
+            ("pressed", "false"), ("ccid_imageIconType", "iconclass"), ("id", _AUTO_ID),
+        ]) for key, name, icon in DPAD_KEYS]
+
+    if tag_name == "ch5-keypad":
+        return [_child("ch5-keypad-button", [
+            ("pressed", "false"), ("key", key), ("labelmajor", major),
+            ("labelminor", minor), ("componentName", key),
+            ("iconclass", "fas fa-phone" if key == "buttonextra" else None),
+        ]) for key, major, minor in KEYPAD_KEYS]
+
+    if tag_name == "ch5-button-list":
+        return [_child("ch5-button-list-individual-button", [
+            ("ccid_imageIconType", "iconclass"),
+            ("componentName", f"Individual Button {n}"), ("componentNumber", str(n)),
+            ("id", _AUTO_ID),
+        ]) for n in range(1, count("numberofitems") + 1)]
+
+    if tag_name == "ch5-tab-button":
+        return [_child("ch5-tab-button-individual-button", [
+            ("ccid_imageIconType", "iconclass"),
+            ("componentName", f"Individual Button {n}"), ("componentNumber", str(n)),
+            ("id", _AUTO_ID), ("devicesVisited", devices_visited),
+            ("pageFlipAttributeName", "onRelease"), ("onRelease", "0"),
+            ("ccid_Label", f"Tab{n}"), ("labelinnerhtml", f"Tab{n}"),
+        ]) for n in range(1, count("numberofitems") + 1)]
+
+    if tag_name == "ch5-video-switcher":
+        sources = [_child("ch5-video-switcher-source", [
+            ("ccid_imageIconType", "iconclass"), ("id", _AUTO_ID),
+            ("componentName", f"Source {n}"), ("componentNumber", str(n)),
+        ]) for n in range(1, count("numberofsources") + 1)]
+        screens = [_child("ch5-video-switcher-screen", [
+            ("id", _AUTO_ID), ("componentName", f"Screen {n}"),
+            ("componentNumber", str(n)), ("alignlabel", "center"),
+        ]) for n in range(1, count("numberofscreens") + 1)]
+        return sources + screens
+
+    return []
+
+
 def _set(attributes: list[tuple[str, str]], key: str, value: str) -> None:
     """Set `key`, in place if it is already present (keeping its position) or appended."""
     for i, (existing, _) in enumerate(attributes):
@@ -262,10 +403,17 @@ def build_component(
         sdk, tag_name, component_name=component_name, element_id=element_id,
         active_font=kwargs.pop("active_font", "Roboto"), **kwargs)
 
+    children = build_children(sdk, tag_name, dict(attributes),
+                              devices_visited=kwargs.get("devices_visited", '["TSW-1070, TSW-1070"]'))
+    child_html = "".join(
+        "<" + _CHILD_TAGS[child.type] + "".join(f' {k}="{v}"' for k, v in child.attributes)
+        + f"></{_CHILD_TAGS[child.type]}>"
+        for child in children)
+
     html = (f"<{tag_name} " + " ".join(f'{k}="{v}"' for k, v in attributes)
-            + f"></{tag_name}>")
+            + f">{child_html}</{tag_name}>")
     element = Element(type=_schema_element(sdk, tag_name).get("name"), editable=True,
-                      attributes=attributes)
+                      components=children, attributes=attributes)
 
     context = sdk.component_context.get(tag_name) or {}
     css = build_position_css(
