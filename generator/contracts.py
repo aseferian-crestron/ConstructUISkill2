@@ -67,6 +67,18 @@ class ContractSignal:
     schema_backed: bool     # False for the context-only signals (see module docstring)
 
 
+def _signal_order(signal: "ContractSignal") -> tuple:
+    """Sort key: extenderPosition, then the send event ahead of its own feedback.
+
+    Several signals share one extenderPosition because they are one logical group -- a
+    button's Press (sendeventontouch) and Selected (pd-receivestateselected) are both
+    position 3, and the receive side names the send side as its `groupName`. Emitting the
+    command before the feedback it reports keeps a group readable in the file; the
+    alternative (alphabetical) would split groups arbitrarily.
+    """
+    return (signal.extender_position, signal.direction != "event", signal.attribute)
+
+
 def _schema_element(sdk: UiSdk, tag_name: str) -> dict:
     for el in sdk.schema["ch5Elements"]["elements"]:
         if el.get("tagName") == tag_name:
@@ -127,7 +139,7 @@ def contract_signals(sdk: UiSdk, tag_name: str) -> list[ContractSignal]:
             schema_backed=bool(join),
         ))
 
-    signals.sort(key=lambda s: (s.extender_position, s.attribute))
+    signals.sort(key=_signal_order)
     return signals
 
 
@@ -161,7 +173,7 @@ def resolve_signals(sdk: UiSdk, tag_name: str, names) -> list[ContractSignal]:
         if signal not in resolved:
             resolved.append(signal)
 
-    resolved.sort(key=lambda s: (s.extender_position, s.attribute))
+    resolved.sort(key=_signal_order)
     return resolved
 
 
