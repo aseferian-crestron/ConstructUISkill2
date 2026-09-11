@@ -122,7 +122,11 @@ def build_position_css(
     return catch_all + device
 
 
-_FLAT_RULE_RE = re.compile(r"#(?P<id>[A-Za-z0-9_]+)\{(?P<decls>[^{}]*)\}")
+# `\s*` before the brace, never anything else: Construct writes both compact
+# (`#it8l{...}`) and spaced (`#it8l { ... }`) CSS, but a descendant selector such as
+# `#id .ch5-button :not(i){...}` has SELECTOR text between the id and the brace and must
+# still not match -- it carries no element position (see parse_position_rules).
+_FLAT_RULE_RE = re.compile(r"#(?P<id>[A-Za-z0-9_]+)\s*\{(?P<decls>[^{}]*)\}")
 
 
 def find_media_block_span(css_text: str, query: str, start: int = 0) -> tuple[int, int] | None:
@@ -137,11 +141,22 @@ def find_media_block_span(css_text: str, query: str, start: int = 0) -> tuple[in
     block containing every element's rule -- so a query can legitimately match more
     than once. `start` lets a caller walk forward past a match to find the next one
     (see find_media_block_spans, and the Data model section of the spec)."""
-    needle = f"@media {query}{{"
-    idx = css_text.find(needle, start)
-    if idx == -1:
-        return None
-    open_brace = idx + len(needle) - 1
+    # The brace may be separated from the query by whitespace (`@media (...) {`), so
+    # locate the query text and then skip forward to its opening brace rather than
+    # matching one literal spelling.
+    needle = f"@media {query}"
+    idx = start
+    while True:
+        idx = css_text.find(needle, idx)
+        if idx == -1:
+            return None
+        after = idx + len(needle)
+        rest = css_text[after:]
+        stripped = rest.lstrip()
+        if stripped.startswith("{"):
+            open_brace = after + (len(rest) - len(stripped))
+            break
+        idx = after  # a longer query that merely starts with this one; keep looking
     depth = 0
     for i in range(open_brace, len(css_text)):
         if css_text[i] == "{":
