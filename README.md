@@ -35,9 +35,18 @@ uses and confirms it validates as selectable.
 Full 50-file suite green except the one pre-existing, unrelated failure noted in the
 entry below (the stale 74-vs-75 resolution-catalog count).
 
-**Awaiting a live check**, same as the Google Fonts slice: search for and install a
-real Fontsource-unique font, close and reopen Construct, confirm it appears as a
-selectable Font Family.
+**CONFIRMED IN CONSTRUCT 2026-09-11: "font install and swap is working."** Ran the
+whole pipeline live, twice, end to end: search (name-based, no theme/mood field
+exists in either API so a "Halloween font" query had to try naming patterns --
+"creep" -> found "Creepster", the well-known horror-display Google Font) -> download
+-> `import_font_file` into the real, global Webfonts library -> `set_project_font`
+across all 11 files in `GenTestProject2` -> user closes/reopens Construct -> font
+shows up as selectable, exactly per the spec's own restart requirement. First run
+used "Share Tech Mono" (a computer/terminal-style monospace, found the same way);
+both installs verified on disk before being reported (real byte count, `.ttf` magic,
+`DefaultFontFamily` updated, no leftover mention of the prior font, every file still
+round-tripping) -- and both confirmed working by the user in the live app. The
+"go find me a font" feature, across both sources, is done.
 
 **Phase 8 (fonts): "go find me a font" -- search + download from Google Fonts, and
 install any font file into the library -- BUILT, verified against the real Google
