@@ -9,6 +9,46 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**CONFIRMED IN CONSTRUCT 2026-09-11: all six component pages look good.** Every
+component type the generator can build -- 21 types, 38 nested children -- renders
+correctly at the size its selection adorner shows. Component generation (flat and
+container) is complete and live-verified.
+
+Getting here took four rounds of the user finding sizing bugs by eye, and the reason is
+recorded in **Approach** above rather than buried here: the attribute diff against the
+reference ran on every test run, the CSS diff did not exist, and prose directives in
+this README did not prevent me from shipping without it. `component_css_shape_test.py`
+closes that gap and found four more mismatches the moment it was written. The rule is
+now mechanical: an automated comparison must cover the dimension that changed before
+generated output goes to the user.
+
+**What the sizing model ended up being**, all from published SDK data rather than
+inference:
+
+| source | what it decides |
+|---|---|
+| `defaults.style` | the drop size, and which dimensions a type states -- including the literal `auto` |
+| `canResize` | types that cannot be sized at all (animation, segmented/signal gauges) |
+| `supportedSizeFormat` | the aspect-locked class (`widthOnly`, `containerWidthOnly`, `handleWidthOnly`, ...) |
+| `classToVariableMapping` "idSelector" | the CSS custom properties a component RENDERS from, with its swaptarget/ignore conditions |
+
+Plus two facts no data expresses: `size="custom"` (a Construct mode absent from the
+schema's own enum) is what makes an explicit size take effect, and a dpad is locked 1:1
+so a non-square request is squared.
+
+**Known limitation, not a bug:** for `height: auto` components the rendered height is
+unknowable to the generator, so the showcase packer reserves a 120px guess. Nothing
+collided in practice here, but a taller-than-guessed component would overlap what is
+below it on a generated page.
+
+Full 43-file suite green.
+
+**Next / open threads:** (1) the `showtickvalues` slider delta, the one attribute
+difference from the reference not explained as instance state; (2) `FALLBACK_MIN_SIZE_PX
+= 35` validation across more pages/resolutions; (3) themes (7), fonts (8), languages
+(10), hard buttons (11); (4) the skill layer; (5) offered but not built -- a `Stop` hook
+that runs the suite so the diffs cannot be skipped regardless of what I remember.
+
 **The CSS was never diffed against the reference -- that is why every sizing bug reached
 the user.** They asked why they were being sent pages to check when they had supplied a
 sample, and they were right: this project's own Approach section says an automated diff
