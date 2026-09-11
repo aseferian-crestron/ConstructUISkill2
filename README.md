@@ -9,6 +9,39 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Sizing corrected again, this time for the fixed-size types.** The user checked the
+Gauges page and found the same adorner mismatch on the segmented, signal-level and wifi
+gauges, adding the fact that settles it: **"signal level and wifi only support fixed
+sizes"**.
+
+The first fix over-applied. It set `size="custom"` on every type with a preset `size`
+attribute, but a component can only be CSS-resized if the SDK gives it render-size
+variables to drive -- and those three have an EMPTY `propertyMapping`. They lay
+themselves out from their own attributes (`numberofsegments`, `numberofbars`, the
+preset), so `size="custom"` set a preset that does not exist and the explicit
+width/height sized an adorner around a component that ignored it. The reference agrees:
+the segmented and signal gauges carry **no width or height in CSS at all**.
+
+**The rule is now two conditions, both from SDK data:** a type is custom-sized only if
+it has a preset `size` attribute AND `size_css_vars()` yields variables. Everything else
+keeps its preset and is positioned without a CSS box (`css_width`/`css_height` on the
+profile). That also caught a second over-reach on the way: `ch5-color-chip` HAS
+render-size variables but no `size` attribute, so the first version invented one no real
+instance carries.
+
+Result: 12 custom-sizable types carry their variables; 9 fixed-size types keep their
+preset. The three gauges are positioned and never given a size.
+
+**Both of these were fixes to a fix**, and the pattern is worth naming: the reference
+diff cannot see either bug, because the reference instances were never resized, so their
+CSS says nothing about what happens when we DO size one. Rendering is the only oracle
+for that, which is why the user's screenshots found what 42 green tests did not.
+
+Showcase pages regenerated. Full 42-file suite green.
+
+**Still to check in Construct:** the remaining showcase pages (Text, Media, Media 2) --
+Buttons and Keypads already confirmed good.
+
 **Adorner-vs-render size mismatch FIXED -- a regression I introduced, on a bug that had
 already been fixed once.** The user opened the showcase pages and found the selection
 adorner larger than the component on a toggle and a button, and said this was fixed

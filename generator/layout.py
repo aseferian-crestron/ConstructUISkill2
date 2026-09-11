@@ -86,6 +86,7 @@ def build_position_css(
     active_font: str = "Roboto",
     resolution: tuple[int, int] | None = None,
     extra_vars: dict[str, str] | None = None,
+    write_width: bool = True,
     write_height: bool = True,
 ) -> str:
     """Two-@media-block position/size CSS for one newly-placed element. `resolution`, if
@@ -110,11 +111,12 @@ def build_position_css(
     # `write_height=False` for components that derive their own height (a ch5-toggle's
     # is a function of its handle size): the real instances carry width only, and an
     # explicit height would size the canvas adorner taller than the component renders.
+    width_decl = f" width: {width}px;" if write_width else ""
     height_decl = f" height: {height}px;" if write_height else ""
     base_rule = (f"display: block; left: {x}px; top: {y}px; position: absolute; "
-                 f"z-index: {z_index}; width: {width}px;{height_decl}{extra_decls}")
-    device_rule = (f"display: block; left: {x}px; top: {y}px; position: absolute; "
-                   f"width: {width}px;{height_decl}{extra_decls}")
+                 f"z-index: {z_index};{width_decl}{height_decl}{extra_decls}")
+    device_rule = (f"display: block; left: {x}px; top: {y}px; position: absolute;"
+                   f"{width_decl}{height_decl}{extra_decls}")
     theme_rules = "".join(
         f"#{element_id} {selector} {{font-family: \"{active_font}\";}}" for selector in theme_selectors
     )

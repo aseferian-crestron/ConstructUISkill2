@@ -116,9 +116,10 @@ VALUE_DELTAS = {
     # match what the component actually renders). The reference instances that were
     # never resized still carry the preset they were dropped with, and the text input
     # carries the "small" preset its user chose.
-    ("ch5-animation", "size"), ("ch5-dpad", "size"), ("ch5-signal-level-gauge", "size"),
-    ("ch5-slider", "size"), ("ch5-textinput", "size"), ("ch5-video", "size"),
-    ("ch5-wifi-signal-level-gauge", "size"),
+    # Only the types the SDK gives render-size variables for; the fixed-size ones
+    # (animation, both signal gauges) keep their preset and so still match.
+    ("ch5-dpad", "size"), ("ch5-slider", "size"), ("ch5-textinput", "size"),
+    ("ch5-video", "size"),
     # The reference widget list was configured: 5 items, pointed at a real widget.
     ("ch5-subpage-reference-list", "numberofitems"),
     ("ch5-subpage-reference-list", "widgetid"),

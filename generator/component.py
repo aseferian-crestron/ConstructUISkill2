@@ -97,8 +97,12 @@ class ComponentProfile:
     active_font: bool = False
     label: bool = False
     extras: tuple[tuple[str, str], ...] = field(default_factory=tuple)
-    #: False for components that derive their own height, whose real instances carry a
-    #: width in CSS and no height (a ch5-toggle's height follows its handle size).
+    #: Whether an explicit width/height belongs in this type's CSS at all. Transcribed
+    #: from the reference: a toggle carries width and no height (its height follows its
+    #: handle size), and the three gauges carry NEITHER -- they size themselves from
+    #: their own attributes (numberofsegments, numberofbars, the size preset), so an
+    #: explicit box just makes the canvas adorner disagree with what is rendered.
+    css_width: bool = True
     css_height: bool = True
 
 
@@ -106,7 +110,8 @@ class ComponentProfile:
 #: asserted by component_flat_types_test.py -- if a reference component changes, the test
 #: reports it rather than the generator quietly drifting.
 PROFILES: dict[str, ComponentProfile] = {
-    "ch5-animation": ComponentProfile("Animation", vstheme="theme"),
+    "ch5-animation": ComponentProfile("Animation", vstheme="theme",
+                                  css_width=False, css_height=False),
     "ch5-button": ComponentProfile("Button", vstheme="custom", active_font=True, label=True),
     "ch5-color-chip": ComponentProfile("Color Chip"),
     "ch5-color-picker": ComponentProfile("Color Picker"),
@@ -114,8 +119,10 @@ PROFILES: dict[str, ComponentProfile] = {
                                      extras=(("ccid_themeCSSSet", "true"),)),
     "ch5-media-player": ComponentProfile("Media Player", vstheme="theme", active_font=True),
     "ch5-qrcode": ComponentProfile("QR Code"),
-    "ch5-segmented-gauge": ComponentProfile("Segmented Gauge"),
-    "ch5-signal-level-gauge": ComponentProfile("Signal Gauge", vstheme="theme"),
+    "ch5-segmented-gauge": ComponentProfile("Segmented Gauge",
+                                        css_width=False, css_height=False),
+    "ch5-signal-level-gauge": ComponentProfile("Signal Gauge", vstheme="theme",
+                                           css_width=False, css_height=False),
     "ch5-slider": ComponentProfile("Slider", vstheme="theme"),
     "ch5-text": ComponentProfile("Formatted-Text", active_font=True, label=True,
                                  extras=(("ccid_themeCSSSet", "true"),)),
@@ -124,7 +131,8 @@ PROFILES: dict[str, ComponentProfile] = {
     "ch5-toggle": ComponentProfile("Toggle", vstheme="theme", active_font=True, label=True,
                                    css_height=False),
     "ch5-video": ComponentProfile("Video"),
-    "ch5-wifi-signal-level-gauge": ComponentProfile("Wifi Signal Level Gauge", vstheme="theme"),
+    "ch5-wifi-signal-level-gauge": ComponentProfile("Wifi Signal Level Gauge", vstheme="theme",
+                                                css_width=False, css_height=False),
     # Containers (see CONTAINER_TAGS / build_children), plus the subpage reference list,
     # whose only child is a textnode so it builds flat.
     "ch5-dpad": ComponentProfile("Dpad", vstheme="theme"),
@@ -313,9 +321,18 @@ def build_component_attributes(
     # not in the schema's own enum of presets -- it is a Construct-level mode, and the
     # real button/keypad/toggle instances all carry it. Left alone for ch5-qrcode, whose
     # `size` is a number (160) rather than a preset name.
-    size_attribute = next((a for a in _schema_element(sdk, tag_name)["attributes"]
-                           if a["name"] == "size"), None)
-    if size_attribute and size_attribute.get("value"):
+    # ...and only for a type that HAS render-size variables to drive. The three gauges
+    # have an empty propertyMapping: nothing in CSS can resize them, they lay themselves
+    # out from their own attributes. Writing "custom" there sets a preset that does not
+    # exist and leaves the adorner disagreeing with the render -- the user's second
+    # report, after the first fix over-applied this to every preset-sized type.
+    # Both conditions: the type must HAVE a preset `size` attribute (ch5-color-chip has
+    # render-size variables but no size attribute at all -- setting one would invent an
+    # attribute no real instance carries), and must have variables to drive.
+    has_preset_size = any(a["name"] == "size" and a.get("value")
+                          for a in _schema_element(sdk, tag_name)["attributes"])
+    if has_preset_size and size_css_vars(sdk, tag_name, width=0, height=0,
+                                         attributes=dict(attributes)):
         _set(attributes, "size", "custom")
 
     _set(attributes, "customvstheme", profile.vstheme) if profile.vstheme else None
@@ -480,6 +497,7 @@ def build_component(
         resolution=resolution,
         extra_vars=size_css_vars(sdk, tag_name, width=width, height=height,
                                  attributes=dict(attributes)),
+        write_width=PROFILES[tag_name].css_width,
         write_height=PROFILES[tag_name].css_height,
     )
     return html, css, element
