@@ -43,11 +43,19 @@ below it on a generated page.
 
 Full 43-file suite green.
 
-**Next / open threads:** (1) the `showtickvalues` slider delta, the one attribute
-difference from the reference not explained as instance state; (2) `FALLBACK_MIN_SIZE_PX
-= 35` validation across more pages/resolutions; (3) themes (7), fonts (8), languages
-(10), hard buttons (11); (4) the skill layer; (5) offered but not built -- a `Stop` hook
-that runs the suite so the diffs cannot be skipped regardless of what I remember.
+**`showtickvalues` resolved: we no longer emit it.** The user does not want tick values
+on a slider, which also matches the reference (no slider there carries the attribute).
+It was the one attribute difference from the reference that could not be explained as
+instance state; `OMIT_BY_TYPE` now drops it, and the recorded delta is gone rather than
+being carried as a known mismatch. A generated slider is 21 attributes, verified against
+the reference.
+
+**Next / open threads:** (1) themes (7), fonts (8), languages (10), hard buttons (11);
+(2) the skill layer; (3) offered but not built -- a `Stop` hook that runs the suite so
+the diffs cannot be skipped regardless of what I remember.
+
+**Deferred by the user, not forgotten:** `FALLBACK_MIN_SIZE_PX = 35` gets validated when
+we start building live projects, where real pages at real resolutions will exercise it.
 
 **The CSS was never diffed against the reference -- that is why every sizing bug reached
 the user.** They asked why they were being sent pages to check when they had supplied a

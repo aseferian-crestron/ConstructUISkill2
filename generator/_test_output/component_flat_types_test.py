@@ -38,10 +38,6 @@ EXPECTED_DELTAS: dict[str, tuple[set[str], set[str]]] = {
     # media player's preview toggle, disabled is set from the properties panel.
     "ch5-media-player": ({"demoMode"}, set()),
     "ch5-signal-level-gauge": ({"disabled"}, set()),
-    # We emit showtickvalues from its non-null schema default; the reference slider does
-    # not carry it. UNEXPLAINED -- the slider mixin is the likeliest place it is dropped,
-    # and this is the one delta here that is a suspected defect rather than instance state.
-    "ch5-slider": (set(), {"showtickvalues"}),
     # The reference's first childless button is the IMAGE variant (assetid, pageflip,
     # image sync sectors); build_component delegates to ch5_button.py, whose variants are
     # covered exactly by phase4_smoke_test against the plain Button1.
