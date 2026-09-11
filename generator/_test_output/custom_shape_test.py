@@ -52,25 +52,25 @@ parsed = compare.split_sections(raw_before, ".cuig")
 html_before = next(c for n, _, c in parsed.sections if n == "Html")
 css_before = next(c for n, _, c in parsed.sections if n == "Css")
 
-before_tag = re.search(r'<ch5-button\b[^>]*\bid="ibtnimage"[^>]*>', html_before).group(0)
+before_tag = re.search(r'<ch5-button\b[^>]*\bid="ibtncheck"[^>]*>', html_before).group(0)
 assert 'shape="rounded-rectangle"' in before_tag
-print("baseline: ibtnimage starts with shape=\"rounded-rectangle\": OK")
+print("baseline: ibtncheck starts with shape=\"rounded-rectangle\": OK")
 
-html_after = style.set_html_attribute(html_before, "ibtnimage", "shape", "custom")
-after_tag = re.search(r'<ch5-button\b[^>]*\bid="ibtnimage"[^>]*>', html_after).group(0)
+html_after = style.set_html_attribute(html_before, "ibtncheck", "shape", "custom")
+after_tag = re.search(r'<ch5-button\b[^>]*\bid="ibtncheck"[^>]*>', html_after).group(0)
 assert 'shape="custom"' in after_tag
 print("set_html_attribute replaced shape=\"rounded-rectangle\" with shape=\"custom\": OK")
 
 # sibling elements' own shape attribute (and every other attribute) is untouched
-for sibling_id in ("ibtnicon", "ibtncheck"):
+for sibling_id in ("ibtnicon", "ibtnimage"):
     before_sib = re.search(rf'<ch5-button\b[^>]*\bid="{sibling_id}"[^>]*>', html_before).group(0)
     after_sib = re.search(rf'<ch5-button\b[^>]*\bid="{sibling_id}"[^>]*>', html_after).group(0)
     assert before_sib == after_sib, f"{sibling_id}'s tag changed unexpectedly"
 print("sibling buttons' tags are completely unaffected: OK")
 
 # inserting a brand-new attribute that doesn't already exist on the tag
-html_with_new_attr = style.set_html_attribute(html_after, "ibtnimage", "ccid_customTestAttr", "hello")
-new_tag = re.search(r'<ch5-button\b[^>]*\bid="ibtnimage"[^>]*>', html_with_new_attr).group(0)
+html_with_new_attr = style.set_html_attribute(html_after, "ibtncheck", "ccid_customTestAttr", "hello")
+new_tag = re.search(r'<ch5-button\b[^>]*\bid="ibtncheck"[^>]*>', html_with_new_attr).group(0)
 assert 'ccid_customTestAttr="hello"' in new_tag
 print("set_html_attribute inserts a brand-new attribute when it wasn't already present: OK")
 
@@ -83,7 +83,7 @@ print("a nonexistent element id raises KeyError rather than silently no-op'ing: 
 
 # --- full flow: flip shape to custom, then write real per-corner radius values --------
 css_after = style.set_component_style(
-    css_before, "ibtnimage", ui_sdk, "ch5-button",
+    css_before, "ibtncheck", ui_sdk, "ch5-button",
     [
         (".ch5-button--rounded-rectangle", "border-top-left-radius", "20px"),
         (".ch5-button--rounded-rectangle", "border-top-right-radius", "0px"),
@@ -91,14 +91,14 @@ css_after = style.set_component_style(
         (".ch5-button--rounded-rectangle", "border-bottom-right-radius", "20px"),
     ],
 )
-elements_after = layout.parse_all_position_rules(css_after, "(max-width: 99999px)")["ibtnimage"]
+elements_after = layout.parse_all_position_rules(css_after, "(max-width: 99999px)")["ibtncheck"]
 assert elements_after["extra_vars"]["--ch5-button--rounded-rectangle-border-radius-top-left"] == "20px"
 assert elements_after["extra_vars"]["--ch5-button--rounded-rectangle-border-radius-top-right"] == "0px"
 assert elements_after["extra_vars"]["--ch5-button--rounded-rectangle-border-radius-bottom-left"] == "0px"
 assert elements_after["extra_vars"]["--ch5-button--rounded-rectangle-border-radius-bottom-right"] == "20px"
 # pre-existing size vars/position untouched
 assert elements_after["extra_vars"]["--ch5-button--regular-width"] == "150px"
-assert elements_after["left"] == 220 and elements_after["top"] == 20
+assert elements_after["left"] == 420 and elements_after["top"] == 20
 print("full flow: 4 asymmetric per-corner radii written, pre-existing position/size preserved: OK")
 
 # --- write back to disk and confirm the file still round-trips ------------------------

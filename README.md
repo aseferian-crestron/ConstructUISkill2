@@ -9,6 +9,42 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 2: a palette layer (`generator/palette.py`, new) sitting
+on top of Stage 1's raw per-property catalog.** User: *"go ahead and start Stage
+2."* A palette is a small set of logical keys (`background_color`, `border_color`,
+`border_width`, `border_style`, `text_color`, `icon_color`) mapped per component
+type onto the real Stage-1 catalog entries -- e.g. `apply_palette(css, "ibtncheck",
+sdk, "ch5-button", {"background_color": "#204060", "text_color": "#ffffff", ...})`
+resolves each key through the curated mapping and calls `style.set_component_style`
+once. This is curation of ALREADY-DISCOVERED real schema data (naming it), not the
+kind of guessing the user rejected for Stage 1 -- flagged explicitly in the module
+docstring to keep that distinction clear for later readers.
+
+Deliberately NOT built as a generic auto-derived mapping across every type: checked
+ch5-button/ch5-toggle/ch5-slider/ch5-textinput side by side and their real schemas
+are not uniform enough to name generically -- `ch5-toggle` has no
+`background-color` concept at all (an on/off switch styled by label/icon color
+only), `ch5-slider` has THREE separate background-color-bearing selectors (track/
+filled-portion/handle) with no single "the" background without knowing what each
+part visually is. `PALETTE_MAPPING` covers `ch5-button` only so far (default state,
+not pressed/selected), built the same incremental, per-type-verified way as
+`component.py::PROFILES`; `apply_palette` raises `KeyError` up front for an
+unmapped type or an unmapped key, never silently drops what the caller asked for.
+
+`generator/_test_output/palette_test.py` (new) covers: every `_BUTTON_PALETTE`
+entry resolving against the real schema (a self-check catching drift),
+`supported_tags()`, unmapped-tag/unmapped-key both raising before any write, and
+the full flow (5 palette keys in one call) against a real button in a scratch copy
+of GenTestProject2 with position/size preserved and the `.cuig` round-tripping.
+`custom_shape_test.py`'s own target button needed swapping from `ibtnimage` to
+`ibtncheck` -- the same kind of live-project-drift fixup as before, since
+`ibtnimage`'s shape was flipped to "custom" for real in the prior session entry.
+Full suite re-run clean except the one known pre-existing unrelated failure.
+Applied live to GenTestProject2's `ButtonVariants.cuig` (`ibtncheck`): navy
+background, light-blue 2px border, white label, yellow icon -- all 5 keys from one
+`apply_palette` call. Verified on disk, round-trips. Awaiting the user's live
+Construct confirmation. Stage 3 (the three style-value sources) is next.
+
 **Phase 7 (themes), Stage 1 extended: button `shape="custom"` + per-corner
 border-radius, at the user's direction before Stage 2 started.** User: *"buttons
 support fixed Shapes + a custom mode when the 4 radius need to be set custom... make
