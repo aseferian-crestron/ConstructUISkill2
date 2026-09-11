@@ -419,6 +419,30 @@ def mark_contract_stale(cuip_path) -> None:
     project.write_cuip(cuip_path, attrs, device_resolution_source, metadata=metadata)
 
 
+def mark_project_stale_for(file_path) -> "Path | None":
+    """Mark the project that owns `file_path` (a .cuig/.cuiw) stale, found as the single
+    `.cuip` sitting beside it. Returns that project, or None when the file is not inside
+    a project at all -- writing a page to a scratch directory is not an error.
+
+    Deriving the project from the file's own folder rather than taking it as an argument
+    is deliberate: an optional "and also mark the project" parameter is exactly the kind
+    of thing a caller forgets, and a forgotten one ships a project whose contract does
+    not match its pages, with no symptom until someone opens the Contract Editor.
+    """
+    from pathlib import Path
+
+    folder = Path(file_path).parent
+    projects = sorted(folder.glob("*.cuip"))
+    if not projects:
+        return None
+    if len(projects) > 1:
+        raise RuntimeError(
+            f"{folder} holds {len(projects)} .cuip files ({', '.join(p.name for p in projects)}) "
+            f"-- cannot tell which project {Path(file_path).name} belongs to")
+    mark_contract_stale(projects[0])
+    return projects[0]
+
+
 if __name__ == "__main__":
     from sdk import read_sdk
 

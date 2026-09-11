@@ -1,9 +1,9 @@
 {FileMetadata}
 Schema = "1.0.0.0"
 CreatedByAppHost = "2.1501.15.0"
-Created = 2026-09-10 23:06:00.951826-04:00
+Created = 2026-09-10 23:06:02.604830-04:00
 LastModifiedByAppHost = "2.1501.15.0"
-Modified = 2026-09-10 23:06:00.951826-04:00
+Modified = 2026-09-10 23:06:02.604830-04:00
 CreatedByProjectApp = "1.4801.18.0"
 LastModifiedByProjectApp = "1.4801.18.0"
 MinimumProjectApp = "1.2600.1"
@@ -16,14 +16,14 @@ MinimumAppHost = "2.901.0"
 
 [Attributes]
 ComponentKey = "UiEditor"
-Name = "Task3"
+Name = "One"
 ThemeId = "light-theme.css"
 ProjectThemeIds = "light-theme.css"
 ThemePageColor = ""
 IncludeUnusedAsset = "False"
 OverrideThemeColor = "False"
 SdkId = "CH5:2.18.0"
-Id = "2a261b70-a711-444a-bb30-9fecb0cf435e"
+Id = "c8c5a608-fc82-49b4-9c77-dca40d858cde"
 RuntimeThemeJoin = "0"
 RuntimeLanguageJoin = "0"
 DefaultComponentMode = "custom"

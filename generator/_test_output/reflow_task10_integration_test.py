@@ -127,7 +127,11 @@ print("Scenario 3 (row-wrap, 4-button row onto a much narrower resolution): OK")
 
 # --- Regression: existing Phase 5 behavior (no .cuig/.cuiw files present) unaffected -
 attrs0, drs0 = build_project_attributes(name="NoPages", sdk_id="CH5:2.18.0")
-zero_path = OUT / "NoPages.cuip"
+# Its own folder: a real project is one .cuip per directory, and "no pages present" is
+# only true of this project if the other project's pages are not sitting beside it --
+# add_resolutions_to_project reflows every .cuig/.cuiw in the project's own folder.
+(OUT / "NoPages").mkdir(parents=True, exist_ok=True)
+zero_path = OUT / "NoPages" / "NoPages.cuip"
 write_cuip(zero_path, attrs0, drs0)
 warnings3 = add_resolutions_to_project(zero_path, [tsw])
 assert warnings3 == [], "adding a resolution to a project with no pages/widgets must produce no warnings"

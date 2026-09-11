@@ -42,6 +42,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
+import contracts
 from elements import Element  # noqa: E402
 from project import FileMetadata, _toml_str  # reuse the same FileMetadata/TOML helpers
 
@@ -198,7 +199,21 @@ def write_cuig(
     css: str = "",
     elements: list[Element] | None = None,
     metadata: FileMetadata | None = None,
+    mark_project_stale: bool = True,
 ) -> None:
+    """Write a page (.cuig) or widget (.cuiw).
+
+    `mark_project_stale` (default True) sets ContractIsStale on the .cuip beside `path`,
+    if there is one -- see contracts.py::mark_project_stale_for. Every reason to write
+    one of these files is a reason the contract is out of date: a component added or
+    removed, a signal enabled, a page or component renamed (object names ARE the
+    contract's signal names). Nothing in the written file distinguishes those from a
+    no-op rewrite, so every write marks. Over-marking costs one regeneration the next
+    time Construct opens the project; under-marking ships a project whose contract does
+    not match its pages, with no symptom until someone opens the Contract Editor.
+
+    Pass False only when the write provably cannot affect the contract.
+    """
     metadata = metadata or FileMetadata()
     elements = elements or []
 
@@ -217,6 +232,9 @@ def write_cuig(
         parts.append("\n".join(el.to_toml_lines("Elements")))
         parts.append("\n")
     path.write_text("".join(parts), encoding="utf-8")
+
+    if mark_project_stale:
+        contracts.mark_project_stale_for(path)
 
 
 def add_widget_reference_to_page(page_html: str, page_elements: list[Element], widget_id: str, widget_name: str) -> tuple[str, list[Element]]:

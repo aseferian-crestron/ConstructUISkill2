@@ -9,6 +9,54 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Writing a page or widget now marks its project's contract stale automatically -- a
+real gap the user found by asking the right question.** They noticed Construct gave no
+"contract has been updated" toast when the button list's new signal was added, and asked
+whether we set the flag for EVERY contract-relevant change (components added or removed,
+signals, etc.). Two separate answers came out of checking:
+
+**1. The change did take effect.** `GenTestProject2.cuic` was rewritten 0.4s after the
+page write, and `ItemSelected` is present in the generated
+`output/.../ComplexContracts/ButtonListTheme.g.cs`. So the missing toast did not mean a
+missed update. Worth knowing WHY there was no toast: the notification comes from
+`PersistenceHelper.cs:646` (`SaveContract`), on Construct's own in-app save path.
+`ContractGenerationBehavior` -- which sets the flag and schedules generation -- is driven
+by `SaveProjectCmd`/`ProjectItemUpdatedCmd`, i.e. edits made INSIDE Construct. Our
+file-level edits reach it only via the file watcher, and the exact conditions under which
+the toast is or is not raised on that path were not traced. **Unverified; do not treat
+the toast as the signal that a generated change landed -- check the .cuic timestamp and
+the generated output instead.**
+
+**2. The audit found a genuine hole.** `write_cuig` -- the function behind creating a
+page, creating a widget, adding a component, and enabling a signal -- never touched the
+`.cuip`. Every correct case so far was a caller remembering by hand (both ad-hoc scripts
+did it explicitly); nothing enforced it, and a forgotten one ships a project whose
+contract does not match its pages, with no symptom until someone opens the Contract
+Editor.
+
+`write_cuig` now marks the `.cuip` beside the file it wrote
+(`contracts.py::mark_project_stale_for`), deriving the project from the folder rather
+than taking it as a parameter -- an optional "also mark the project" argument is exactly
+what gets forgotten. Every write marks, including a rewrite: nothing in the written file
+distinguishes a renamed component from a no-op, and over-marking costs one regeneration
+on next open while under-marking is silent corruption. `mark_project_stale=False` opts
+out. A page written where no `.cuip` sits (most of the test suite) is not an error; two
+`.cuip`s in one folder raises rather than guessing.
+
+That guard also caught a pre-existing test bug: `reflow_task10_integration_test`'s
+"project with no pages" was sitting in the same folder as another project's pages, so
+`add_resolutions_to_project` had been globbing those pages -- it was not testing the
+zero-page case it claimed to. Given its own folder.
+
+Full 38-file suite green.
+
+**Coverage of the flag now:** new project (`build_project_attributes` defaults it true),
+resolutions added (`add_resolutions_to_project`), any page/widget write (`write_cuig`),
+and directly via `mark_contract_stale(cuip)`. Component/signal/rename changes all reach
+disk through `write_cuig`, so they are covered by construction rather than by discipline.
+**Deleting** a page or widget is the one contract-relevant change with no generator path
+at all yet -- when one is added it must mark the project too.
+
 **Complex-component contracts VERIFIED IN CONSTRUCT 2026-09-10, with one addition.** The
 user checked the generated contract in the actual program: dpad, keypad, tab button and
 media player all came out right, so the complex components' own contract strategies DO
