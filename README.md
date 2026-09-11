@@ -9,6 +9,62 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 6 (contracts) — DONE, and far smaller than the phase index implied.** The user
+corrected the scope up front: we never author a `.cuic`. Construct generates it, and all
+we have to leave behind is (1) the signals enabled on each component and (2)
+`ContractIsStale = "true"` in the `.cuip`. Both halves confirmed in CCIDE source before
+any code was written — `ProjectOpenBehavior.cs:72-99` reads the flag on open, schedules
+generation, clears it and saves; `ContractGenerationHelper.cs:1177` shows Construct
+writing the `"Contract Enabled"` sentinel itself. Half of it was already built:
+`project.py` has written `ContractIsStale="true"` for new projects since Phase 2.
+
+**Enablement turned out to be pure SDK data**, so `generator/contracts.py` hardcodes
+nothing per-component: `component-context.json`'s `attributeProperties` entries carrying
+an `extenderPosition` ARE the contract-capable signals (the same gate Construct uses in
+`CreateProjectComponent`), and their keys already have the storage prefix applied. The
+prefix rule itself (`JoinPropertyProvider.cs:151`: state -> `pd-`, event -> bare) is
+cross-checked against `schema.json`'s join direction for the whole catalog — 132 signals,
+all agreeing — so a future SDK that disagrees fails a test instead of silently writing an
+attribute Construct ignores. For `ch5-button` there are exactly five signals: Visibility,
+Visibility_fb, Press, Selected, Mode.
+
+**Three findings, each from measurement rather than assumption:**
+
+1. **`component-context.json` outranks `schema.json`.** `ch5-media-player`'s
+   `pd-receivestateusemessage` has no schema attribute at all, yet the hand-authored
+   reference project writes it as a live signal. The planned hard "raise on disagreement"
+   cross-check would have rejected a real signal; it now treats a schema entry as
+   corroboration (`ContractSignal.schema_backed`) and the test pins the exception set.
+2. **Signal names are not attribute names.** `pd-receivestateshow` contracts as
+   "Visibility_fb", not "Visibility"; a slider's `pd-receivestatevalue` is "Lower Touch
+   fb", not "Value". Hence resolution by the SDK's own names, with an unknown name raising
+   and listing the valid options rather than silently skipping.
+3. **Complex components are a separate path.** Dpads, keypads, button/widget lists, tab
+   buttons, video switchers and media players each have their own contract strategy, and
+   some (`DpadStrategy.cs:91`, `KeypadStrategy.cs:94`) force `ButtonPress` on regardless
+   of the file. Phase 6's work is verified for simple components only — flagged in
+   `docs/architecture/06-contracts.md` and in the index row.
+
+**A new button now carries Press + Selected by default** (the user's choice), overridable
+via `contract_signals=...` and disableable with `()`. `phase4_smoke_test` builds its
+reference-comparison button with `()` so it still diffs like-for-like against the real
+Button1, which has no signals — and now asserts that premise instead of assuming it.
+
+**Live project updated for verification**: `GenTestProject2/ButtonVariants.cuig`'s three
+buttons (IconButton/ImageButton/CheckboxButton) now carry both signals in the TOML *and*
+the Html, and the `.cuip` is marked stale. Backup in the session scratchpad as
+`GenTestProject2.bak-contracts-20260910-215713`. The edit was a targeted text insertion,
+not a regeneration: the harness's byte-identical round-trip proves our section SPLITTER
+matches Construct's, not that our TOML writer reproduces a real page.
+
+Full 35-file suite green (4 new: signal discovery, enablement, button wiring,
+end-to-end). **PENDING LIVE CHECK**: user opens GenTestProject2 in Construct and confirms
+the Contract Editor shows Press and Selected for the three buttons. **Next / open
+threads**: (1) that live check; (2) contract enablement for complex components, whenever
+one of those component types is built; (3) whether `FALLBACK_MIN_SIZE_PX = 35` holds up
+across more pages and resolutions; (4) the remaining generator phases — themes (7), fonts
+(8), languages (10), hard buttons (11), and the skill layer.
+
 **Relaxation redesigned as water-fill capping, after the user's own page proved the
 first two designs wrong — DONE.** User clarified the intent: 35px is "the minimum allowed
 size WHEN you have to shrink", not a target size (correcting a suggestion to raise the
