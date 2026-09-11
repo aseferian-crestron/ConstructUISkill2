@@ -9,6 +9,48 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Component builders: pipeline built, layer 1 NOT yet correct -- WIP, do not use.**
+`generator/component.py` generalises Phase 4's button into `build_component(sdk, tag,
+...)` for the flat (childless) types. Four of its five layers are right; the base
+attribute layer reproduces only 3 of 15 types exactly and is the open work.
+
+**What is solid:**
+- The layer structure generalises, which was the design bet. Measuring every reference
+  component against the button's layers showed the unexplained attributes were almost
+  entirely the same common-wiring keys the button hardcoded.
+- `PROFILES`: the per-type wiring facts, transcribed from the reference project because
+  they are NOT derivable from the SDK -- `ccid_ComponentType` is "Formatted-Text" for
+  `ch5-text`, "Widget List" for `ch5-subpage-reference-list`, "Signal Gauge" for
+  `ch5-signal-level-gauge`, and which types carry `ccid_ActiveFont`/`ccid_Label` varies.
+- Container types raise `NotImplementedError` rather than emitting a childless shell
+  that would look right and behave wrong (that is the next slice regardless).
+- **`oldID` is correctly NOT emitted**: every reference instance has one, but it is an
+  artifact of the user duplicating components, not something a fresh component carries.
+- Two source findings: `MetaDataResolver.ts::supportsAttribute` builds a tag's trait set
+  from its own `attributeProperties` UNION `global`'s -- the same own-then-global pattern
+  the contract lookup needed -- and `MetaDataResolver.ts:214-229` OVERRIDES some defaults
+  in code rather than reading schema.json (a slider's `min`/`max`/`step`, which are null
+  in the schema). Both are now in the code.
+
+**What is wrong:** the base layer currently short-circuits to
+`component-context.json`'s `defaults.attributes` when a tag declares them, and
+trait-filters the schema otherwise. Against the reference: `ch5-color-picker`,
+`ch5-textinput` and `ch5-video` match exactly; the rest are off. Under-produces on the
+slider (no `min`/`max`/`step` -- the short-circuit skips the override path), the signal
+and wifi gauges (`numberofbars`, `value`, `minvalue`, `maxvalue`), the toggle
+(`labelon`/`labeloff`), the qrcode and datetime. Over-produces `ccid_sync_*` on
+`ch5-datetime`, `ch5-text`, `ch5-qrcode` and `ch5-color-chip` -- the sass-schema sectors
+are being applied to types whose real instances carry none of them.
+
+**Next step, and it is source work not inference:** read `MetaDataResolver.ts`'s trait
+loop properly -- how `defaults.attributes` and the trait set combine (they are clearly
+not either/or), and what gates the sync-attribute block per type. Three iterations of
+inferring the rule from samples each matched some types and broke others, which is the
+signal to stop guessing and read the code.
+
+Full 39-file suite green (component.py has no tests yet -- deliberately, since nothing
+about it should be treated as confirmed).
+
 **Writing a page or widget now marks its project's contract stale automatically -- a
 real gap the user found by asking the right question.** They noticed Construct gave no
 "contract has been updated" toast when the button list's new signal was added, and asked
