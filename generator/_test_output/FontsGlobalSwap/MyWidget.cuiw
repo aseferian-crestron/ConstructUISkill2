@@ -1,0 +1,38 @@
+{FileMetadata}
+Schema = "1.0.0.0"
+CreatedByAppHost = "2.1501.15.0"
+Created = 2026-09-10 12:56:39.316174-04:00
+LastModifiedByAppHost = "2.1501.15.0"
+Modified = 2026-09-10 12:56:39.316164-04:00
+CreatedByProjectApp = "1.4801.18.0"
+LastModifiedByProjectApp = "1.4801.18.0"
+MinimumProjectApp = "1.2600.1"
+MinimumAppHost = "2.901.0"
+
+{Html}
+<div categoryname="Widget Components" ccid_ComponentType="Widget Canvas" id="iwc0" devicesVisited="[&quot;TSW-1070&quot;]" defaultWidth="0" defaultHeight="0" class="widget-container"></div>
+
+{Css}
+@media (max-width: 99999px){#iwc0{width:400px;height:300px;left:0;top:0;position:absolute;background-color:#ff0000ff;}#irfy{background-color:#ffffff;}.widget-container{z-index:0;}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#iwc0{width:400px;height:300px;left:0;top:0;position:absolute;}}@media (orientation: portrait) and (max-height: 1281px) and (max-width: 801px), (orientation: portrait) and (max-height: 1279px){#iwc0{display: block; left: 0px; top: 0px; position: absolute; width: 400px; height: 300px;}}@media (orientation: landscape) and (max-width: 1263px) and (max-height: 741px), (orientation: landscape) and (max-width: 1261px){#iwc0{display: block; left: 0px; top: 0px; position: absolute; width: 400px; height: 300px;}}@media (orientation: landscape) and (max-width: 641px) and (max-height: 361px), (orientation: landscape) and (max-width: 639px){#iwc0{display: block; left: 0px; top: 0px; position: absolute; width: 400px; height: 300px;}}
+
+{PageAttributes}
+
+[Attributes]
+Name = "MyWidget"
+PageMode = "absolute"
+Id = "fd25e98e-f29b-495e-895b-3ae359ead4ac"
+DisplayBackgroundColor = "True"
+BackgroundColor = "#ff0000ff"
+
+[[Elements]]
+Type = "widgetContainer"
+Classes = ["widget-container"]
+
+[Elements.Attributes]
+categoryname = "Widget Components"
+ccid_ComponentType = "Widget Canvas"
+id = "iwc0"
+devicesVisited = "[\"TSW-1070\"]"
+defaultWidth = "0"
+defaultHeight = "0"
+

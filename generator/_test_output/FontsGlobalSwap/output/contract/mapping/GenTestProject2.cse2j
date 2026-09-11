@@ -1,0 +1,416 @@
+{
+  "name": "GenTestProject2",
+  "timestamp": "2026-09-11T04:31:21.2227355+00:00",
+  "version": "1.0.0.0",
+  "schema_version": 1,
+  "extra_value": "",
+  "signals": {
+    "states": {
+      "boolean": {
+        "1": {
+          "3": "ButtonVariants.CheckboxButton.Selected",
+          "4": "ButtonVariants.IconButton.Selected",
+          "5": "ButtonVariants.ImageButton.Selected"
+        },
+        "4": {
+          "3": "AllComponentsButtons.Button.Selected",
+          "4": "AllComponentsButtons.Toggle.Selected"
+        },
+        "5": {
+          "31": "AllComponentsButtons.TabButton.Tab1_Selected",
+          "32": "AllComponentsButtons.TabButton.Tab2_Selected",
+          "33": "AllComponentsButtons.TabButton.Tab3_Selected"
+        },
+        "6": {
+          "1001": "AllComponentsButtons.ButtonList.Button1ItemSelected",
+          "1002": "AllComponentsButtons.ButtonList.Button2ItemSelected",
+          "1003": "AllComponentsButtons.ButtonList.Button3ItemSelected",
+          "1004": "AllComponentsButtons.ButtonList.Button4ItemSelected",
+          "1005": "AllComponentsButtons.ButtonList.Button5ItemSelected",
+          "1006": "AllComponentsButtons.ButtonList.Button6ItemSelected",
+          "1007": "AllComponentsButtons.ButtonList.Button7ItemSelected",
+          "1008": "AllComponentsButtons.ButtonList.Button8ItemSelected",
+          "1009": "AllComponentsButtons.ButtonList.Button9ItemSelected",
+          "1010": "AllComponentsButtons.ButtonList.Button10ItemSelected"
+        },
+        "12": {
+          "1": "AllComponentsMedia.MediaPlayer.Refresh",
+          "2": "AllComponentsMedia.MediaPlayer.Offline"
+        },
+        "18": {
+          "1001": "ComplexContracts.ButtonListTheme.Button1ItemSelected",
+          "1002": "ComplexContracts.ButtonListTheme.Button2ItemSelected",
+          "1003": "ComplexContracts.ButtonListTheme.Button3ItemSelected",
+          "1004": "ComplexContracts.ButtonListTheme.Button4ItemSelected",
+          "1005": "ComplexContracts.ButtonListTheme.Button5ItemSelected",
+          "1006": "ComplexContracts.ButtonListTheme.Button6ItemSelected",
+          "1007": "ComplexContracts.ButtonListTheme.Button7ItemSelected",
+          "1008": "ComplexContracts.ButtonListTheme.Button8ItemSelected",
+          "1009": "ComplexContracts.ButtonListTheme.Button9ItemSelected",
+          "1010": "ComplexContracts.ButtonListTheme.Button10ItemSelected"
+        },
+        "19": {
+          "31": "ComplexContracts.TabButtonSlide.Tab1_Selected",
+          "32": "ComplexContracts.TabButtonSlide.Tab2_Selected",
+          "33": "ComplexContracts.TabButtonSlide.Tab3_Selected"
+        },
+        "20": {
+          "1": "ComplexContracts.MediaPlayerTheme.Refresh",
+          "2": "ComplexContracts.MediaPlayerTheme.Offline"
+        }
+      },
+      "numeric": {
+        "7": {
+          "3": "AllComponentsGauges.SegmentedGauge.Touchfb",
+          "4": "AllComponentsGauges.Slider.LowerTouchfb",
+          "11": "AllComponentsGauges.SignalLevelGauge.SignalValue",
+          "12": "AllComponentsGauges.WifiSignalLevelGauge.SignalValue"
+        },
+        "14": {
+          "6": "AllComponentsText.ColorChip.RedValue_fb",
+          "7": "AllComponentsText.ColorPicker.RedValue_fb",
+          "8": "AllComponentsText.ColorChip.GreenValue_fb",
+          "9": "AllComponentsText.ColorPicker.GreenValue_fb",
+          "10": "AllComponentsText.ColorChip.BlueValue_fb",
+          "11": "AllComponentsText.ColorPicker.BlueValue_fb"
+        }
+      },
+      "string": {
+        "12": {
+          "1": "AllComponentsMedia.MediaPlayer.CRPC_FB",
+          "2": "AllComponentsMedia.MediaPlayer.Player_Name",
+          "3": "AllComponentsMedia.MediaPlayer.Message_FB"
+        },
+        "14": {
+          "1": "AllComponentsText.Textinput.IndirectText",
+          "2": "AllComponentsText.Text.IndirectRichText"
+        },
+        "20": {
+          "1": "ComplexContracts.MediaPlayerTheme.CRPC_FB",
+          "2": "ComplexContracts.MediaPlayerTheme.Player_Name",
+          "3": "ComplexContracts.MediaPlayerTheme.Message_FB"
+        }
+      }
+    },
+    "events": {
+      "boolean": {
+        "ButtonVariants.CheckboxButton.Press": {
+          "joinId": 3,
+          "smartObjectId": 1
+        },
+        "ButtonVariants.IconButton.Press": {
+          "joinId": 4,
+          "smartObjectId": 1
+        },
+        "ButtonVariants.ImageButton.Press": {
+          "joinId": 5,
+          "smartObjectId": 1
+        },
+        "AllComponentsButtons.Button.Press": {
+          "joinId": 3,
+          "smartObjectId": 4
+        },
+        "AllComponentsButtons.Toggle.Press": {
+          "joinId": 4,
+          "smartObjectId": 4
+        },
+        "AllComponentsButtons.TabButton.Tab1_Press": {
+          "joinId": 31,
+          "smartObjectId": 5
+        },
+        "AllComponentsButtons.TabButton.Tab2_Press": {
+          "joinId": 32,
+          "smartObjectId": 5
+        },
+        "AllComponentsButtons.TabButton.Tab3_Press": {
+          "joinId": 33,
+          "smartObjectId": 5
+        },
+        "AllComponentsButtons.ButtonList.Button1ItemPress": {
+          "joinId": 1001,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button2ItemPress": {
+          "joinId": 1002,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button3ItemPress": {
+          "joinId": 1003,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button4ItemPress": {
+          "joinId": 1004,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button5ItemPress": {
+          "joinId": 1005,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button6ItemPress": {
+          "joinId": 1006,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button7ItemPress": {
+          "joinId": 1007,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button8ItemPress": {
+          "joinId": 1008,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button9ItemPress": {
+          "joinId": 1009,
+          "smartObjectId": 6
+        },
+        "AllComponentsButtons.ButtonList.Button10ItemPress": {
+          "joinId": 1010,
+          "smartObjectId": 6
+        },
+        "AllComponentsKeypads.Keypad.Press1": {
+          "joinId": 3,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press2": {
+          "joinId": 4,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press3": {
+          "joinId": 5,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press4": {
+          "joinId": 6,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press5": {
+          "joinId": 7,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press6": {
+          "joinId": 8,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press7": {
+          "joinId": 9,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press8": {
+          "joinId": 10,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press9": {
+          "joinId": 11,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.Press0": {
+          "joinId": 12,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.PressStar": {
+          "joinId": 13,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.PressHash": {
+          "joinId": 14,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Keypad.PressExtraButton": {
+          "joinId": 15,
+          "smartObjectId": 9
+        },
+        "AllComponentsKeypads.Dpad.Up": {
+          "joinId": 3,
+          "smartObjectId": 10
+        },
+        "AllComponentsKeypads.Dpad.Down": {
+          "joinId": 4,
+          "smartObjectId": 10
+        },
+        "AllComponentsKeypads.Dpad.Left": {
+          "joinId": 5,
+          "smartObjectId": 10
+        },
+        "AllComponentsKeypads.Dpad.Right": {
+          "joinId": 6,
+          "smartObjectId": 10
+        },
+        "AllComponentsKeypads.Dpad.Center": {
+          "joinId": 7,
+          "smartObjectId": 10
+        },
+        "ComplexContracts.DpadTheme.Up": {
+          "joinId": 3,
+          "smartObjectId": 16
+        },
+        "ComplexContracts.DpadTheme.Down": {
+          "joinId": 4,
+          "smartObjectId": 16
+        },
+        "ComplexContracts.DpadTheme.Left": {
+          "joinId": 5,
+          "smartObjectId": 16
+        },
+        "ComplexContracts.DpadTheme.Right": {
+          "joinId": 6,
+          "smartObjectId": 16
+        },
+        "ComplexContracts.DpadTheme.Center": {
+          "joinId": 7,
+          "smartObjectId": 16
+        },
+        "ComplexContracts.KeypadTheme.Press1": {
+          "joinId": 3,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press2": {
+          "joinId": 4,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press3": {
+          "joinId": 5,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press4": {
+          "joinId": 6,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press5": {
+          "joinId": 7,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press6": {
+          "joinId": 8,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press7": {
+          "joinId": 9,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press8": {
+          "joinId": 10,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press9": {
+          "joinId": 11,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.Press0": {
+          "joinId": 12,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.PressStar": {
+          "joinId": 13,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.PressHash": {
+          "joinId": 14,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.KeypadTheme.PressExtraButton": {
+          "joinId": 15,
+          "smartObjectId": 17
+        },
+        "ComplexContracts.ButtonListTheme.Button1ItemPress": {
+          "joinId": 1001,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button2ItemPress": {
+          "joinId": 1002,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button3ItemPress": {
+          "joinId": 1003,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button4ItemPress": {
+          "joinId": 1004,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button5ItemPress": {
+          "joinId": 1005,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button6ItemPress": {
+          "joinId": 1006,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button7ItemPress": {
+          "joinId": 1007,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button8ItemPress": {
+          "joinId": 1008,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button9ItemPress": {
+          "joinId": 1009,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.ButtonListTheme.Button10ItemPress": {
+          "joinId": 1010,
+          "smartObjectId": 18
+        },
+        "ComplexContracts.TabButtonSlide.Tab1_Press": {
+          "joinId": 31,
+          "smartObjectId": 19
+        },
+        "ComplexContracts.TabButtonSlide.Tab2_Press": {
+          "joinId": 32,
+          "smartObjectId": 19
+        },
+        "ComplexContracts.TabButtonSlide.Tab3_Press": {
+          "joinId": 33,
+          "smartObjectId": 19
+        }
+      },
+      "numeric": {
+        "AllComponentsGauges.SegmentedGauge.Touch": {
+          "joinId": 3,
+          "smartObjectId": 7
+        },
+        "AllComponentsGauges.Slider.LowerTouch": {
+          "joinId": 4,
+          "smartObjectId": 7
+        },
+        "AllComponentsText.ColorChip.RedValue": {
+          "joinId": 6,
+          "smartObjectId": 14
+        },
+        "AllComponentsText.ColorPicker.RedValue": {
+          "joinId": 7,
+          "smartObjectId": 14
+        },
+        "AllComponentsText.ColorChip.GreenValue": {
+          "joinId": 8,
+          "smartObjectId": 14
+        },
+        "AllComponentsText.ColorPicker.GreenValue": {
+          "joinId": 9,
+          "smartObjectId": 14
+        },
+        "AllComponentsText.ColorChip.BlueValue": {
+          "joinId": 10,
+          "smartObjectId": 14
+        },
+        "AllComponentsText.ColorPicker.BlueValue": {
+          "joinId": 11,
+          "smartObjectId": 14
+        }
+      },
+      "string": {
+        "AllComponentsMedia.MediaPlayer.CRPC": {
+          "joinId": 1,
+          "smartObjectId": 12
+        },
+        "AllComponentsText.Textinput.OutputText": {
+          "joinId": 1,
+          "smartObjectId": 14
+        },
+        "ComplexContracts.MediaPlayerTheme.CRPC": {
+          "joinId": 1,
+          "smartObjectId": 20
+        }
+      }
+    }
+  }
+}

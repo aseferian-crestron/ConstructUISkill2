@@ -1,0 +1,147 @@
+{FileMetadata}
+Schema = "1.0.0.0"
+CreatedByAppHost = "2.1501.15.0"
+Created = 2026-09-11 00:30:25.774933-04:00
+LastModifiedByAppHost = "2.1501.15.0"
+Modified = 2026-09-11 00:30:25.774933-04:00
+CreatedByProjectApp = "1.4801.18.0"
+LastModifiedByProjectApp = "1.4801.18.0"
+MinimumProjectApp = "1.2600.1"
+MinimumAppHost = "2.901.0"
+
+{Html}
+<ch5-color-picker maxvalue="255" id="ismke6" componentName="ColorPicker" ccid_linkSendReceive="True" ccid_ComponentType="Color Picker" devicesVisited="["TSW-1070, TSW-1070"]" sendeventcolorredonchange="Contract Enabled" pd-receivestateredvalue="Contract Enabled" sendeventcolorgreenonchange="Contract Enabled" pd-receivestategreenvalue="Contract Enabled" sendeventcolorblueonchange="Contract Enabled" pd-receivestatebluevalue="Contract Enabled"></ch5-color-picker><ch5-textinput iconposition="first" type="text" minlength="0" maxlength="0" minvalue="0" maxvalue="0" size="custom" text-transform="none" scaling="false" customvstheme="theme" id="idj1" componentName="Textinput" ccid_linkSendReceive="True" ccid_ActiveFont="'Montserrat'" ccid_Label="Textinput" ccid_sizeInitialized="true" ccid_ComponentType="Textinput" devicesVisited="["TSW-1070, TSW-1070"]" sendeventonchange="Contract Enabled" pd-receivestatevalue="Contract Enabled"></ch5-textinput><ch5-qrcode color="#000000" tagName="ch5-qrcode" backgroundcolor="#ffffff" id="iuj0mxts4cx" componentName="Qrcode" ccid_linkSendReceive="True" ccid_ComponentType="QR Code" devicesVisited="["TSW-1070, TSW-1070"]"></ch5-qrcode><ch5-text clearLabel="false" labelmodeadvncomponent="simple" horizontalalignment="center" verticalalignment="middle" multilinesupport="false" truncatetext="false" id="iekh" componentName="Text" ccid_linkSendReceive="True" ccid_ActiveFont="'Montserrat'" ccid_Label="Text" ccid_themeCSSSet="true" ccid_ComponentType="Formatted-Text" devicesVisited="["TSW-1070, TSW-1070"]" pd-receivestatescriptlabelhtml="Contract Enabled"></ch5-text><ch5-datetime timeoffsethours="0" tagName="ch5-datetime" horizontalalignment="center" display24hourformat="false" displayampm="true" displaytwodigitshour="false" displayseconds="false" stylefordate="MM-dd-yyyy" displaytype="datetime" id="io2tolq7on" componentName="Datetime" ccid_linkSendReceive="True" ccid_ActiveFont="'Montserrat'" ccid_themeCSSSet="true" ccid_ComponentType="Date Time" devicesVisited="["TSW-1070, TSW-1070"]"></ch5-datetime><ch5-color-chip maxvalue="255" id="inxvtmpzw" componentName="ColorChip" ccid_linkSendReceive="True" ccid_ComponentType="Color Chip" devicesVisited="["TSW-1070, TSW-1070"]" sendeventcolorredonchange="Contract Enabled" pd-receivestateredvalue="Contract Enabled" sendeventcolorgreenonchange="Contract Enabled" pd-receivestategreenvalue="Contract Enabled" sendeventcolorblueonchange="Contract Enabled" pd-receivestatebluevalue="Contract Enabled"></ch5-color-chip>
+
+{Css}
+@media (max-width: 99999px){#ismke6{display: block; left: 40px; top: 40px; position: absolute; z-index: 1; width: 240px; height: 240px; --ch5-color-picker--width: 240px; --ch5-color-picker--height: 240px;}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#ismke6{display: block; left: 40px; top: 40px; position: absolute; width: 240px; height: 240px; --ch5-color-picker--width: 240px; --ch5-color-picker--height: 240px;}}@media (max-width: 99999px){#idj1{display: block; left: 304px; top: 40px; position: absolute; z-index: 2; width: 250px; height: auto; --ch5-textinput--small-width: 250px;}#idj1 :not(i):not(svg) {font-family: "Montserrat";}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#idj1{display: block; left: 304px; top: 40px; position: absolute; width: 250px; height: auto; --ch5-textinput--small-width: 250px;}}@media (max-width: 99999px){#iuj0mxts4cx{display: block; left: 578px; top: 40px; position: absolute; z-index: 3; width: 160px; height: 160px;}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#iuj0mxts4cx{display: block; left: 578px; top: 40px; position: absolute; width: 160px; height: 160px;}}@media (max-width: 99999px){#iekh{display: block; left: 762px; top: 40px; position: absolute; z-index: 4; width: 150px; height: 48px; --ch5-text--width: 150px; --ch5-text--height: 48px;}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#iekh{display: block; left: 762px; top: 40px; position: absolute; width: 150px; height: 48px; --ch5-text--width: 150px; --ch5-text--height: 48px;}}@media (max-width: 99999px){#io2tolq7on{display: block; left: 936px; top: 40px; position: absolute; z-index: 5; width: 200px; height: 35px; --ch5-datetime--width: 200px; --ch5-datetime--height: 35px;}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#io2tolq7on{display: block; left: 936px; top: 40px; position: absolute; width: 200px; height: 35px; --ch5-datetime--width: 200px; --ch5-datetime--height: 35px;}}@media (max-width: 99999px){#inxvtmpzw{display: block; left: 1160px; top: 40px; position: absolute; z-index: 6; width: 40px; height: 40px; --ch5-color-chip--width: 40px; --ch5-color-chip--height: 40px;}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#inxvtmpzw{display: block; left: 1160px; top: 40px; position: absolute; width: 40px; height: 40px; --ch5-color-chip--width: 40px; --ch5-color-chip--height: 40px;}}
+
+{PageAttributes}
+
+[Attributes]
+Name = "AllComponents - Text"
+PageMode = "absolute"
+Id = "4f413773-e2bd-4045-9c03-72de8295ba5c"
+StartPage = "False"
+PreloadPage = "True"
+CachePage = "False"
+VisibilityJoin = "0"
+DisplayBackgroundColor = "False"
+
+[[Elements]]
+Type = "Ch5 Color Picker"
+Editable = true
+
+[Elements.Attributes]
+maxvalue = "255"
+id = "ismke6"
+componentName = "ColorPicker"
+ccid_linkSendReceive = "True"
+ccid_ComponentType = "Color Picker"
+devicesVisited = "[\"TSW-1070, TSW-1070\"]"
+sendeventcolorredonchange = "Contract Enabled"
+pd-receivestateredvalue = "Contract Enabled"
+sendeventcolorgreenonchange = "Contract Enabled"
+pd-receivestategreenvalue = "Contract Enabled"
+sendeventcolorblueonchange = "Contract Enabled"
+pd-receivestatebluevalue = "Contract Enabled"
+
+[[Elements]]
+Type = "Ch5 Textinput"
+Editable = true
+
+[Elements.Attributes]
+iconposition = "first"
+type = "text"
+minlength = "0"
+maxlength = "0"
+minvalue = "0"
+maxvalue = "0"
+size = "custom"
+text-transform = "none"
+scaling = "false"
+customvstheme = "theme"
+id = "idj1"
+componentName = "Textinput"
+ccid_linkSendReceive = "True"
+ccid_ActiveFont = "'Montserrat'"
+ccid_Label = "Textinput"
+ccid_sizeInitialized = "true"
+ccid_ComponentType = "Textinput"
+devicesVisited = "[\"TSW-1070, TSW-1070\"]"
+sendeventonchange = "Contract Enabled"
+pd-receivestatevalue = "Contract Enabled"
+
+[[Elements]]
+Type = "Ch5 QR Code"
+Editable = true
+
+[Elements.Attributes]
+color = "#000000"
+tagName = "ch5-qrcode"
+backgroundcolor = "#ffffff"
+id = "iuj0mxts4cx"
+componentName = "Qrcode"
+ccid_linkSendReceive = "True"
+ccid_ComponentType = "QR Code"
+devicesVisited = "[\"TSW-1070, TSW-1070\"]"
+
+[[Elements]]
+Type = "Ch5 Text"
+Editable = true
+
+[Elements.Attributes]
+clearLabel = "false"
+labelmodeadvncomponent = "simple"
+horizontalalignment = "center"
+verticalalignment = "middle"
+multilinesupport = "false"
+truncatetext = "false"
+id = "iekh"
+componentName = "Text"
+ccid_linkSendReceive = "True"
+ccid_ActiveFont = "'Montserrat'"
+ccid_Label = "Text"
+ccid_themeCSSSet = "true"
+ccid_ComponentType = "Formatted-Text"
+devicesVisited = "[\"TSW-1070, TSW-1070\"]"
+pd-receivestatescriptlabelhtml = "Contract Enabled"
+
+[[Elements]]
+Type = "Ch5 Date Time"
+Editable = true
+
+[Elements.Attributes]
+timeoffsethours = "0"
+tagName = "ch5-datetime"
+horizontalalignment = "center"
+display24hourformat = "false"
+displayampm = "true"
+displaytwodigitshour = "false"
+displayseconds = "false"
+stylefordate = "MM-dd-yyyy"
+displaytype = "datetime"
+id = "io2tolq7on"
+componentName = "Datetime"
+ccid_linkSendReceive = "True"
+ccid_ActiveFont = "'Montserrat'"
+ccid_themeCSSSet = "true"
+ccid_ComponentType = "Date Time"
+devicesVisited = "[\"TSW-1070, TSW-1070\"]"
+
+[[Elements]]
+Type = "Ch5 Color Chip"
+Editable = true
+
+[Elements.Attributes]
+maxvalue = "255"
+id = "inxvtmpzw"
+componentName = "ColorChip"
+ccid_linkSendReceive = "True"
+ccid_ComponentType = "Color Chip"
+devicesVisited = "[\"TSW-1070, TSW-1070\"]"
+sendeventcolorredonchange = "Contract Enabled"
+pd-receivestateredvalue = "Contract Enabled"
+sendeventcolorgreenonchange = "Contract Enabled"
+pd-receivestategreenvalue = "Contract Enabled"
+sendeventcolorblueonchange = "Contract Enabled"
+pd-receivestatebluevalue = "Contract Enabled"

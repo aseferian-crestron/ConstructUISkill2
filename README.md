@@ -9,6 +9,53 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 8 (fonts), global swap slice -- BUILT, applied to the live project, AWAITING
+THE USER'S CHECK IN CONSTRUCT.** Scoped with the user to global font-swap only; webfont
+IMPORT deferred since no project anywhere on this machine has ever done it, so there is
+no real file to verify a `webfonts/` folder's shape against.
+
+`generator/fonts.py::set_project_font(cuip_path, new_font)` rewrites, in one call: the
+`.cuip`'s `DefaultFontFamily`, and every `ccid_ActiveFont` attribute + Construct-generated
+`font-family` CSS declaration in every `.cuig`/`.cuiw` beside it. Grounded in
+`FontUpgradeHelper.cs` (Construct's own font-writing code) and its four literal CSS
+selector shapes in `FontSupportConstants` (`UiEditor.Server\Constants.cs:262`), all four
+confirmed byte-for-byte against the reference project.
+
+**Verification found two real bugs before the code ever reached a live file, because the
+test ran against a COPY of the actual GenTestProject2 harness project rather than a
+synthetic fixture** -- the first time in this project a test has used the real live
+project as its own oracle rather than the separate `C:\Solutions\ClaudeSamplesComponents` sample:
+
+1. **Attribute-name casing.** Construct's own Html view lowercases attribute names on
+   save (`ccid_activefont`); the mirrored PageAttributes TOML preserves the authored
+   casing (`ccid_ActiveFont`) -- confirmed with zero exceptions across 12 reference
+   files. The first version of the regex was case-sensitive and silently missed every
+   Html-view mention on any file that had been through a real Construct save
+   (`ComplexContracts.cuig`, built from transplanted real components). Now
+   case-insensitive on the key, preserving whichever casing is actually present.
+2. **`font-family` quote style.** `layout.py` always writes double quotes with a space;
+   `ReflowTest.cuig` -- a real, long-lived file, not something this session wrote fresh
+   -- carries single quotes with no space in 21 places. Both are valid CSS and Construct
+   evidently accepts either. Now matches `['"]`, preserving whichever quote character was
+   actually used rather than normalizing it.
+
+**A related finding, deliberately NOT acted on in this phase:** the generator's own Html
+output writes attribute names in their original camelCase (`ccid_ActiveFont`), never
+lowercased the way a real Construct save does. This appears functionally harmless (HTML
+attribute names are case-insensitive to parsers) and is unconfirmed either way -- flagged
+here rather than fixed, since rewriting HTML-casing behavior across every component
+builder is a cross-cutting change well outside this phase's scope, and would touch
+Phase 4's already user-confirmed-live button code.
+
+Applied to the live `GenTestProject2` (Roboto -> Montserrat; backup taken in the session
+scratchpad first). Verified independently before this was written: no file mentions
+Roboto anymore, every file still round-trips section-for-section, `.cuip` reads
+`DefaultFontFamily = "Montserrat"`. Full 44-file suite green.
+
+**Awaiting the live check:** open `GenTestProject2` in Construct and confirm the project
+now shows Montserrat (or its own system fallback, if Montserrat is not installed) rather
+than Roboto.
+
 **CONFIRMED IN CONSTRUCT 2026-09-11: all six component pages look good.** Every
 component type the generator can build -- 21 types, 38 nested children -- renders
 correctly at the size its selection adorner shows. Component generation (flat and
