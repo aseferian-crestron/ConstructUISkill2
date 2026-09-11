@@ -10,10 +10,10 @@ MinimumProjectApp = "1.2600.1"
 MinimumAppHost = "2.901.0"
 
 {Html}
-<ch5-media-player customvstheme="theme" tagName="ch5-media-player" pd-receivestatecrpc="Contract Enabled" sendeventcrpc="Contract Enabled" pd-receivestatemessage="Contract Enabled" pd-receivestaterefreshmediaplayer="Contract Enabled" pd-receivestatedeviceoffline="Contract Enabled" pd-receivestateusemessage="Contract Enabled" pd-receivestateplayername="Contract Enabled" id="ir0jqvpz0" componentName="MediaPlayer" ccid_linkSendReceive="True" ccid_ActiveFont="'Crestron AV'" ccid_ComponentType="Media Player" devicesVisited="["TSW-1070, TSW-1070"]"></ch5-media-player>
+<ch5-media-player customvstheme="theme" tagName="ch5-media-player" pd-receivestatecrpc="Contract Enabled" sendeventcrpc="Contract Enabled" pd-receivestatemessage="Contract Enabled" pd-receivestaterefreshmediaplayer="Contract Enabled" pd-receivestatedeviceoffline="Contract Enabled" pd-receivestateusemessage="Contract Enabled" pd-receivestateplayername="Contract Enabled" id="ir0jqvpz0" componentName="MediaPlayer" ccid_linkSendReceive="True" ccid_ActiveFont="'Roboto'" ccid_ComponentType="Media Player" devicesVisited="["TSW-1070, TSW-1070"]"></ch5-media-player>
 
 {Css}
-@media (max-width: 99999px){#ir0jqvpz0{display: block; left: 40px; top: 40px; position: absolute; z-index: 1; width: 800px; height: 600px;}#ir0jqvpz0 :not(i):not(svg) {font-family: "Crestron AV";}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#ir0jqvpz0{display: block; left: 40px; top: 40px; position: absolute; width: 800px; height: 600px;}}
+@media (max-width: 99999px){#ir0jqvpz0{display: block; left: 40px; top: 40px; position: absolute; z-index: 1; width: 800px; height: 600px;}#ir0jqvpz0 :not(i):not(svg) {font-family: "Roboto";}}@media (orientation: landscape) and (max-width: 1281px) and (max-height: 801px), (orientation: landscape) and (max-width: 1279px){#ir0jqvpz0{display: block; left: 40px; top: 40px; position: absolute; width: 800px; height: 600px;}}
 
 {PageAttributes}
 
@@ -44,6 +44,6 @@ pd-receivestateplayername = "Contract Enabled"
 id = "ir0jqvpz0"
 componentName = "MediaPlayer"
 ccid_linkSendReceive = "True"
-ccid_ActiveFont = "'Crestron AV'"
+ccid_ActiveFont = "'Roboto'"
 ccid_ComponentType = "Media Player"
 devicesVisited = "[\"TSW-1070, TSW-1070\"]"

@@ -118,18 +118,25 @@ else:
 before = button_page.read_text(encoding="utf-8")
 before_metadata = re.search(r"\{FileMetadata\}.*?(?=\{Html\})", before, re.DOTALL).group(0)
 
+# Target chosen to guarantee it differs from whatever font the live project currently
+# holds -- hardcoding one (as an earlier version of this test did) broke the moment this
+# session's own live-project font fix landed and the source file's starting font
+# happened to match the hardcoded target, silently turning the "swap" into a no-op.
 page_starting_font = re.search(r"ccid_ActiveFont=\"'([^']*)'\"", before).group(1)
-count = set_page_font(button_page, "Crestron General", sdk)
+page_target_font = next(f for f in fonts_list if f != page_starting_font)
+
+count = set_page_font(button_page, page_target_font, sdk)
 assert count > 0, "ButtonVariants.cuig is expected to mention some font"
 after = button_page.read_text(encoding="utf-8")
 after_metadata = re.search(r"\{FileMetadata\}.*?(?=\{Html\})", after, re.DOTALL).group(0)
 assert before_metadata == after_metadata, "FileMetadata (Modified timestamp) must not change"
-assert page_starting_font not in after and after.count('"Crestron General"') >= 1
-print("set_page_font rewrites Html/Css/PageAttributes only, never FileMetadata: OK")
+assert page_starting_font not in after and after.count(f'"{page_target_font}"') >= 1
+print(f"set_page_font ({page_starting_font!r} -> {page_target_font!r}): Html/Css/"
+      "PageAttributes rewritten, FileMetadata untouched: OK")
 
 # Idempotent: swapping to the same font twice is a byte-for-byte no-op.
 after2 = button_page.read_text(encoding="utf-8")
-set_page_font(button_page, "Crestron General", sdk)
+set_page_font(button_page, page_target_font, sdk)
 assert button_page.read_text(encoding="utf-8") == after2
 print("re-applying the same font is a content no-op: OK")
 
@@ -143,9 +150,9 @@ for i, m in enumerate(headers):
 page = tomllib.loads(sections["PageAttributes"])
 toml_fonts = {e["Attributes"].get("ccid_ActiveFont") for e in page["Elements"]
               if "ccid_ActiveFont" in e["Attributes"]}
-assert toml_fonts == {"'Crestron General'"}, toml_fonts
+assert toml_fonts == {f"'{page_target_font}'"}, toml_fonts
 html_fonts = set(re.findall(r'ccid_ActiveFont="([^"]*)"', sections["Html"]))
-assert html_fonts == {"'Crestron General'"}, html_fonts
+assert html_fonts == {f"'{page_target_font}'"}, html_fonts
 print("Html and TOML element attributes agree after the swap: OK")
 
 # --- round-trip: only content changed, structure survives ------------------------------
@@ -159,14 +166,15 @@ print("the rewritten file still round-trips section-for-section: OK")
 # the invalid "Montserrat", which a hardcoded "Roboto" assumption here would have missed.)
 before_cuip = cuip.read_text(encoding="utf-8")
 starting_font = re.search(r'DefaultFontFamily = "([^"]*)"', before_cuip).group(1)
+project_target_font = next(f for f in fonts_list if f != starting_font)
 
-results = fonts.set_project_font(cuip, "Crestron AV", sdk)
+results = fonts.set_project_font(cuip, project_target_font, sdk)
 assert results[cuip.name] == 1
 assert sum(v for k, v in results.items() if k != cuip.name) > 0, \
     "at least one page/widget in the project should have mentioned a font"
 
 after_cuip = cuip.read_text(encoding="utf-8")
-assert 'DefaultFontFamily = "Crestron AV"' in after_cuip
+assert f'DefaultFontFamily = "{project_target_font}"' in after_cuip
 print(f"set_project_font touched {len(results)} files: {results}")
 
 # Every page/widget in the project now mentions the new font wherever it mentioned any.
@@ -175,14 +183,14 @@ for name, count in results.items():
         continue
     text = (OUT / name).read_text(encoding="utf-8")
     assert starting_font not in text, f"{name} still mentions {starting_font} after the swap"
-    assert "Crestron AV" in text, f"{name} does not mention the new font"
+    assert project_target_font in text, f"{name} does not mention the new font"
 print("every touched file carries the new font and none carries the old one: OK")
 
 # Re-applying the SAME font project-wide is a no-op on the .cuip (count 0) and leaves
 # every page byte-identical (already-in-place text substituted with itself).
 before_snapshot = {p.name: p.read_text(encoding="utf-8")
                    for p in OUT.glob("*.cuig")}
-results2 = fonts.set_project_font(cuip, "Crestron AV", sdk)
+results2 = fonts.set_project_font(cuip, project_target_font, sdk)
 assert results2[cuip.name] == 0, "re-applying the same project font must not touch the .cuip"
 for p in OUT.glob("*.cuig"):
     assert p.read_text(encoding="utf-8") == before_snapshot[p.name], f"{p.name} changed on a no-op swap"

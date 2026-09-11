@@ -9,49 +9,51 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Phase 8 (fonts): global swap CORRECTED -- the first version accepted an arbitrary
-string, and Construct's Font Family field has no way to show one.** The user applied it
-(Roboto -> Montserrat) and every component's Font Family went EMPTY in the Properties
-Grid. They also updated the reference sample themselves (`Component - Button.cuig`,
-Button1 -> "Crestron AV", Button2 -> "Stylish Comic") as the clue: real per-component
-fonts DO vary, so the bug was not in ccid_ActiveFont being wrong -- it was in accepting
-a font name Construct has no way to display.
+**Phase 8 (fonts): global swap now works for fonts already in Construct's own font
+library, not only the 5 hardcoded SDK names -- BUILT, applied to the live project,
+AWAITING THE USER'S CHECK.** The user's exact request: "please replace the font
+everywhere with Stylish Comic that is in my library" -- and they corrected the framing
+up front: fonts are APPLICATION-specific in Construct, not machine-specific, with a
+Webfonts folder that is part of the install path on both platforms.
 
-**Root cause, traced client-side:** the Font Family trait is a CLOSED dropdown
-(`addFontFamilyTrait`, `type: 'select'`), whose options come from exactly three sources
-(`pd-utils\src\utilities.ts::getAllFonts`): `GlobalVars.SystemDefaultFont` (hardcoded
-from the SDK's `component-context.json` `global.defaults.attributes.UiEditorFont` --
-**not** the project's own `DefaultFontFamily`, confirmed by tracing
-`apiV1.ts::createEditorInstance`), `GlobalVars.CrestronCustomFonts` (that same JSON's
-`CrestronCustomFont` array -- exactly 4 names for SDK 2.18.0), and `editor.CustomWebFonts`
-(imported webfonts -- the deferred half of this phase). "Montserrat" is none of those, so
-the dropdown had nothing to select, even though the attribute and CSS were written
-correctly. "Crestron AV" is catalog source 2; "Stylish Comic" is presumably a webfont.
+**Traced from source, then confirmed against this machine's real, running install --
+not assumed:** `EnvironmentUtility.cs::CombineStoragePaths` resolves `solutionsPath` as
+`<Documents>/Crestron/Crestron Construct/Solutions` (SAME formula on Windows and
+macOS -- both call `Environment.GetFolderPath(SpecialFolder.MyDocuments)`, only what
+that path itself resolves to differs per OS), and `ThemeAndFontUpdateHandler.cs`'s
+`webFontDirectory` is that folder's own SIBLING, named `"Webfonts"`. On Windows,
+`MyDocuments` is NOT simply `~/Documents` -- it is whatever the registry's
+`...\Explorer\User Shell Folders\Personal` value says, which OneDrive's "back up your
+Documents folder" rewrites. Confirmed exactly against this machine: the registry
+value, Construct's own startup log ("EnvironmentUtility solutionsPath:
+C:/Users/aseferian/OneDrive - Crestron Electronics/Documents/Crestron/Crestron
+Construct/Solutions"), and the real Webfonts folder next to it -- 23 real font files,
+including Stylish Comic.ttf -- all agree.
 
-**Fix:** `fonts.py::available_fonts(sdk)` returns the real catalog (`["Roboto",
-"Crestron AV", "Crestron General", "Crestron Lighting-HVAC", "Crestron Simple Icons"]`
-for SDK 2.18.0), and `set_page_font`/`set_project_font` now validate against it up front,
-raising and naming the valid choices rather than silently writing an unselectable value.
-`set_project_font` validates once before touching anything, so a rejected font can never
-leave a project half-changed (`.cuip` updated but pages not, or vice versa).
+**New in `fonts.py`:** `documents_path()` (per-OS, registry-aware on Windows),
+`global_webfonts_path()`, `project_webfonts_path()` (a project's own `webfonts/`
+sibling, for portability -- distinct from the global one), `webfont_names()` (filename
+without extension, filtered to Construct's 5 real webfont extensions --
+`.woff2/.woff/.ttf/.eot/.svg`, from `CommonThemeAndFontHelper.cs`), and
+`available_fonts()` extended to fold in whichever directories are passed.
+`set_project_font` now checks both the global library and the project's own folder by
+default, so "a font that is in my library" just works without the caller naming any
+paths.
 
-**Consequence found while fixing this:** the live `GenTestProject2` was still carrying
-the invalid `"Montserrat"` from before validation existed (this session's own earlier,
-now-corrected mistake) -- caught only because the test copies the actual live project
-rather than a synthetic fixture, so a stale/invalid value there breaks a hardcoded
-assumption instead of silently passing. Fixed live: `DefaultFontFamily = "Crestron
-General"` everywhere, verified on disk (no file mentions Montserrat, all still
-round-trip). `phase4_smoke_test.py` also updated -- the user's own edit to Button1's
-font in the reference sample is passed through explicitly (`active_font="Crestron AV"`),
-keeping that test a same-instance comparison rather than a recorded delta.
+**What is still genuinely deferred, and why it is a smaller/different claim than what
+just shipped:** importing a brand-new font FILE the library does not have yet --
+copying it in and everything the build/packaging step needs to bundle it. This session
+has still never created a project that does that, so there is nothing real to verify a
+fresh import's shape against. Using a font ALREADY on disk in a location fully traced
+from source and confirmed against the real install is a materially smaller, lower-risk
+claim, which is why it was safe to build now.
 
-Full 44-file suite green.
+Applied to the live `GenTestProject2` (verified: no file still mentions the old font,
+round-trip intact). Full 45-file suite green (2 new files: the corrected/hardened
+swap test, and the new library-discovery test).
 
-**CONFIRMED IN CONSTRUCT 2026-09-11**: the user opened `GenTestProject2` and reported
-every component is using Crestron General. Global font-swap is done and live-verified.
-
-**Next:** webfont import (deferred, needs a real sample to verify a `webfonts/` folder's
-shape against), then languages (10), hard buttons (11), and the skill layer.
+**Awaiting the live check:** open `GenTestProject2` and confirm every component's Font
+Family field now shows "Stylish Comic".
 
 `generator/fonts.py::set_project_font(cuip_path, new_font)` rewrites, in one call: the
 `.cuip`'s `DefaultFontFamily`, and every `ccid_ActiveFont` attribute + Construct-generated
@@ -63,7 +65,7 @@ confirmed byte-for-byte against the reference project.
 **Verification found two real bugs before the code ever reached a live file, because the
 test ran against a COPY of the actual GenTestProject2 harness project rather than a
 synthetic fixture** -- the first time in this project a test has used the real live
-project as its own oracle rather than the separate `C:\Solutions\ClaudeSamplesComponents` sample:
+project as its own oracle rather than the separate `C:\Solutions\ClaudeSamples\Components` sample:
 
 1. **Attribute-name casing.** Construct's own Html view lowercases attribute names on
    save (`ccid_activefont`); the mirrored PageAttributes TOML preserves the authored

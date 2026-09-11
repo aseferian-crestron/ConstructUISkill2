@@ -1,10 +1,22 @@
 """Global font swap -- Phase 8 (fonts), first slice.
 
-Scope decision (2026-09-11, with the user): global font-swap only. Webfont IMPORT (a
-non-system font added as a project asset) is deliberately deferred -- no project on this
-machine has ever done it, so there is no real file to verify a `webfonts/` folder's
-shape against, and shipping that unverified is exactly the mistake this project's own
-README now calls out (see its Approach section).
+Scope decision (2026-09-11, with the user): global font-swap only, but "font" now
+includes fonts already sitting in Construct's own application-level font library --
+NOT only its 5 hardcoded system/Crestron names. Genuinely NEW webfont IMPORT (adding a
+font FILE the library does not have yet -- copying it in, and everything the packaging
+step needs to bundle it for a build) is still deliberately deferred: this session has
+not created a real project that does that, so there is nothing to verify a fresh
+import's shape against.
+
+What "already in the library" means, and why it is NOT the deferred case: the user
+asked to swap to "Stylish Comic that is in my library" -- a font that is ALREADY a
+`.ttf` file sitting in Construct's own webfont folder (see `global_webfonts_path`),
+verified present on this machine before any code was written. Discovering and USING an
+existing library font is a read-only filesystem check against a folder location fully
+traced from source (`EnvironmentUtility.cs` + `ThemeAndFontUpdateHandler.cs`) and
+confirmed against this machine's real, running install (its own log, and the folder's
+real contents) -- a fundamentally smaller, lower-risk claim than "we can correctly
+import and package a brand-new font," which is what stays deferred.
 
 **CORRECTION (2026-09-11, user-caught):** the first version of this module accepted any
 string as `new_font` and wrote it everywhere. The user applied it (Roboto -> Montserrat)
@@ -65,22 +77,112 @@ attribute/CSS, not arbitrary user content.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from pathlib import Path
 
 from project import override_attr, read_cuip, write_cuip
 from sdk import UiSdk
 
+#: `CommonThemeAndFontHelper.cs::GetValidWebfontExtensions` -- the file types Construct's
+#: own font scan recognizes.
+VALID_WEBFONT_EXTENSIONS = (".woff2", ".woff", ".ttf", ".eot", ".svg")
 
-def available_fonts(sdk: UiSdk) -> list[str]:
-    """The fonts a component's Font Family dropdown can actually show a selection for,
-    without webfont import: the SDK's fixed system default plus its Crestron-bundled
-    custom fonts (`component-context.json`'s `global.defaults.attributes`,
-    `UiEditorFont` + `CrestronCustomFont` -- see module docstring for the client-side
-    trace that pins these as the two non-webfont sources `getAllFonts` draws from).
+
+def documents_path() -> Path:
+    """The equivalent of .NET's `Environment.GetFolderPath(SpecialFolder.MyDocuments)`,
+    which is what `EnvironmentUtility.cs` resolves `myDocumentsPath` from on both
+    platforms (same call, same "Crestron"/"Crestron Construct" suffix appended
+    afterward for each -- see `global_webfonts_path`'s docstring).
+
+    Windows: the registry value Explorer itself uses, `HKCU\\Software\\Microsoft\\
+    Windows\\CurrentVersion\\Explorer\\User Shell Folders\\Personal`. NOT simply
+    `~/Documents` -- confirmed on this machine, where OneDrive's "back up your Documents
+    folder" redirects that registry value, and Construct's own log
+    (`EnvironmentUtility solutionsPath: ...`) shows it resolving the redirected path,
+    not the plain profile folder. Falls back to `~/Documents` if the registry is
+    unreadable (a fresh/non-Windows-profile edge case, not expected in practice).
+
+    macOS: `~/Documents` -- Apple's `NSDocumentDirectory`, which is what .NET's
+    `SpecialFolder.MyDocuments` maps to there; no OneDrive-style redirection concept
+    exists on that platform.
+    """
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                value, _ = winreg.QueryValueEx(key, "Personal")
+            return Path(os.path.expandvars(value))
+        except OSError:
+            pass
+    return Path.home() / "Documents"
+
+
+def global_webfonts_path() -> Path:
+    """Construct's own, machine-wide webfont library: `<Documents>/Crestron/
+    Crestron Construct/Webfonts`. Fonts here are APPLICATION-scoped, not tied to any one
+    project -- confirmed both from source and from this machine's real folder contents.
+
+    Traced in `C:\\Git\\CCIDE\\Crestron.IDE\\AppHost\\Crestron.IDE\\Common\\Utils\\
+    EnvironmentUtility.cs::CombineStoragePaths`: `solutionsPath = myDocumentsPath +
+    "/Solutions"` (same `myDocumentsPath` on both platforms: `Environment.
+    GetFolderPath(SpecialFolder.MyDocuments)/Crestron/Crestron Construct`), and in
+    `PageDesigner.Server\\Commands\\Handler\\StylingAssets\\ThemeAndFontUpdateHandler.cs`:
+    `webFontDirectory = Path.Combine(Path.GetDirectoryName(_appEnvironment.
+    SolutionsPath), _uiEditorSettings.WebFonts)` -- i.e. `Solutions`'s own SIBLING
+    folder, named `"Webfonts"` per `uieditor.appsettings.json`.
+
+    Confirmed against this machine's real, running Construct install: its own log
+    (`AppStorage\\Logs\\jsonlog_*.json`, `"EnvironmentUtility solutionsPath: ..."`) shows
+    `solutionsPath` resolving to `.../Crestron/Crestron Construct/Solutions`, and the
+    computed sibling `.../Crestron Construct/Webfonts` exists on disk with real font
+    files in it -- including `Stylish Comic.ttf`.
+    """
+    return documents_path() / "Crestron" / "Crestron Construct" / "Webfonts"
+
+
+def project_webfonts_path(cuip_path) -> Path:
+    """A project's OWN `webfonts/` subfolder, sibling of `assets/`/`languages/` --
+    named in `ProjectArchiveHelper.cs` ("Project 'webfonts' folder"). On archive/export,
+    Construct copies any font here into the global library if it is not already there;
+    for our purposes it is simply a SECOND place a font name can legitimately come from.
+    """
+    return Path(cuip_path).parent / "webfonts"
+
+
+def webfont_names(*directories) -> set[str]:
+    """Font family names available from webfont files in `directories` (any that do not
+    exist are skipped, not an error -- most projects have no local `webfonts/` folder at
+    all). A file's font family is its name without extension, matching
+    `ThemeAndFontUpdateHandler.cs`'s own grouping (`GroupBy(f =>
+    Path.GetFileNameWithoutExtension(f))`), filtered to `VALID_WEBFONT_EXTENSIONS`.
+    """
+    names: set[str] = set()
+    for directory in directories:
+        directory = Path(directory)
+        if not directory.is_dir():
+            continue
+        for file in directory.iterdir():
+            if file.suffix.lower() in VALID_WEBFONT_EXTENSIONS:
+                names.add(file.stem)
+    return names
+
+
+def available_fonts(sdk: UiSdk, *webfont_directories) -> list[str]:
+    """Every font a component's Font Family dropdown can actually show a selection for:
+    the SDK's fixed system default and Crestron-bundled custom fonts
+    (`component-context.json`'s `global.defaults.attributes`, `UiEditorFont` +
+    `CrestronCustomFont` -- see module docstring for the client-side trace pinning these
+    as two of `getAllFonts`'s three sources), plus the name of every webfont file found
+    in `webfont_directories` (the third source, `editor.CustomWebFonts` -- typically
+    `global_webfonts_path()` and/or `project_webfonts_path(cuip_path)`).
     """
     attributes = sdk.component_context["global"]["defaults"]["attributes"]
-    return [attributes["UiEditorFont"], *attributes.get("CrestronCustomFont", [])]
+    sdk_fonts = [attributes["UiEditorFont"], *attributes.get("CrestronCustomFont", [])]
+    return sdk_fonts + sorted(webfont_names(*webfont_directories) - set(sdk_fonts))
 
 #: Same section-splitting convention as project.py::read_cuip / reflow.py's own copy --
 #: kept local per this project's precedent of each writer owning its small section
@@ -148,17 +250,17 @@ def replace_font_in_text(text: str, new_font: str) -> tuple[str, int]:
     return text, n1 + n2
 
 
-def _validate_font(sdk: UiSdk, new_font: str) -> None:
-    valid = available_fonts(sdk)
+def _validate_font(sdk: UiSdk, new_font: str, *webfont_directories) -> None:
+    valid = available_fonts(sdk, *webfont_directories)
     if new_font not in valid:
         raise ValueError(
             f"{new_font!r} is not selectable in the Font Family dropdown -- it is "
-            f"neither the SDK's system default nor one of its Crestron-bundled fonts, "
-            f"and webfont import is not built yet (see fonts.py's module docstring). "
-            f"Valid choices for {sdk.version}: {', '.join(valid)}")
+            f"not the SDK's system default, not one of its Crestron-bundled fonts, and "
+            f"not a webfont found in {', '.join(str(d) for d in webfont_directories) or '(no folders checked)'}. "
+            f"Valid choices: {', '.join(valid)}")
 
 
-def set_page_font(path: Path, new_font: str, sdk: UiSdk) -> int:
+def set_page_font(path: Path, new_font: str, sdk: UiSdk, *webfont_directories) -> int:
     """Rewrite one .cuig/.cuiw's Html and Css sections (never FileMetadata or
     PageAttributes' non-attribute parts) to use `new_font`. Returns the replacement
     count; 0 means the file mentioned no font at all and was left untouched on disk
@@ -167,10 +269,16 @@ def set_page_font(path: Path, new_font: str, sdk: UiSdk) -> int:
     PageAttributes IS touched -- component elements' `ccid_ActiveFont` lives in its
     `[Elements.Attributes]` tables, mirroring the Html view (see replace_font_in_text).
 
-    Raises ValueError if `new_font` is not a selectable choice (see `available_fonts`)
-    -- writing it anyway would produce a Font Family field with nothing to show.
+    `webfont_directories`: folders to additionally accept a font name from (see
+    `available_fonts`) -- typically `global_webfonts_path()` and/or
+    `project_webfonts_path(cuip_path)`. None by default: a bare page file, called
+    directly rather than through `set_project_font`, is not assumed to belong to any
+    particular project.
+
+    Raises ValueError if `new_font` is not a selectable choice -- writing it anyway
+    would produce a Font Family field with nothing to show.
     """
-    _validate_font(sdk, new_font)
+    _validate_font(sdk, new_font, *webfont_directories)
     preamble, sections = _read_sections(path)
     total = 0
     new_sections = []
@@ -192,6 +300,13 @@ def set_project_font(cuip_path: Path, new_font: str, sdk: UiSdk) -> dict[str, in
     file actually touched (the `.cuip` itself keyed as its own filename, count 1 if the
     attribute changed, 0 if it already held `new_font`).
 
+    `new_font` may be the SDK's system default, one of its Crestron-bundled fonts, OR
+    the name of any webfont file found in Construct's global font library
+    (`global_webfonts_path()`) or this project's own `webfonts/` folder
+    (`project_webfonts_path`) -- e.g. "please replace the font everywhere with Stylish
+    Comic that is in my library" resolves against the global folder, matching how a user
+    picking from the real Font Family dropdown would see it.
+
     Raises ValueError if `new_font` is not a selectable choice -- see `set_page_font`;
     checked ONCE up front so a partially-applied project (the `.cuip` changed but only
     some pages) can never happen.
@@ -203,7 +318,8 @@ def set_project_font(cuip_path: Path, new_font: str, sdk: UiSdk) -> dict[str, in
     marks unconditionally on every write, which is the right default for component
     changes and the wrong one for this.
     """
-    _validate_font(sdk, new_font)
+    webfont_directories = (global_webfonts_path(), project_webfonts_path(cuip_path))
+    _validate_font(sdk, new_font, *webfont_directories)
 
     attrs, device_resolution_source, metadata = read_cuip(cuip_path)
     changed = dict(attrs).get("DefaultFontFamily") != new_font
@@ -213,7 +329,7 @@ def set_project_font(cuip_path: Path, new_font: str, sdk: UiSdk) -> dict[str, in
 
     results: dict[str, int] = {cuip_path.name: 1 if changed else 0}
     for page in sorted(cuip_path.parent.glob("*.cuig")) + sorted(cuip_path.parent.glob("*.cuiw")):
-        results[page.name] = set_page_font(page, new_font, sdk)
+        results[page.name] = set_page_font(page, new_font, sdk, *webfont_directories)
     return results
 
 
