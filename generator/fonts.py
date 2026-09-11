@@ -184,6 +184,86 @@ def available_fonts(sdk: UiSdk, *webfont_directories) -> list[str]:
     sdk_fonts = [attributes["UiEditorFont"], *attributes.get("CrestronCustomFont", [])]
     return sdk_fonts + sorted(webfont_names(*webfont_directories) - set(sdk_fonts))
 
+
+#: `App.Common.Constants.cs::AssetNameValidationRegex`, confirmed against
+#: `CommonThemeAndFontHelper.cs::InvalidFontCharacter`, which is what actually gates a
+#: font's filename. Must start with a letter; the rest is letters/digits/spaces/
+#: underscores/hyphens. Documented in docs/ConstructUISkill_FontImport.md.
+FONT_FAMILY_NAME_RE = re.compile(r"(^[a-zA-Z\s]+[a-zA-Z]|^[a-zA-Z]+[a-zA-Z0-9 _-])[a-zA-Z0-9-_ ]*$")
+
+#: `PageDesigner.Common\Constants.cs::WebFontConstants.MinLength/MaxLength`.
+FONT_FAMILY_NAME_MIN_LENGTH = 2
+FONT_FAMILY_NAME_MAX_LENGTH = 31
+
+
+def validate_font_family_name(name: str) -> None:
+    """Raises ValueError if `name` cannot be a webfont's filename (and so its exposed
+    Font Family name -- see `import_font_file`'s docstring for why filename IS the
+    name). Both the character rule and the length bound come from Construct's own
+    validation, not an assumption -- see `FONT_FAMILY_NAME_RE`."""
+    if not (FONT_FAMILY_NAME_MIN_LENGTH <= len(name) <= FONT_FAMILY_NAME_MAX_LENGTH):
+        raise ValueError(
+            f"{name!r} is {len(name)} characters; a font family name must be "
+            f"{FONT_FAMILY_NAME_MIN_LENGTH}-{FONT_FAMILY_NAME_MAX_LENGTH}")
+    if not FONT_FAMILY_NAME_RE.match(name):
+        raise ValueError(
+            f"{name!r} is not a valid font family name -- it must start with a letter "
+            f"and contain only letters, digits, spaces, underscores and hyphens")
+
+
+def sanitize_font_family_name(name: str) -> str:
+    """Best-effort repair of a name that fails `validate_font_family_name`, rather than
+    only ever rejecting one outright -- most real font names need no change at all, and
+    this covers docs/ConstructUISkill_FontImport.md's "the filename must be modified
+    before import if it starts with an invalid character" case automatically. Strips
+    anything outside [a-zA-Z0-9 _-], strips leading characters until the name starts
+    with a letter, then trims to the length bound. Raises ValueError only if nothing
+    resembling a name survives (e.g. the input was entirely digits/punctuation).
+    """
+    cleaned = re.sub(r"[^a-zA-Z0-9 _-]", "", name)
+    cleaned = re.sub(r"^[^a-zA-Z]+", "", cleaned)
+    cleaned = cleaned[:FONT_FAMILY_NAME_MAX_LENGTH].rstrip()
+    if len(cleaned) < FONT_FAMILY_NAME_MIN_LENGTH:
+        raise ValueError(f"{name!r} has no usable font family name after sanitizing")
+    validate_font_family_name(cleaned)
+    return cleaned
+
+
+def import_font_file(data: bytes, family_name: str, *, target_dir=None,
+                     extension: str = ".ttf") -> Path:
+    """Install a font FILE (already-downloaded bytes) into a webfont folder, named
+    after `family_name` -- validated first, never sanitized silently here (call
+    `sanitize_font_family_name` yourself if you want that; a caller installing a
+    specific, deliberately-chosen name should not have it silently altered).
+
+    The filename IS what Construct exposes as the Font Family name (see the module
+    docstring and `webfont_names`'s own note) -- NOT any name embedded in the font
+    file itself, and not whatever filename the source (a download, a user's own file)
+    happened to carry. So this always writes `<family_name><extension>`, discarding
+    any original filename entirely.
+
+    `target_dir` defaults to `global_webfonts_path()` -- the shared, application-level
+    library every project's Font Family dropdown draws from, matching how a user
+    describes "a font in my library". Pass `project_webfonts_path(cuip_path)` for a
+    project-local copy instead.
+
+    Raises ValueError for an invalid family name or unsupported extension (see
+    `VALID_WEBFONT_EXTENSIONS`) -- checked BEFORE writing anything, so a rejected
+    import never leaves a partial file behind.
+    """
+    validate_font_family_name(family_name)
+    extension = extension.lower()
+    if extension not in VALID_WEBFONT_EXTENSIONS:
+        raise ValueError(f"{extension!r} is not a supported webfont extension -- "
+                         f"valid: {', '.join(VALID_WEBFONT_EXTENSIONS)}")
+
+    directory = Path(target_dir) if target_dir is not None else global_webfonts_path()
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / f"{family_name}{extension}"
+    destination.write_bytes(data)
+    return destination
+
+
 #: Same section-splitting convention as project.py::read_cuip / reflow.py's own copy --
 #: kept local per this project's precedent of each writer owning its small section
 #: reader rather than depending on harness/compare.py.

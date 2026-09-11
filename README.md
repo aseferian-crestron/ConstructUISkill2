@@ -9,6 +9,59 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 8 (fonts): "go find me a font" -- search + download from Google Fonts, and
+install any font file into the library -- BUILT, verified against the real Google
+Fonts service, AWAITING A LIVE CONSTRUCT CHECK.** Follows the same pattern as the
+earlier "use a library font" slice: brainstormed as bounded, one clarifying round on
+scope (local file vs. URL vs. real web search -- the user corrected this: "when
+someone says go find me a font the expectation is that you go out to teh web and
+download the file"), a second round on which API (an undocumented but keyless
+endpoint vs. the official Developer API requiring a Google API key -- keyless chosen).
+
+**New `generator/google_fonts.py`**, the only module in the generator that makes a
+network call, deliberately independent of `fonts.py` (neither imports the other --
+confirmed by a test that composes them from outside rather than adding a
+cross-dependency): `search_google_fonts(query)` matches against the real, live
+catalog (`fonts.google.com/metadata/fonts`, 1,946 real family names, exact match
+ranked first), `download_google_font_file(family_name)` pulls the actual `.ttf` bytes
+from Google's own CDN via the documented `css2` endpoint. Both verified live, not
+mocked -- "Roboto Slab" downloads as 101,564 real bytes with valid TrueType magic
+(`\x00\x01\x00\x00`); a nonexistent family raises `ValueError` naming it, not a
+silent empty/garbage result.
+
+**New in `fonts.py`:** `validate_font_family_name`/`sanitize_font_family_name` (the
+spec's exact regex + 2-31 length bound, source-cited in
+`docs/ConstructUISkill_FontImport.md`) and `import_font_file(data, family_name,
+target_dir=...)`, which writes `<family_name><ext>` -- the filename, not any name
+embedded in the font file or carried in from a download, since that filename IS what
+Construct exposes (the spec's own §2 finding). Defaults to `global_webfonts_path()`;
+`project_webfonts_path()` also usable. Validates before writing, so a rejected import
+never leaves a partial file.
+
+Every test runs against real infrastructure -- the live Google Fonts endpoints, and
+`fonts.webfont_names()`/`available_fonts()` (built for the earlier slice) -- writing
+only to scratch directories, explicitly asserting the real, global webfont library is
+never touched by a test run.
+
+Full 48-file suite green (one unrelated, pre-existing failure noted below, not
+touched: `phase5_smoke_test.py`'s hardcoded resolution-catalog count is now stale --
+Construct's own catalog on this machine gained a 75th device between sessions,
+unconnected to anything in this phase).
+
+**Awaiting the live check:** actually use the skill/generator to search for and
+install a real font, then confirm -- after closing and reopening Construct (per the
+user's own live-tested finding, recorded in the spec) -- that it appears as a
+selectable Font Family.
+
+**Also noticed, not investigated:** `docs/ConstructUISkill_FontImport.md` reverted
+to its original, pre-correction content sometime during this build (the sourced
+findings from the last three turns -- the Webfonts path formula, the regex, the
+restart-requirement correction -- are no longer in the working file). Those findings
+are still fully preserved in git history (commits `48ea867`, `02e5a5a`, `8b08719`)
+and are what this build actually implements against; only the on-disk copy of the
+doc changed. Not acted on without knowing why -- flagging for the user rather than
+guessing whether it was intentional.
+
 **Phase 8 (fonts): global swap now works for fonts already in Construct's own font
 library, not only the 5 hardcoded SDK names -- BUILT, applied to the live project,
 CONFIRMED IN CONSTRUCT 2026-09-11: every component is using Stylish Comic.** The
