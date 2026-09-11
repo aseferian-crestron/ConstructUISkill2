@@ -9,6 +9,36 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 8 (fonts): Fontsource added as a second search source -- restricted to the
+120 fonts genuinely NOT already reachable via Google Fonts.** Measuring Fontsource's
+real catalog (2,100 fonts) found 1,980 marked `type: "google"` -- literal duplicates
+of the same fonts `google_fonts.py` already searches, re-served through a different
+CDN. The user's own call once that was measured: *"if they are duplicates of Google
+Fonts no reason to add this."* `fontsource.py::search_fontsource` filters to exactly
+the 120 `type: "other"` entries (real fonts, real open licenses -- OFL-1.1,
+Apache-2.0, CC0-1.0 all seen), so a query never returns two different "sources" for
+the same actual font, and searching a common name like "Roboto"/"Open Sans" correctly
+finds nothing here (that is `google_fonts.py`'s job).
+
+Same shape and independence rule as `google_fonts.py` (neither of the three modules
+imports either of the other two): `search_fontsource(query)` against the real,
+keyless `api.fontsource.org/v1/fonts` catalog; `download_fontsource_file(family_name,
+weight=..., style=..., subset=...)` against jsDelivr's public CDN
+(`cdn.jsdelivr.net/fontsource/fonts/...`), validating the requested weight/style/
+subset against what the font actually publishes BEFORE requesting anything, rather
+than discovering a bad combination via a failed download. Verified live: "Adwaita
+Sans" downloads as 513,028 real bytes with valid TrueType magic; downloading
+"Roboto" through this module is refused (Google-sourced); an end-to-end test installs
+a real Fontsource-unique font through the exact same `fonts.py` pipeline Google Fonts
+uses and confirms it validates as selectable.
+
+Full 50-file suite green except the one pre-existing, unrelated failure noted in the
+entry below (the stale 74-vs-75 resolution-catalog count).
+
+**Awaiting a live check**, same as the Google Fonts slice: search for and install a
+real Fontsource-unique font, close and reopen Construct, confirm it appears as a
+selectable Font Family.
+
 **Phase 8 (fonts): "go find me a font" -- search + download from Google Fonts, and
 install any font file into the library -- BUILT, verified against the real Google
 Fonts service, AWAITING A LIVE CONSTRUCT CHECK.** Follows the same pattern as the
