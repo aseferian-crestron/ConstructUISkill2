@@ -126,6 +126,23 @@ def build_position_css(
 # (`#it8l{...}`) and spaced (`#it8l { ... }`) CSS, but a descendant selector such as
 # `#id .ch5-button :not(i){...}` has SELECTOR text between the id and the brace and must
 # still not match -- it carries no element position (see parse_position_rules).
+def _px(value: str | None) -> int | None:
+    """A CSS length as an int, or None when it is absent or not a number.
+
+    Real pages carry `width:auto` (a component that has never been given an explicit
+    size), which int() cannot parse. Returning None for those reuses the meaning this
+    dict already gives a missing width -- "not stated here" -- rather than raising, which
+    is what an earlier version did: one `auto` in a page aborted the parse of every
+    element in it.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value.strip().removesuffix("px"))
+    except ValueError:
+        return None
+
+
 _FLAT_RULE_RE = re.compile(r"#(?P<id>[A-Za-z0-9_]+)\s*\{(?P<decls>[^{}]*)\}")
 
 
@@ -226,12 +243,16 @@ def parse_position_rules(block_css: str) -> dict[str, dict]:
         if "left" not in decls or "top" not in decls:
             continue
         extra_vars = {k: v for k, v in decls.items() if k.startswith("--")}
+        left, top = _px(decls.get("left")), _px(decls.get("top"))
+        if left is None or top is None:
+            # A rule whose position is non-numeric (`left:auto`) positions nothing.
+            continue
         elements[m.group("id")] = {
-            "left": int(decls["left"].rstrip("px")),
-            "top": int(decls["top"].rstrip("px")),
-            "width": int(decls["width"].rstrip("px")) if "width" in decls else None,
-            "height": int(decls["height"].rstrip("px")) if "height" in decls else None,
-            "z_index": int(decls["z-index"]) if "z-index" in decls else None,
+            "left": left,
+            "top": top,
+            "width": _px(decls.get("width")),
+            "height": _px(decls.get("height")),
+            "z_index": _px(decls.get("z-index")),
             "extra_vars": extra_vars,
         }
     return elements

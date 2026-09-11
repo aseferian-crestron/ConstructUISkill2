@@ -9,6 +9,44 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Showcase pages generated for every component type -- AWAITING THE USER'S CHECK IN
+CONSTRUCT.** `harness/build_component_showcase.py` writes six pages into
+`GenTestProject2`, carrying all 21 profiled types built entirely by
+`generator/component.py`:
+
+| page | components |
+|---|---|
+| AllComponents - Buttons | tab button, button list, toggle, button (13 nested children) |
+| AllComponents - Keypads | keypad, dpad (18 nested children) |
+| AllComponents - Gauges | segmented, signal level, wifi signal level, slider |
+| AllComponents - Text | colour picker, text input, qrcode, text, datetime, colour chip |
+| AllComponents - Media | media player (800x600, fills its page) |
+| AllComponents - Media 2 | widget list, video switcher, video, animation (7 children) |
+
+Sizes are taken from each type's reference instance rather than invented, so components
+appear at realistic proportions; layout is a shelf pack into the primary 1280x800 that
+spills to another page when a row will not fit.
+
+Verified on disk before handing over: every page round-trips byte-identically, all 21
+types present, every component inside the 1280x800 panel, zero overlaps, all 38 nested
+children written, and the `.cuip` marked stale (by `write_cuig` itself now).
+
+**This is the check the reference diff cannot make.** Matching a Construct-authored
+file's attributes is not the same as Construct rendering the result -- the contract work
+already showed live checking catching what static diffing does not.
+
+**One more parser bug found while doing it**, same family as the spaced-CSS one: a real
+page carries `width:auto` on a component never given an explicit size, and
+`parse_position_rules` called `int()` on it and raised -- aborting the parse of EVERY
+element in that page, not just the one rule. A non-numeric length now means "not
+stated", which is the meaning a missing width already had; a rule with no numeric
+POSITION is skipped entirely. Full 41-file suite green.
+
+**Next / open threads:** (1) the live check of these pages; (2) the `showtickvalues`
+slider delta, the one difference from the reference not explainable as instance state;
+(3) `FALLBACK_MIN_SIZE_PX = 35` validation; (4) themes (7), fonts (8), languages (10),
+hard buttons (11); (5) the skill layer.
+
 **Container component types DONE -- every CH5 component type the reference project
 contains now generates, parents and nested children alike.** Together with the flat
 slice, `generator/component.py` covers all 20 profiled types.

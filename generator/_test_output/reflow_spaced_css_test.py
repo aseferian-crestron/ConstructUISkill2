@@ -58,6 +58,20 @@ assert layout.parse_position_rules(with_vars)["ixo7"]["extra_vars"] == {
     "--ch5-dpad--regular-size": "118px"}, layout.parse_position_rules(with_vars)
 print("custom properties parsed from the spaced form too: OK")
 
+# --- non-numeric lengths do not abort the parse ---------------------------------------
+# Real pages carry `width:auto` on components never given an explicit size. int() cannot
+# parse that, and an earlier version raised -- aborting every element in the page, not
+# just the one rule. `auto` width/height now means "not stated", the same as absent.
+auto_size = layout.parse_position_rules("#a{left:1px;top:2px;width:auto;height:auto;}")
+assert auto_size == {"a": {"left": 1, "top": 2, "width": None, "height": None,
+                           "z_index": None, "extra_vars": {}}}, auto_size
+# ...but a rule with no numeric POSITION positions nothing, so it is skipped entirely.
+assert layout.parse_position_rules("#b{left:auto;top:auto;width:10px;}") == {}
+# One bad rule must not take the good ones down with it.
+mixed = layout.parse_position_rules("#a{left:auto;top:auto;}#b{left:5px;top:6px;width:10px;}")
+assert set(mixed) == {"b"}, mixed
+print("non-numeric lengths handled without aborting the parse: OK")
+
 # --- @media block location tolerates the space before the brace -----------------------
 query = "(max-width: 99999px)"
 for css in (
