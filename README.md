@@ -9,6 +9,35 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Sizing, third correction: aspect-locked types.** The user found the adorner mismatch
+on the keypad while the dpad looked right. Both are aspect-locked -- their rendered size
+is driven by a SINGLE axis, which `reflow.py::_is_aspect_locked` already had a test for
+-- so their height follows their width and an explicit one is a guess. The dpad only
+looked right because the showcase happened to hand it a square; a non-square request
+would have rendered a square component inside a rectangular adorner.
+
+- A **keypad** now writes width and no height, like the toggle.
+- A **dpad** squares a non-square request: every real instance is square (118x118,
+  221x221) and Construct never lets its box go otherwise. reflow.py does the same when
+  fitting one to a new resolution.
+- Fixed-size detection now reads `componentProperties.canResize`, the SDK's own
+  published flag, instead of inferring it from an empty render-size mapping. It names
+  exactly the four the user identified (animation, segmented, signal level, wifi) --
+  same answer, from the authority rather than a proxy.
+
+**Confirmed good in Construct so far:** Buttons, Keypads (dpad), Gauges. Keypad pending
+re-check after this fix.
+
+**The three aspect-locked types not yet looked at are the likely next reports**, since
+they are the same class as the keypad: `ch5-textinput`, `ch5-video`, `ch5-video-switcher`
+all currently get an explicit height. They were left alone deliberately -- their
+reference instances DO carry a height and nothing has shown them broken, so changing
+them on suspicion risks breaking what works. `ch5-textinput` is the most suspect: its
+render-size variable is `--ch5-textinput--small-width`, preset-named unlike every other
+type's, and its reference instance uses `size="small"` with no variable at all.
+
+Full 42-file suite green; showcase regenerated.
+
 **Sizing corrected again, this time for the fixed-size types.** The user checked the
 Gauges page and found the same adorner mismatch on the segmented, signal-level and wifi
 gauges, adding the fact that settles it: **"signal level and wifi only support fixed
