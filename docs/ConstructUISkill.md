@@ -48,7 +48,7 @@ Solution Files
 
 UI Project Files
 * .cuip: Main project data file.
-* .cuib: Hard button data file.
+* .cuib: Hard button data file. **Out of scope** (user, 2026-09-11: not needed in the skill).
 * .cuic: Communication contract file
 * .cuig: Page data file.
 * .cuiw: Widget data file.

@@ -9,6 +9,18 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Hard buttons (`.cuib`) removed from scope, at the user's direction: "not needed in
+the skill."** Previously Phase 11, listed "Mapped" in the architecture index and
+recurring in every "remaining phases" list since. Descoped rather than deprioritized
+-- `docs/architecture/01-index.md`'s row now says so explicitly instead of implying
+it is still pending, and `docs/ConstructUISkill.md`'s `.cuib` line is marked
+out of scope. No code had been written against it, so nothing to remove there.
+Historical README log entries that mention it (many -- it was on the standard
+"remaining phases" list for a while) are left as-is: they are an accurate record of
+the plan AT THE TIME they were written, not something to retroactively rewrite.
+Current/forward-looking phase counts from here on: themes (7), languages (10), and
+the skill layer.
+
 **Phase 8 (fonts): Fontsource added as a second search source -- restricted to the
 120 fonts genuinely NOT already reachable via Google Fonts.** Measuring Fontsource's
 real catalog (2,100 fonts) found 1,980 marked `type: "google"` -- literal duplicates
