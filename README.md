@@ -9,6 +9,58 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Component builders: all 15 flat types now reproduce their reference instance --
+key-for-key and value-for-value.** The source read resolved both open questions, and
+both answers were things no amount of further inference would have reached.
+
+**1. The sync block is not general.** `ccid_sync_*` was being generated for any tag with
+sass-schema sectors, which is 21 of them -- producing 72 attributes on a datetime whose
+real instance has 17. In the entire reference project **only `ch5-button` carries a
+single sync attribute**. Theme mode is not the gate (a theme-mode button still has 78 of
+them); `setSyncData` lives in `commonButtonTraitsMixins`, the button family's own mixin.
+`SYNC_TAGS = ("ch5-button",)`, and the test asserts the generator and the reference agree
+about which types carry sync, in both directions.
+
+**2. `defaults.attributes` and the trait defaults are BOTH written, not either/or.** The
+base layer short-circuited to the context's `defaults.attributes` whenever a tag declared
+them. That is exactly backwards for the affected types: a slider declares 10 context
+defaults and STILL gets `min`/`max`/`step` from the trait pass, a signal gauge gets
+`numberofbars`/`value`. Merging the two sources (context defaults first, winning on
+value) took the exact-match count from 3/15 to 15/15.
+
+Two supporting source findings, both from `MetaDataResolver.ts`: `supportsAttribute`
+builds a tag's trait set from its own `attributeProperties` UNION `global`'s -- the same
+own-then-global pattern the contract lookup needed -- and `:214-229` overrides some
+defaults in code rather than reading schema.json (a slider's `min`/`max`/`step` are null
+in the schema, hardcoded there).
+
+**`ch5-button` delegates to `ch5_button.py`** rather than going through the generic path:
+it already has a builder confirmed attribute-for-attribute in Phase 4, including the
+icon/image/checkbox variants the generic path knows nothing about.
+
+**`component_flat_types_test.py` diffs every type against the reference on every run** --
+keys and 256 attribute values -- rather than restating expectations by hand. Differences
+are recorded per type with a reason and are themselves checked: a recorded delta that
+stops being true fails the test, so the notes cannot rot. The recorded ones are
+user-typed content (a qrcode's text, a toggle's labels), state flags Construct sets when
+the user acts (`demoMode`, `ccid_customSizeSet`, chosen sizes), and the universal `oldID`
+-- which every reference instance has because it records a duplicated component's
+previous id, and a fresh component has none.
+
+**One suspected defect, recorded not hidden:** we emit `showtickvalues` on a slider from
+its non-null schema default and the reference slider does not carry it. The slider mixin
+is the likeliest place it is dropped. It is the single delta here that is not explainable
+as instance state.
+
+Full 40-file suite green.
+
+**Next:** container types -- ch5-dpad, ch5-keypad, ch5-button-list, ch5-tab-button,
+ch5-video-switcher, ch5-subpage-reference-list -- which need a nested-child builder
+(`ch5-dpad-button`, `ch5-keypad-button`, individual buttons, sources/screens). They
+currently raise `NotImplementedError` rather than emit a childless shell that would look
+right and behave wrong. Then: `FALLBACK_MIN_SIZE_PX = 35` validation, themes (7), fonts
+(8), languages (10), hard buttons (11), and the skill layer.
+
 **Component builders: pipeline built, layer 1 NOT yet correct -- WIP, do not use.**
 `generator/component.py` generalises Phase 4's button into `build_component(sdk, tag,
 ...)` for the flat (childless) types. Four of its five layers are right; the base

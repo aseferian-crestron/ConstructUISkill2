@@ -101,6 +101,16 @@ PROFILES: dict[str, ComponentProfile] = {
 }
 
 
+#: Tags whose instances carry the `ccid_sync_*` Advanced Style Manager block. ONLY
+#: ch5-button does, across the entire reference project -- sass-schema.json defines
+#: sectors for 20 more types, but no real instance of any of them carries a single sync
+#: attribute, so generating from the sass schema alone over-produced badly (72 attributes
+#: on a datetime whose real instance has 17). Theme mode is NOT the gate: a theme-mode
+#: button still carries 78 of them. `setSyncData` lives in commonButtonTraitsMixins, the
+#: button family's own mixin, which is consistent with what the files show.
+SYNC_TAGS = ("ch5-button",)
+
+
 #: Defaults Construct overrides in code rather than reading from schema.json --
 #: `pd-metadata-resolver\MetaDataResolver.ts:214-229`, which rewrites these while
 #: building the tag's traits. Without them a generated slider has no min/max/step, since
@@ -127,8 +137,6 @@ def base_attributes(sdk: UiSdk, tag_name: str) -> list[tuple[str, str]]:
     """
     context = sdk.component_context.get(tag_name) or {}
     defaults = (context.get("defaults") or {}).get("attributes") or {}
-    if defaults:
-        return list(defaults.items())
 
     # Trait set = the tag's own attributeProperties UNION global's, which is exactly
     # MetaDataResolver.ts::supportsAttribute ("global" checked first, then the tag) --
@@ -138,9 +146,17 @@ def base_attributes(sdk: UiSdk, tag_name: str) -> list[tuple[str, str]]:
     global_traits = set((sdk.component_context.get("global") or {}).get("attributeProperties") or {})
     traits = set(context.get("attributeProperties") or {}) | global_traits
 
-    attributes: list[tuple[str, str]] = []
+    # `defaults.attributes` and the trait defaults are BOTH written, not either/or. An
+    # earlier version returned the context defaults alone when a tag declared them, which
+    # cost a slider its min/max/step and a signal gauge its numberofbars/value: those come
+    # from the trait pass, and the tags that miss them are precisely the ones that DO
+    # declare defaults.attributes. Context defaults come first and win on value, matching
+    # the key order of every real instance checked.
+    attributes: list[tuple[str, str]] = list(defaults.items())
     for attribute in _schema_element(sdk, tag_name)["attributes"]:
         name = attribute["name"]
+        if name in defaults:
+            continue
         if name not in traits and f"pd-{name}" not in traits:
             continue
         default = TRAIT_DEFAULT_OVERRIDES.get(tag_name, {}).get(name, attribute.get("default"))
@@ -169,6 +185,17 @@ def build_component_attributes(
     per-instance values a caller actually chose (a slider's `value`, a gauge's
     `numberofsegments`).
     """
+    if tag_name == "ch5-button":
+        # The button already has a builder confirmed attribute-for-attribute against the
+        # reference (Phase 4), including the icon/image/checkbox variants this generic
+        # path knows nothing about. Delegate rather than reimplement it worse.
+        from ch5_button import build_default_button_attributes
+
+        return build_default_button_attributes(
+            sdk, component_name=component_name, element_id=element_id,
+            devices_visited=devices_visited, active_font=active_font, label=label,
+            **({} if contract_signals is None else {"contract_signals": contract_signals}),
+        )
     if tag_name in CONTAINER_TAGS:
         raise NotImplementedError(
             f"{tag_name} instances carry nested child components (see CONTAINER_TAGS); "
@@ -198,7 +225,8 @@ def build_component_attributes(
     _set(attributes, "ccid_ComponentType", profile.component_type)
     _set(attributes, "devicesVisited", devices_visited)
 
-    attributes.extend(build_sync_attributes(sdk, tag_name, dict(attributes)))
+    if tag_name in SYNC_TAGS:
+        attributes.extend(build_sync_attributes(sdk, tag_name, dict(attributes)))
 
     signals = (contracts.default_signals_for(tag_name)
                if contract_signals is None else contract_signals)
