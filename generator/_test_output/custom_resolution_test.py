@@ -73,10 +73,14 @@ cuip = OUT / "GenTestProject2.cuip"
 
 attrs_before, source_before, _ = read_cuip(cuip)
 ids_before = dict(attrs_before)["DeviceResolutionIds"]
-assert "Custom-" not in ids_before, "the test project must not already have a custom resolution"
+# NOTE 2026-09-11: the live GenTestProject2 now legitimately carries an earlier custom
+# resolution ("Custom Panel", added live this same day) -- this test's own precondition
+# only needs THIS test's own new resolution to not already be present, not that the
+# project has zero custom resolutions at all.
 
 new_custom = devices.to_custom_resolution(width=900, height=600, orientation="landscape",
                                           name="Odd Panel")
+assert new_custom["id"] not in ids_before, "the test's own new resolution id must not already be present"
 warnings = add_resolutions_to_project(cuip, [new_custom])
 print(f"add_resolutions_to_project warnings: {warnings or '(none)'}")
 

@@ -289,6 +289,54 @@ def parse_all_position_rules(css_text: str, query: str) -> dict[str, dict]:
     return elements
 
 
+def update_element_declarations(css_text: str, query: str, element_id: str, declarations: dict[str, str]) -> str:
+    """Merge `declarations` ({css-property-or-var-name: value}) into `element_id`'s own
+    `#id{...}` rule, in place, inside whichever `@media {query}{...}` block actually
+    contains that element (the generator emits ONE block PER ELEMENT even when several
+    share an identical query, per find_media_block_spans' own note -- so this must search
+    every span for `query`, not just take the first). An existing declaration keeps its
+    position and is overwritten; a new one is appended at the end. Re-serialized as
+    `key: value` pairs joined by `"; "` with a single trailing `;` -- the exact shape
+    build_position_css's own base_rule/device_rule strings already produce, so a rule this
+    function has never touched and one it just edited look identical in style.
+
+    Added for generator/style.py's custom-mode style properties (Stage 1, 2026-09-11):
+    those are not resolution-dependent, so they only ever need writing into the catch-all
+    (`(max-width: 99999px)`) block -- normal CSS cascade carries them into every
+    per-resolution device block, which never restates a value identical to the catch-all's
+    own (see this module's own docstring).
+
+    Raises `KeyError` if no block for `query` contains a rule for `element_id` -- asking to
+    style a component that was never actually placed (or whose catch-all rule is missing)
+    is a real caller error, not something to silently paper over.
+    """
+    id_pattern = re.compile(r"#" + re.escape(element_id) + r"\s*\{(?P<decls>[^{}]*)\}")
+    for start, end in find_media_block_spans(css_text, query):
+        block = css_text[start:end]
+        m = id_pattern.search(block)
+        if m is None:
+            continue
+        decl_pairs: list[list[str]] = []
+        for decl in m.group("decls").split(";"):
+            decl = decl.strip()
+            if not decl or ":" not in decl:
+                continue
+            key, _, value = decl.partition(":")
+            decl_pairs.append([key.strip(), value.strip()])
+        by_key = {pair[0]: pair for pair in decl_pairs}
+        for key, value in declarations.items():
+            if key in by_key:
+                by_key[key][1] = value
+            else:
+                new_pair = [key, value]
+                decl_pairs.append(new_pair)
+                by_key[key] = new_pair
+        new_rule = f"#{element_id}{{" + "; ".join(f"{k}: {v}" for k, v in decl_pairs) + ";}"
+        new_block = block[:m.start()] + new_rule + block[m.end():]
+        return css_text[:start] + new_block + css_text[end:]
+    raise KeyError(f"No {query!r} block contains a rule for #{element_id} -- cannot apply style")
+
+
 def build_reflow_block(elements: dict[str, dict], orientation: str, width: int, height: int) -> str:
     """One @media block, one flat #id{} rule per element -- same device-specific shape
     build_position_css already produces (no z-index), generalized to N elements."""

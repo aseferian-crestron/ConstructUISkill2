@@ -9,6 +9,71 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 1: custom-mode component styling (`generator/style.py`,
+new), entered from the "theme my projects" / custom-mode-CSS angle rather than a
+theme-file angle.** User's own framing: *"i want to work on custom mode CSS so you
+can theme my projects."* Brainstormed as bounded (superpowers:brainstorming): the
+mechanism generalizes component.py's own `size_css_vars`, not a new subsystem --
+`component-context.json`'s `classToVariableMapping` schema, already proven correct
+for width/height, turns out to carry the FULL style property set too (background/
+border color+width+style, label color/font-size/font-weight/text-decoration/
+letter-spacing, icon color/font-size/margins, per component type), confirmed
+universal across every type checked (`propertyPattern.customVsThemeHandler ==
+"customThemeSize-pattern"` on ch5-button/toggle/slider/dpad/textinput/tab-button/
+button-list/keypad/animation), not button-specific as an earlier reading of this
+generator's own `component.py::PROFILES` (`vstheme="theme"` default for most
+types) suggested.
+
+I initially asked for a hand-styled reference project to ground this against, the
+way sizing/fonts were grounded -- the user correctly pushed back: *"why do you
+need a sample since every component drops on the canvas in custom mode and
+Construct exposes the CSS properties of every component, dont you just need to
+create a map... i shouldnt have to model anything."* Right call -- the schema
+itself is the complete, authoritative map; no sample was needed to discover it.
+
+**Stage 1 scope** (agreed with the user before building): only properties with a
+real `targetProperty` (a `--ch5-{tag}--...` CSS custom property, same mechanism as
+size) are covered -- this is the actual theming set. A smaller subset with no
+`targetProperty` (e.g. `ch5-text`'s border-radius corners, letter-spacing) needs a
+different, nested-selector placement (see `layout.py`'s `theme_selectors`/
+`customThemeRequiredSelectors` precedent, already used for font-family) --
+deliberately deferred as a named follow-up, not guessed at.
+
+`style_property_catalog(sdk, tag_name)` reads the real per-type catalog straight
+off the schema (no per-tag modeling); `set_component_style(css_text, element_id,
+sdk, tag_name, style_values)` resolves each `(class_name, source_property, value)`
+against it and writes the `--ch5-*` vars into the element's own catch-all `#id{}`
+rule via new `layout.py::update_element_declarations` (merges in place --
+existing declarations, including position/size and any pre-existing style vars,
+keep their position; a re-applied property updates rather than duplicating).
+Style values are not resolution-dependent, so unlike size they're written once,
+in the catch-all block only -- normal CSS cascade carries them into every
+per-resolution device block.
+
+`generator/_test_output/custom_style_test.py` (new) covers the catalog against
+the real ch5-button schema, width/height correctly excluded, a nonexistent
+property raising `KeyError`, applying real values to a real button in a scratch
+copy of GenTestProject2 (pre-existing position/size/size-vars preserved, an
+untouched sibling element completely unaffected, re-applying updates in place
+with no duplicate declaration, the per-resolution device block carries no style
+vars, and the `.cuig` still round-trips section-for-section), and confirms the
+Stage-1 boundary itself (`ch5-text`'s no-`targetProperty` letter-spacing is
+correctly excluded, not silently mishandled). Full suite re-run clean except the
+one known pre-existing unrelated failure (`phase5_smoke_test.py`'s 74-vs-75
+catalog count) -- `custom_resolution_test.py`'s own precondition also needed a
+small update (it now must check only for ITS OWN resolution id being absent,
+not that the live project has zero custom resolutions, since the prior entry
+in this log added one there for real).
+
+Applied live to `C:\Solutions\ClaudeGenTest\GenTestProject2`'s `ButtonVariants.cuig`
+(`ibtnicon`, already `customvstheme="custom"`): dark navy background (#1a2b3c),
+orange 3px border (#ffcc00), white label text. Verified on disk: the new vars are
+present alongside the pre-existing size vars, position/size unchanged, file
+round-trips byte-identical. Awaiting the user's live Construct confirmation.
+Stage 2 (a palette layer sitting on top of these raw properties) and Stage 3 (the
+three requested style-value sources -- chat-described values, extraction from a
+reference project, a design-doc/image source) are next.
+
 **Custom language file support (Phase 10) removed from scope, at the user's
 direction: "we can remove the custom language support from this skill for now as
 well .. i will add that later."** Unlike Hard Buttons, this is a deferral, not a
