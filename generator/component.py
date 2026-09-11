@@ -233,7 +233,32 @@ SQUARE_TAGS = ("ch5-dpad",)
 CONTENT_SIZED_TAGS = ("ch5-subpage-reference-list",)
 
 
-def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool, bool]:
+def _mode(value: str | None) -> bool | str:
+    """A defaults.style value as a write-mode: absent -> False, "auto" -> "auto",
+    anything else -> True (write our own pixel value)."""
+    if value is None:
+        return False
+    return "auto" if value == "auto" else True
+
+
+def default_style_size(sdk: UiSdk, tag_name: str) -> dict[str, str]:
+    """`component-context.json`'s `defaults.style` width/height for a tag -- the size and
+    shape Construct gives a component when you DROP it.
+
+    This is the authority for both questions, and it was overlooked for a long time in
+    favour of reading sizes off the reference project's instances. Those instances have
+    been configured and resized, so they answer a different question: a widget list
+    reads 816px wide there but drops at 200px, which is exactly the "much smaller than
+    yours" the user reported.
+
+    Values are verbatim, including the literal "auto" (a widget list and a video
+    switcher derive their height; a wifi gauge derives both).
+    """
+    style = ((sdk.component_context.get(tag_name) or {}).get("defaults") or {}).get("style") or {}
+    return {k: str(v) for k, v in style.items() if k in ("width", "height")}
+
+
+def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool | str, bool | str]:
     """(write width, write height) for this type's `#id` rule.
 
     Three rules, and every one of them came from a component rendering at a different
@@ -255,10 +280,23 @@ def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool, bool]:
     Everything else -- button, slider, media player, the lists, the colour components --
     lays out to its CSS box and gets both.
     """
-    if not can_resize(sdk, tag_name) or tag_name in CONTENT_SIZED_TAGS:
+    # `defaults.style` first, and it wins outright: it names exactly which dimensions a
+    # dropped component carries and says "auto" for the ones it derives -- including for
+    # ch5-wifi-signal-level-gauge, which is canResize:False yet still carries
+    # `width:auto;height:auto` in every real instance.
+    default_style = default_style_size(sdk, tag_name)
+    if default_style:
+        return (_mode(default_style.get("width")), _mode(default_style.get("height")))
+
+    if not can_resize(sdk, tag_name):
         return False, False
+
+    # Aspect-locked without a defaults.style: the reference instances of ch5-keypad,
+    # ch5-textinput and ch5-video all carry `height: auto` -- they state the height and
+    # state that it is derived. Omitting it entirely (an earlier version of this fix)
+    # is NOT the same thing, and the CSS diff against the reference is what caught it.
     if is_aspect_locked(sdk, tag_name) and tag_name not in SQUARE_TAGS:
-        return True, False
+        return True, "auto"
     return True, True
 
 

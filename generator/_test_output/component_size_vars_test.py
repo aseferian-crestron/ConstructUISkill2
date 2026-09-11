@@ -89,8 +89,13 @@ for tag in sorted(PROFILES):
         # ...and nothing may claim a CSS box it does not render into.
         rule = id_rule(css, "iz9")
         write_width, write_height = writes_css_size(sdk, tag)
-        assert ("width:" in rule) == write_width, (tag, rule)
-        assert ("height:" in rule) == write_height, (tag, rule)
+        for name, mode in (("width", write_width), ("height", write_height)):
+            if mode == "auto":
+                assert f"{name}: auto" in rule, (tag, name, rule)
+            elif mode:
+                assert f"{name}: 150px" in rule, (tag, name, rule)
+            else:
+                assert f"{name}:" not in rule, (tag, name, rule)
 
 assert "ch5-signal-level-gauge" in fixed and "ch5-wifi-signal-level-gauge" in fixed, fixed
 assert "ch5-segmented-gauge" in fixed, fixed
@@ -98,15 +103,18 @@ assert {"ch5-button", "ch5-toggle", "ch5-slider", "ch5-dpad", "ch5-keypad"} <= s
 print(f"{len(customisable)} custom-sizable types carry their variables; "
       f"{len(fixed)} fixed-size types keep their preset: OK")
 
-# The three gauges write NO explicit box at all -- they size themselves.
+# The gauges are never given a PIXEL size -- they size themselves. Two of them state
+# nothing at all; the wifi gauge states `width:auto;height:auto`, which its
+# defaults.style declares and its reference instance carries. Both mean the same thing
+# to CSS, and following the SDK rather than normalising is what keeps the diff clean.
 for tag in ("ch5-segmented-gauge", "ch5-signal-level-gauge", "ch5-wifi-signal-level-gauge"):
     _, css, _ = build_component(sdk, tag, component_name="G", element_id="ig1",
                                 x=5, y=5, width=300, height=200, z_index=1,
                                 resolution=(1280, 800))
     rule = id_rule(css, "ig1")
-    assert "width:" not in rule and "height:" not in rule, f"{tag}: {rule}"
+    assert "300px" not in rule and "200px" not in rule, f"{tag} took a pixel size: {rule}"
     assert "left: 5px" in rule and "top: 5px" in rule, rule
-print("the three gauges are positioned but never given a size: OK")
+print("no gauge takes a pixel size; they position only or state auto: OK")
 
 # --- aspect-locked types do not assert a height they cannot know ---------------------
 # A keypad's height follows its container width, so an explicit one sizes the adorner
@@ -119,32 +127,40 @@ _, keypad_css, _ = build_component(sdk, "ch5-keypad", component_name="K", elemen
                                    x=0, y=0, width=310, height=200, z_index=1,
                                    resolution=(1280, 800))
 keypad_rule = id_rule(keypad_css, "ik1")
-assert "width: 310px" in keypad_rule and "height:" not in keypad_rule, keypad_rule
-print("a keypad writes width and no height: OK")
+assert "width: 310px" in keypad_rule and "height: auto" in keypad_rule, keypad_rule
+print("a keypad states its width and a derived height: OK")
 
 # The whole aspect-locked class behaves the same way -- the user reported the keypad,
 # then the video and video switcher independently, before the class was recognised as
 # one thing. ch5-textinput is in it too and is covered here rather than waiting for a
 # fourth report.
-for tag in ("ch5-video", "ch5-video-switcher", "ch5-textinput", "ch5-toggle"):
+# They state a width and state that the height is DERIVED (`height: auto`), which is
+# what the reference instances do -- not the same as omitting it, a distinction the CSS
+# diff against the reference caught after this test had been passing on the wrong rule.
+# ch5-toggle is the exception: its defaults.style declares a width and no height at all.
+for tag in ("ch5-video", "ch5-video-switcher", "ch5-textinput", "ch5-keypad"):
     assert is_aspect_locked(sdk, tag), tag
     _, css, _ = build_component(sdk, tag, component_name="A", element_id="ia1",
                                 x=0, y=0, width=240, height=160, z_index=1,
                                 resolution=(1280, 800))
     rule = id_rule(css, "ia1")
-    assert "width: 240px" in rule and "height:" not in rule, f"{tag}: {rule}"
-print("every aspect-locked type writes width only (dpad excepted, it is 1:1): OK")
+    assert "width: 240px" in rule and "height: auto" in rule, f"{tag}: {rule}"
 
-# A widget list gets NO box: its size is the widget it references times its item count
-# (a placeholder when it references nothing), which this generator cannot compute. The
-# user established it by dropping an empty one in Construct -- it was much smaller than
-# the box we were writing. ch5-button-list is the control: same "no render-size
-# variables" bucket, but it DOES lay out to its box and is confirmed good.
+_, toggle_only, _ = build_component(sdk, "ch5-toggle", component_name="A", element_id="ia2",
+                                    x=0, y=0, width=240, height=160, z_index=1,
+                                    resolution=(1280, 800))
+assert "height" not in id_rule(toggle_only, "ia2"), id_rule(toggle_only, "ia2")
+print("aspect-locked types state width + height:auto; the toggle states width alone: OK")
+
+# A widget list states a width and a DERIVED height, exactly as every instance in the
+# reference does. Its drop width is 200px (component-context defaults.style), which is
+# the "much smaller than yours" the user reported against the 816px we were writing --
+# that number came from a reference instance they had resized, not from a fresh drop.
 _, list_css, _ = build_component(sdk, "ch5-subpage-reference-list", component_name="W",
                                  element_id="iw1", x=5, y=6, width=800, height=120,
                                  z_index=1, resolution=(1280, 800))
 list_rule = id_rule(list_css, "iw1")
-assert "width:" not in list_rule and "height:" not in list_rule, list_rule
+assert "width: 800px" in list_rule and "height: auto" in list_rule, list_rule
 assert "left: 5px" in list_rule, list_rule
 
 _, button_list_css, _ = build_component(sdk, "ch5-button-list", component_name="B",

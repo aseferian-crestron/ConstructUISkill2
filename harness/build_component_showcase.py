@@ -19,7 +19,7 @@ GEN = Path(r"C:\ClaudeProjects\ConstructUISkill2\generator")
 sys.path.insert(0, str(GEN))
 
 import layout  # noqa: E402
-from component import PROFILES, build_component  # noqa: E402
+from component import PROFILES, build_component, default_style_size  # noqa: E402
 from page import build_page_attributes, generate_element_id, write_cuig  # noqa: E402
 from sdk import read_sdk  # noqa: E402
 
@@ -55,8 +55,29 @@ FALLBACK_SIZE = (200, 120)
 OVERRIDES: dict[str, dict[str, str]] = {}
 
 
+def drop_sizes() -> dict[str, tuple[int, int]]:
+    """Each type's size when DROPPED, from `component-context.json`'s defaults.style.
+
+    This is the authority and it outranks the reference project, whose instances have
+    been resized and configured: a widget list reads 816px wide there but drops at
+    200px. Taking sizes from those instances is what put a 816px-wide empty widget list
+    on the showcase page, which the user (correctly) rejected -- the page exists to
+    compare a generated component against a freshly dropped one.
+    """
+    sizes: dict[str, tuple[int, int]] = {}
+    for tag in PROFILES:
+        style = default_style_size(sdk, tag)
+        width, height = style.get("width"), style.get("height")
+        if width and width != "auto":
+            sizes[tag] = (int(width.removesuffix("px")),
+                          int(height.removesuffix("px")) if height and height != "auto"
+                          else FALLBACK_SIZE[1])
+    return sizes
+
+
 def reference_sizes() -> dict[str, tuple[int, int]]:
-    """Each type's size, taken from its instance in the reference project."""
+    """Each type's size, taken from its instance in the reference project -- the
+    fallback for the types whose defaults.style states no size (see drop_sizes)."""
     sizes: dict[str, tuple[int, int]] = {}
     for path in sorted(REF.glob("*.cuig")):
         raw = path.read_text(encoding="utf-8")
@@ -104,9 +125,11 @@ def shelf_pack(items: list[tuple[str, int, int]]) -> list[list[tuple[str, int, i
     return pages
 
 
-sizes = reference_sizes()
+sizes = reference_sizes() | drop_sizes()   # defaults.style wins where it states a size
+from_sdk = sorted(drop_sizes())
 missing = sorted(set(PROFILES) - set(sizes))
-print(f"sizes from the reference for {len(sizes)} types"
+print(f"drop sizes from the SDK for {len(from_sdk)} types, reference sizes for "
+      f"{len(sizes) - len(from_sdk)} more"
       + (f"; falling back for {missing}" if missing else ""))
 
 written = []

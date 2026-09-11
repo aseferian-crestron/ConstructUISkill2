@@ -86,8 +86,8 @@ def build_position_css(
     active_font: str = "Roboto",
     resolution: tuple[int, int] | None = None,
     extra_vars: dict[str, str] | None = None,
-    write_width: bool = True,
-    write_height: bool = True,
+    write_width: bool | str = True,
+    write_height: bool | str = True,
 ) -> str:
     """Two-@media-block position/size CSS for one newly-placed element. `resolution`, if
     given, is the project's primary landscape (width, height) in px -- omit (None) to fall
@@ -111,8 +111,16 @@ def build_position_css(
     # `write_height=False` for components that derive their own height (a ch5-toggle's
     # is a function of its handle size): the real instances carry width only, and an
     # explicit height would size the canvas adorner taller than the component renders.
-    width_decl = f" width: {width}px;" if write_width else ""
-    height_decl = f" height: {height}px;" if write_height else ""
+    # write_width/write_height may be True/False, or the literal string "auto" -- the
+    # SDK's own defaults.style uses "auto" for dimensions a component derives (a widget
+    # list's and a video switcher's height), and the real instances carry it verbatim.
+    def decl(name: str, value: int, mode) -> str:
+        if not mode:
+            return ""
+        return f" {name}: auto;" if mode == "auto" else f" {name}: {value}px;"
+
+    width_decl = decl("width", width, write_width)
+    height_decl = decl("height", height, write_height)
     base_rule = (f"display: block; left: {x}px; top: {y}px; position: absolute; "
                  f"z-index: {z_index};{width_decl}{height_decl}{extra_decls}")
     device_rule = (f"display: block; left: {x}px; top: {y}px; position: absolute;"

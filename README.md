@@ -9,6 +9,35 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**The CSS was never diffed against the reference -- that is why every sizing bug reached
+the user.** They asked why they were being sent pages to check when they had supplied a
+sample, and they were right: this project's own Approach section says an automated diff
+runs before any manual testing in Construct. The attribute diff did. Nothing diffed CSS.
+
+`component_css_shape_test.py` now compares, for all 21 types, which of width/height the
+generated rule states and whether each is a pixel value or the literal `auto`, against
+the reference instances. **It found four more mismatches immediately** -- including
+inside the fix shipped minutes earlier:
+
+- `ch5-keypad`, `ch5-textinput`, `ch5-video`: the reference states `height: auto`. I had
+  "fixed" them by OMITTING height, which is not the same thing.
+- `ch5-wifi-signal-level-gauge`: the reference states `width: auto; height: auto`; we
+  stated nothing.
+
+**And the root cause of the 816px widget list was upstream of all of it.** The showcase
+took each type's size from a reference INSTANCE, which has been resized and configured.
+`component-context.json`'s `defaults.style` is the drop size and was there all along:
+a widget list drops at `200px / auto`, a button list at `510x68`, a slider at `300x30`,
+a media player at `800x600`, a toggle at `100px` wide with no height. `defaults.style`
+now drives both the emitted shape and the showcase's sizes, outranking the reference.
+
+Two further published fields replaced things I had been inferring: `canResize` (already
+in use) and `supportedSizeFormat` (`widthOnly`, `containerWidthOnly`, `widthOnlyNoSize`,
+`handleWidthOnly`), which names the aspect-locked class directly.
+
+Full 43-file suite green; all six pages regenerated and their CSS verified against the
+reference before this was written.
+
 **Showcase components are FRESH, unconfigured instances again.** The user asked why the
 widget list arrived with a widget reference already assigned: it should be added empty.
 They are right, and it defeated the purpose -- the question these pages answer is
@@ -1254,6 +1283,20 @@ rules are being confirmed by reading Construct's own source
 trial and error. Every phase is proven against a known-good reference project
 (`C:\Solutions\ClaudeSamples\Components`) with an automated diff (`harness/compare.py`)
 before any manual testing inside Construct itself.
+
+**This directive was violated for the whole of the component-sizing work (2026-09-10/11)
+and prose did not prevent it.** The attribute diff ran on every test run; nothing diffed
+the generated CSS, so four sizing bugs in a row reached the user, who found each by eye
+across several rounds. Writing the rule down twice -- here and in the user's own notes --
+changed nothing. What changed it was a TEST: `component_css_shape_test.py`, which found
+four more mismatches the moment it existed, including ones inside the fix that had just
+shipped.
+
+So the rule is mechanical, not aspirational: **before generated output goes to the user,
+an automated comparison must cover the dimension that changed** -- attributes, CSS,
+children, file structure. If no such comparison exists, write it first; it is 60 lines.
+A live check in Construct is only for what a diff structurally cannot see (does it
+RENDER correctly), never a substitute for the diff.
 
 ## Log
 

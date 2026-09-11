@@ -1,9 +1,9 @@
 {FileMetadata}
 Schema = "1.0.0.0"
 CreatedByAppHost = "2.1501.15.0"
-Created = 2026-09-11 00:15:04.896614-04:00
+Created = 2026-09-11 00:20:16.575024-04:00
 LastModifiedByAppHost = "2.1501.15.0"
-Modified = 2026-09-11 00:15:04.896614-04:00
+Modified = 2026-09-11 00:20:16.575024-04:00
 CreatedByProjectApp = "1.4801.18.0"
 LastModifiedByProjectApp = "1.4801.18.0"
 MinimumProjectApp = "1.2600.1"
@@ -20,7 +20,7 @@ MinimumAppHost = "2.901.0"
 [Attributes]
 Name = "NewWidget"
 PageMode = "absolute"
-Id = "90fb159b-8257-43b0-9498-cc55de2b921b"
+Id = "53cc0931-1995-4b28-8517-101f587fb3fc"
 StartPage = "False"
 PreloadPage = "True"
 CachePage = "False"
