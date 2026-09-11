@@ -9,6 +9,36 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Widget list corrected -- and my diagnosis of it was wrong.** I attributed its wrong
+size to an empty `widgetid` (nothing referenced, so nothing rendered inside the box).
+The user disproved that directly: dropping an EMPTY widget list in Construct gives
+something "much smaller than yours", so the initial size was wrong before any widget was
+assigned. The empty widgetid was real but beside the point.
+
+The actual cause is the same family as the gauges: a widget list's rendered size is the
+widget it references multiplied by its item count -- a small placeholder when it
+references nothing -- so it is CONTENT-sized and no explicit box belongs in its CSS.
+
+`CONTENT_SIZED_TAGS` is **transcribed, not derived**, and the code says so: `canResize`
+is True for it, and its componentProperties differ from `ch5-button-list`'s only in ways
+too incidental to hang a rule on. `ch5-button-list` is the control -- same "no
+render-size variables" bucket, but it does lay out to its box and is confirmed good in
+Construct -- so the test asserts both behaviours side by side to keep the distinction
+honest.
+
+`widget_reference_id()` stays (the `w{GUID}` convention is real and the showcase's list
+still points at the project's widget), but its docstring now records that an empty one
+is legitimate and was not the bug.
+
+**Sizing rules now, all four:** `canResize: False` or content-sized -> no box;
+aspect-locked -> width only; aspect-locked at 1:1 (dpad) -> both, squaring a non-square
+request; everything else -> both.
+
+Full 42-file suite green; showcase regenerated.
+
+**Confirmed good in Construct:** Buttons, Keypads, Gauges, Media. **Pending re-check:**
+Media 2 (video, video switcher, widget list) and Text (text input).
+
 **Sizing resolved as a CLASS, plus a separate widget-list cause.** The user checked the
 remaining pages: Media good; Media 2 wrong on the video switcher, the video and the
 widget list. The first two turned out to be the keypad's problem again, and the third a

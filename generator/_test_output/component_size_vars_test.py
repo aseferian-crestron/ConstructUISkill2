@@ -135,9 +135,28 @@ for tag in ("ch5-video", "ch5-video-switcher", "ch5-textinput", "ch5-toggle"):
     assert "width: 240px" in rule and "height:" not in rule, f"{tag}: {rule}"
 print("every aspect-locked type writes width only (dpad excepted, it is 1:1): OK")
 
+# A widget list gets NO box: its size is the widget it references times its item count
+# (a placeholder when it references nothing), which this generator cannot compute. The
+# user established it by dropping an empty one in Construct -- it was much smaller than
+# the box we were writing. ch5-button-list is the control: same "no render-size
+# variables" bucket, but it DOES lay out to its box and is confirmed good.
+_, list_css, _ = build_component(sdk, "ch5-subpage-reference-list", component_name="W",
+                                 element_id="iw1", x=5, y=6, width=800, height=120,
+                                 z_index=1, resolution=(1280, 800))
+list_rule = id_rule(list_css, "iw1")
+assert "width:" not in list_rule and "height:" not in list_rule, list_rule
+assert "left: 5px" in list_rule, list_rule
+
+_, button_list_css, _ = build_component(sdk, "ch5-button-list", component_name="B",
+                                        element_id="ib1", x=5, y=6, width=800, height=120,
+                                        z_index=1, resolution=(1280, 800))
+button_list_rule = id_rule(button_list_css, "ib1")
+assert "width: 800px" in button_list_rule and "height: 120px" in button_list_rule, button_list_rule
+print("widget list is content-sized and gets no box; button list still gets one: OK")
+
 # And the types confirmed good in Construct keep BOTH -- this rule must not regress them.
 for tag in ("ch5-button", "ch5-slider", "ch5-media-player", "ch5-button-list",
-            "ch5-tab-button", "ch5-dpad"):
+            "ch5-tab-button", "ch5-dpad"):  # all verified in Construct by the user
     write_width, write_height = writes_css_size(sdk, tag)
     assert write_width and write_height, (tag, write_width, write_height)
 print("types already confirmed correct in Construct still get both dimensions: OK")

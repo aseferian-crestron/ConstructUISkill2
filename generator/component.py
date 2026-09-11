@@ -180,10 +180,9 @@ def widget_reference_id(widget_guid: str) -> str:
     lists pointing at it carry `widgetid="web72224e-90b4-4804-8c0a-4c347600530a"`. It is
     the same `w{GUID}` convention a ch5-template uses for its `templateid`.
 
-    A widget list with an EMPTY widgetid references nothing, so it renders nothing while
-    its CSS box still sizes the canvas adorner -- which reads as the component being the
-    wrong size. Construct itself creates one that way (you pick the widget afterwards),
-    so the generator allows it, but anything meant to be looked at needs this set.
+    An empty widgetid is legitimate -- Construct creates a widget list that way and you
+    pick the widget afterwards -- and is NOT why an earlier version of this generator
+    produced a wrongly-sized one. That was the explicit CSS box; see CONTENT_SIZED_TAGS.
     """
     return f"w{widget_guid}"
 
@@ -222,6 +221,17 @@ def is_aspect_locked(sdk: UiSdk, tag_name: str) -> bool:
 #: which squares a non-square request rather than emitting a box the dpad will ignore).
 SQUARE_TAGS = ("ch5-dpad",)
 
+#: Types whose rendered size comes from their CONTENT, so no explicit box belongs in
+#: their CSS. A ch5-subpage-reference-list is as tall and wide as the widget it
+#: references multiplied by its item count -- and a small placeholder when it references
+#: nothing -- which this generator cannot compute. The user established it by dropping an
+#: empty one in Construct: it was "much smaller than yours".
+#:
+#: Transcribed rather than derived: `canResize` is True for it and its componentProperties
+#: differ from ch5-button-list's (which DOES lay out to its box, confirmed good in
+#: Construct) only in ways too incidental to hang a rule on.
+CONTENT_SIZED_TAGS = ("ch5-subpage-reference-list",)
+
 
 def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool, bool]:
     """(write width, write height) for this type's `#id` rule.
@@ -231,7 +241,9 @@ def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool, bool]:
 
     1. A type that cannot be resized gets NEITHER. `canResize: False` in the SDK names
        animation and the three gauges -- they lay themselves out from their own
-       attributes, so any box we state is one they ignore.
+       attributes, so any box we state is one they ignore. CONTENT_SIZED_TAGS (the
+       widget list) is the same outcome for a different reason: its size comes from the
+       widget it references, which we cannot compute.
     2. An ASPECT-LOCKED type gets width only. Its rendered size is driven by a single
        axis (see is_aspect_locked), so its height follows from its width and an explicit
        one is a guess. This covers the toggle, keypad, video, video switcher and text
@@ -243,7 +255,7 @@ def writes_css_size(sdk: UiSdk, tag_name: str) -> tuple[bool, bool]:
     Everything else -- button, slider, media player, the lists, the colour components --
     lays out to its CSS box and gets both.
     """
-    if not can_resize(sdk, tag_name):
+    if not can_resize(sdk, tag_name) or tag_name in CONTENT_SIZED_TAGS:
         return False, False
     if is_aspect_locked(sdk, tag_name) and tag_name not in SQUARE_TAGS:
         return True, False
