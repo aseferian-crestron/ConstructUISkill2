@@ -11,7 +11,8 @@ built on (see **Approach** below).
 
 **Phase 8 (fonts): global swap now works for fonts already in Construct's own font
 library, not only the 5 hardcoded SDK names -- BUILT, applied to the live project,
-AWAITING THE USER'S CHECK.** The user's exact request: "please replace the font
+CONFIRMED IN CONSTRUCT 2026-09-11: every component is using Stylish Comic.** The
+user's exact request: "please replace the font
 everywhere with Stylish Comic that is in my library" -- and they corrected the framing
 up front: fonts are APPLICATION-specific in Construct, not machine-specific, with a
 Webfonts folder that is part of the install path on both platforms.
@@ -52,8 +53,10 @@ Applied to the live `GenTestProject2` (verified: no file still mentions the old 
 round-trip intact). Full 45-file suite green (2 new files: the corrected/hardened
 swap test, and the new library-discovery test).
 
-**Awaiting the live check:** open `GenTestProject2` and confirm every component's Font
-Family field now shows "Stylish Comic".
+Global font-swap, including library fonts, is done and live-verified.
+
+**Next:** genuinely new webfont import (deferred, still needs a real sample), then
+languages (10), hard buttons (11), and the skill layer.
 
 `generator/fonts.py::set_project_font(cuip_path, new_font)` rewrites, in one call: the
 `.cuip`'s `DefaultFontFamily`, and every `ccid_ActiveFont` attribute + Construct-generated
