@@ -9,6 +9,45 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Adorner-vs-render size mismatch FIXED -- a regression I introduced, on a bug that had
+already been fixed once.** The user opened the showcase pages and found the selection
+adorner larger than the component on a toggle and a button, and said this was fixed
+before. It was: Phase 4 hit exactly this on ch5-button.
+
+**Why it came back.** A CH5 component does not lay itself out from the plain
+`width`/`height` on its `#id` rule -- those size the canvas ADORNER. Its own rendering
+reads CSS custom properties, and it only honours an explicit size when `size="custom"`.
+`ch5_button.py` does both. `component.py`'s generic `build_component` did neither: it
+called `build_position_css` without `extra_vars`, and never overrode `size`. That broke
+every type -- including ch5-button, whose ATTRIBUTES delegate to the confirmed builder
+but whose CSS came from the generic path. Carrying a fix across a generalisation is
+exactly what a reference diff cannot check, because the reference instances were never
+resized either.
+
+**The fix is per-type SDK data, not a table.** `size_css_vars()` reads
+`component-context.json`'s `classToVariableMapping` "idSelector" entry: a toggle maps
+width -> `--ch5-toggle--handle-size-regular`, a dpad -> `--ch5-dpad--regular-size`, a
+keypad -> `--ch5-keypad--regular-container-width`, a button width AND height. Both
+condition kinds in that data are honoured -- `swaptarget` (a vertical button's width
+drives the HEIGHT variable) and `ignore` (a horizontal slider ignores its height
+mapping). `size="custom"` is now set for every type with a preset-enum size attribute;
+notably "custom" is NOT in the schema's own enum, it is a Construct-level mode, which is
+why it cannot be derived and had to come from the real files.
+
+**A toggle also writes no explicit height** (`ComponentProfile.css_height=False`). Its
+height follows its handle size, its reference instance carries width only, and an
+explicit height is itself an adorner-too-tall bug -- which is what the user's screenshot
+showed.
+
+**One earlier note was wrong and is corrected:** the toggle's `size="custom"` had been
+recorded as "the user resized this instance". It is not instance state -- it is required
+for any explicitly-sized component, which is precisely the bug.
+
+`component_size_vars_test.py` pins all of it, including that the variables appear in
+BOTH @media blocks. Showcase pages regenerated. Full 42-file suite green.
+
+**Still awaiting the live check** of the six `AllComponents - *` pages in Construct.
+
 **Showcase pages generated for every component type -- AWAITING THE USER'S CHECK IN
 CONSTRUCT.** `harness/build_component_showcase.py` writes six pages into
 `GenTestProject2`, carrying all 21 profiled types built entirely by

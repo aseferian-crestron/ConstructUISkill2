@@ -111,8 +111,14 @@ print(f"every flat type matches its reference instance ({exact} with no recorded
 VALUE_DELTAS = {
     # The reference's first childless button is the image variant.
     ("ch5-button", "ccid_imageIconType"), ("ch5-button", "assetid"),
-    # Sizes the user chose on the instance; a fresh component gets the schema default.
-    ("ch5-textinput", "size"), ("ch5-toggle", "size"),
+    # `size`: we always write "custom", because an explicit width/height is only
+    # honoured in that mode (see component.py -- it is what makes the canvas adorner
+    # match what the component actually renders). The reference instances that were
+    # never resized still carry the preset they were dropped with, and the text input
+    # carries the "small" preset its user chose.
+    ("ch5-animation", "size"), ("ch5-dpad", "size"), ("ch5-signal-level-gauge", "size"),
+    ("ch5-slider", "size"), ("ch5-textinput", "size"), ("ch5-video", "size"),
+    ("ch5-wifi-signal-level-gauge", "size"),
     # The reference widget list was configured: 5 items, pointed at a real widget.
     ("ch5-subpage-reference-list", "numberofitems"),
     ("ch5-subpage-reference-list", "widgetid"),

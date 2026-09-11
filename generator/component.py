@@ -97,6 +97,9 @@ class ComponentProfile:
     active_font: bool = False
     label: bool = False
     extras: tuple[tuple[str, str], ...] = field(default_factory=tuple)
+    #: False for components that derive their own height, whose real instances carry a
+    #: width in CSS and no height (a ch5-toggle's height follows its handle size).
+    css_height: bool = True
 
 
 #: Transcribed from C:\Solutions\ClaudeSamples\Components (2026-09-10). Recomputed and
@@ -118,7 +121,8 @@ PROFILES: dict[str, ComponentProfile] = {
                                  extras=(("ccid_themeCSSSet", "true"),)),
     "ch5-textinput": ComponentProfile("Textinput", vstheme="theme", active_font=True, label=True,
                                       extras=(("ccid_sizeInitialized", "true"),)),
-    "ch5-toggle": ComponentProfile("Toggle", vstheme="theme", active_font=True, label=True),
+    "ch5-toggle": ComponentProfile("Toggle", vstheme="theme", active_font=True, label=True,
+                                   css_height=False),
     "ch5-video": ComponentProfile("Video"),
     "ch5-wifi-signal-level-gauge": ComponentProfile("Wifi Signal Level Gauge", vstheme="theme"),
     # Containers (see CONTAINER_TAGS / build_children), plus the subpage reference list,
@@ -170,6 +174,49 @@ def _schema_element(sdk: UiSdk, tag_name: str) -> dict:
         if element.get("tagName") == tag_name:
             return element
     raise KeyError(f"{tag_name!r} is not a CH5 element in schema.json")
+
+
+def size_css_vars(sdk: UiSdk, tag_name: str, *, width: int, height: int,
+                  attributes: dict[str, str]) -> dict[str, str]:
+    """The CSS custom properties a component reads its RENDERED size from.
+
+    A CH5 web component does not lay itself out from the plain `width`/`height` on its
+    `#id` rule -- those size the canvas selection adorner. Its own rendering reads these
+    custom properties, so writing one without the other leaves the adorner and the
+    component visibly mismatched. That was found and fixed for ch5-button in Phase 4
+    (see build_position_css's docstring) and reintroduced for every OTHER type when the
+    generic builder did not carry the fix across; the user caught it on a toggle.
+
+    Driven by `component-context.json`'s `classToVariableMapping` "idSelector" entry, so
+    it is per-type data rather than a table: a toggle maps width ->
+    `--ch5-toggle--handle-size-regular`, a dpad width -> `--ch5-dpad--regular-size`, a
+    button width AND height -> `--ch5-button--regular-{width,height}`. Two condition
+    kinds appear and both are honoured: `swaptarget` (a vertical button's width drives
+    the HEIGHT variable) and `ignore` (a horizontal slider ignores its height mapping).
+    """
+    mapping = sdk.component_context.get(tag_name, {}).get("classToVariableMapping") or []
+    id_selector = next((e for e in mapping if e.get("className") == "idSelector"), None)
+    if not id_selector:
+        return {}
+
+    values = {"width": width, "height": height}
+    variables: dict[str, str] = {}
+    for entry in id_selector.get("propertyMapping", []):
+        target = entry.get("targetProperty")
+        source = entry.get("sourceProperty")
+        if target is None or source not in values:
+            continue
+        skip = False
+        for condition in entry.get("condition", []):
+            if attributes.get(condition.get("property")) != condition.get("value"):
+                continue
+            if condition.get("action") == "swaptarget":
+                target = condition.get("alternateTargetProperty", target)
+            elif condition.get("action") == "ignore":
+                skip = True
+        if not skip:
+            variables[target] = f"{values[source]}px"
+    return variables
 
 
 def _attr_str(value) -> str:
@@ -261,6 +308,15 @@ def build_component_attributes(
     attributes = base_attributes(sdk, tag_name)
     for key, value in (overrides or {}).items():
         _set(attributes, key, value)
+
+    # An explicit width/height is only honoured when `size` says "custom". "custom" is
+    # not in the schema's own enum of presets -- it is a Construct-level mode, and the
+    # real button/keypad/toggle instances all carry it. Left alone for ch5-qrcode, whose
+    # `size` is a number (160) rather than a preset name.
+    size_attribute = next((a for a in _schema_element(sdk, tag_name)["attributes"]
+                           if a["name"] == "size"), None)
+    if size_attribute and size_attribute.get("value"):
+        _set(attributes, "size", "custom")
 
     _set(attributes, "customvstheme", profile.vstheme) if profile.vstheme else None
     _set(attributes, "id", element_id)
@@ -422,6 +478,9 @@ def build_component(
             "customThemeRequiredSelectors", []),
         active_font=dict(attributes).get("ccid_ActiveFont", "'Roboto'").strip("'"),
         resolution=resolution,
+        extra_vars=size_css_vars(sdk, tag_name, width=width, height=height,
+                                 attributes=dict(attributes)),
+        write_height=PROFILES[tag_name].css_height,
     )
     return html, css, element
 
