@@ -1,20 +1,30 @@
 """
-Chat-described theming (Stage 3, source #1): translate a natural-language style
-description ("dark blue buttons with white text and an orange border") into real
-palette.py calls, applied across every matching component instance in a project --
-"theme my project" in the whole-project sense the feature was originally asked for,
-not one component at a time.
+Chat-described theming (Stage 3, source #1). Deliberately split into two
+concerns, corrected 2026-09-13 after the user pointed out the original design's
+real limit: "most of the time, users arent goign to know they exact colors they
+want. they will describe things in broad terms... I want to style my user
+interface using colors from the NY Giants football team." No lookup table this
+generator could maintain covers every sports team, holiday, brand, or mood a
+user might name -- that resolution is a knowledge/reasoning task, which belongs
+to whatever chat AI is driving this skill (it already knows the Giants are blue
+and red), not a hardcoded table here.
+
+So the two concerns are kept separate:
+
+  - `parse_style_description` / `apply_chat_style`: a small, literal, inspectable
+    parser for descriptions that already name real CSS colors directly ("dark
+    blue buttons with white text") -- useful on its own for the common literal
+    case, not a general theme-name resolver.
+  - `apply_palette_project_wide`: takes an ALREADY-RESOLVED palette dict (however
+    it was produced -- parsed here, reasoned about by the driving chat AI for
+    "Halloween"/"NY Giants colors"/anything else, or a later Stage-3 source) and
+    applies it across every matching component instance in the project. This is
+    the actual reusable mechanism; `apply_chat_style` is just
+    `parse_style_description` followed by a call to it.
 
 Scope: ch5-button only, matching palette.py's own PALETTE_MAPPING (Stage 2) --
 extending to more types is the same per-type-verified work already used throughout
 this project, not automatic just because a description happens to mention one.
-
-Parsing is intentionally simple and inspectable, not an LLM/black box: split the
-description on "and"/"with"/commas into segments, resolve each segment's color
-word via color_words.py (the real CSS named-color table), and match a property
-keyword (background/text/border/icon) within the SAME segment. A segment naming a
-color with no recognized property keyword defaults to background_color -- the
-natural reading of "make the buttons X" or "X buttons".
 """
 from __future__ import annotations
 
@@ -76,24 +86,26 @@ def parse_style_description(description: str) -> dict[str, str]:
     return result
 
 
-def apply_chat_style(
-    description: str,
+def apply_palette_project_wide(
+    resolved_palette: dict[str, str],
     project_dir: Path,
     sdk: UiSdk,
     *,
     tag_name: str = "ch5-button",
-) -> tuple[dict[str, str], list[str]]:
-    """Parse `description` and apply the resulting palette to EVERY `tag_name`
-    instance across every *.cuig/*.cuiw in `project_dir`. Returns
-    `(parsed_palette, warnings)` -- warnings note any element a mapping doesn't
-    cover (see palette.apply_palette), never raises for them; raises ValueError
-    up front only if the description itself named no recognizable color/property
-    at all, before touching any file.
-    """
-    parsed_palette = parse_style_description(description)
-    if not parsed_palette:
-        raise ValueError(f"no recognized color/property found in {description!r}")
+) -> list[str]:
+    """Apply an ALREADY-RESOLVED palette dict (see palette.py's PALETTE_MAPPING
+    keys, e.g. {"background_color": "#0b2265", "text_color": "#a71930"} for "NY
+    Giants colors") to EVERY `tag_name` instance across every *.cuig/*.cuiw in
+    `project_dir` -- "theme my project" in the whole-project sense the feature
+    was originally asked for, not one component at a time. Where the palette
+    values themselves come from is entirely up to the caller: a literal
+    description via parse_style_description, or a chat AI's own knowledge of
+    what "Halloween" or a sports team's colors are -- this function only knows
+    how to apply values it's given, never how to invent them.
 
+    Returns `warnings` -- any element a mapping doesn't cover (see
+    palette.apply_palette), never raises for them.
+    """
     warnings: list[str] = []
     for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
         raw = page_path.read_text(encoding="utf-8")
@@ -113,7 +125,7 @@ def apply_chat_style(
         new_css = css_text
         for element_id in target_ids:
             try:
-                new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, parsed_palette)
+                new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, resolved_palette)
             except KeyError as e:
                 warnings.append(f"{page_path.name}: {element_id!r} -- {e}")
 
@@ -123,4 +135,27 @@ def apply_chat_style(
         ]
         rebuilt = parsed.preamble + "".join(header + content for _, header, content in new_sections)
         page_path.write_text(rebuilt, encoding="utf-8", newline="")
+    return warnings
+
+
+def apply_chat_style(
+    description: str,
+    project_dir: Path,
+    sdk: UiSdk,
+    *,
+    tag_name: str = "ch5-button",
+) -> tuple[dict[str, str], list[str]]:
+    """Parse `description` for LITERAL color words (see module docstring -- this
+    is the narrow, inspectable path, not a general theme-name resolver) and
+    apply the result via apply_palette_project_wide. Returns
+    `(parsed_palette, warnings)`; raises ValueError up front if the description
+    named no recognizable color/property at all, before touching any file --
+    a broad/named description ("Halloween theme") is expected to hit this and
+    should be resolved to real colors by the caller instead (see
+    apply_palette_project_wide's docstring).
+    """
+    parsed_palette = parse_style_description(description)
+    if not parsed_palette:
+        raise ValueError(f"no recognized color/property found in {description!r}")
+    warnings = apply_palette_project_wide(parsed_palette, project_dir, sdk, tag_name=tag_name)
     return parsed_palette, warnings

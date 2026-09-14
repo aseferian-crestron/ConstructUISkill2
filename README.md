@@ -9,6 +9,33 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 3 source #1 corrected: no theme-name lookup table --
+resolution is the driving chat AI's job, not this generator's.** User, after I
+proposed adding a `NAMED_THEMES` preset dict (Halloween, Christmas, etc.):
+*"most of the time, users arent goign to know they exact colors they want. they
+will describe things in broad terms. as long at the AI chat engine can resolve
+the description into actionable colors it will work. I.E. I want to style my
+user interface using colors from the NY Giants football team."* Correct call --
+no lookup table this generator could maintain covers every sports team,
+holiday, brand, or mood a user might name; that's a knowledge/reasoning task
+belonging to whatever chat AI is driving the skill (it already knows the
+Giants are blue and red), not hardcoded data here.
+
+Split `theme_chat.py` into two concerns instead of building the lookup table:
+`apply_palette_project_wide(resolved_palette, project_dir, sdk)` (new) takes an
+ALREADY-RESOLVED palette dict -- however it was produced -- and applies it
+across every matching component instance in the project; `parse_style_description`/
+`apply_chat_style` (unchanged behavior) remain the narrow, literal path for
+descriptions that already name real CSS colors directly, now just one caller of
+the new function rather than the only path. `theme_chat_test.py` extended to
+cover `apply_palette_project_wide` directly with a real resolved example (NY
+Giants colors, `#0b2265`/`#a71930`) against all 24 real button instances. Full
+suite re-run clean except the one known pre-existing unrelated failure. Applied
+live to `GenTestProject2`: NY Giants colors themed every real button across
+every button-bearing page (including `ComplexContracts.cuig`, not covered by
+the earlier "dark green" demo's page count), verified on disk, every file
+round-trips. Awaiting the user's live Construct confirmation.
+
 **Phase 7 (themes), Stage 3, source #1: chat-described theming.** User: "yes,
 start with chat-described values." Two new modules:
 

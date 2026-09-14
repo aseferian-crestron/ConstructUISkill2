@@ -101,4 +101,30 @@ for page_name in before_buttons:
     assert compare.round_trip_check(OUT / page_name)
 print("every touched file still round-trips section-for-section: OK")
 
+# --- apply_palette_project_wide: an ALREADY-RESOLVED palette (broad descriptions -----
+# --- like "NY Giants colors" or "Halloween" are resolved by the driving chat AI's -----
+# --- own knowledge, not a lookup table here -- see the module's own 2026-09-13 note) --
+OUT2 = Path(__file__).resolve().parent / "ThemeChatResolved"
+if OUT2.exists():
+    shutil.rmtree(OUT2)
+shutil.copytree(SRC, OUT2)
+
+ny_giants_colors = {"background_color": "#0b2265", "text_color": "#a71930"}  # Giants Blue / Giants Red
+resolved_warnings = theme_chat.apply_palette_project_wide(ny_giants_colors, OUT2, ui_sdk)
+print(f"apply_palette_project_wide warnings: {resolved_warnings or '(none)'}")
+
+checked2 = 0
+for page_name, ids in before_buttons.items():
+    css = compare.split_sections((OUT2 / page_name).read_text(encoding="utf-8"),
+                                 Path(page_name).suffix.lower()).sections[2][2]
+    elements = layout.parse_all_position_rules(css, "(max-width: 99999px)")
+    for eid in ids:
+        v = elements[eid]["extra_vars"]
+        assert v.get("--ch5-button--default-background-color") == "#0b2265", (page_name, eid, v)
+        assert v.get("--ch5-button--default-label-font-color") == "#a71930", (page_name, eid, v)
+        checked2 += 1
+assert checked2 == 24
+print(f"apply_palette_project_wide: an already-resolved palette (no parsing involved) "
+      f"applies to all {checked2} real button instances the same way: OK")
+
 print("\nChat-described theming: all assertions passed.")
