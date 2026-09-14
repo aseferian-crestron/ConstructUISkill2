@@ -202,6 +202,40 @@ def find_media_block_span(css_text: str, query: str, start: int = 0) -> tuple[in
     raise ValueError(f"unterminated @media block for query {query!r}")
 
 
+def find_all_media_block_spans(css_text: str) -> list[tuple[int, int]]:
+    """(start, end) spans of EVERY `@media ...{...}` block in `css_text`, whatever its
+    query -- unlike find_media_block_span(s), which only finds blocks matching one
+    specific query text. Needed by update_element_declarations: a style property has to
+    be written into EVERY block for an element (catch-all AND every configured
+    resolution's own device block -- confirmed against a real Construct-authored file,
+    see that function's docstring), and the set of queries a page/widget carries isn't
+    known to that caller."""
+    spans: list[tuple[int, int]] = []
+    idx = 0
+    while True:
+        idx = css_text.find("@media", idx)
+        if idx == -1:
+            break
+        open_brace = css_text.find("{", idx + len("@media"))
+        if open_brace == -1:
+            break
+        depth = 0
+        end = None
+        for i in range(open_brace, len(css_text)):
+            if css_text[i] == "{":
+                depth += 1
+            elif css_text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end is None:
+            raise ValueError(f"unterminated @media block starting at char {idx}")
+        spans.append((idx, end))
+        idx = end
+    return spans
+
+
 def find_media_block_spans(css_text: str, query: str) -> list[tuple[int, int]]:
     """ADDED 2026-09-09 (final whole-branch review). ALL (start, end) spans of `@media
     {query}{...}` blocks matching this exact query string, in document order -- see
@@ -289,35 +323,37 @@ def parse_all_position_rules(css_text: str, query: str) -> dict[str, dict]:
     return elements
 
 
-def update_element_declarations(css_text: str, query: str, element_id: str, declarations: dict[str, str]) -> str:
+def update_element_declarations(css_text: str, element_id: str, declarations: dict[str, str]) -> tuple[str, int]:
     """Merge `declarations` ({css-property-or-var-name: value}) into `element_id`'s own
-    `#id{...}` rule, in place, inside whichever `@media {query}{...}` block actually
-    contains that element (the generator emits ONE block PER ELEMENT even when several
-    share an identical query, per find_media_block_spans' own note -- so this must search
-    every span for `query`, not just take the first). An existing declaration keeps its
-    position and is overwritten; a new one is appended at the end. Re-serialized as
-    `key: value` pairs joined by `"; "` with a single trailing `;` -- the exact shape
-    build_position_css's own base_rule/device_rule strings already produce, so a rule this
-    function has never touched and one it just edited look identical in style.
+    `#id{...}` rule, in EVERY `@media {...}` block that contains one (catch-all AND every
+    per-resolution device block). An existing declaration keeps its position and is
+    overwritten; a new one is appended at the end. Re-serialized as `key: value` pairs
+    joined by `"; "` with a single trailing `;` -- the exact shape build_position_css's
+    own base_rule/device_rule strings already produce.
 
-    Added for generator/style.py's custom-mode style properties (Stage 1, 2026-09-11):
-    those are not resolution-dependent, so they only ever need writing into the catch-all
-    (`(max-width: 99999px)`) block -- normal CSS cascade carries them into every
-    per-resolution device block, which never restates a value identical to the catch-all's
-    own (see this module's own docstring).
+    CORRECTED 2026-09-13 (real user-reported property-grid/canvas desync, confirmed
+    against a real file): a first version of this function wrote ONLY into the catch-all
+    block, reasoning that plain CSS cascade would carry a style value into every device
+    block for free. WRONG per the user's own live test in Construct (a fresh button's
+    fill color set via the property grid stayed correct across every breakpoint without
+    the user touching each one) and per the resulting file itself: Construct duplicates
+    the SAME `--ch5-*` custom property into the catch-all AND the device-specific block
+    (`Check.cuig`, a real Construct-authored file: `--ch5-button--default-background-
+    color:#ff0000` appears in BOTH). The user's cascade-free UI *experience* is Construct
+    fanning the value out to every configured resolution's own rule at write time, not
+    the file relying on runtime CSS cascade across media queries -- matching the same
+    duplication this generator's own size vars already use everywhere else.
 
-    Raises `KeyError` if no block for `query` contains a rule for `element_id` -- asking to
-    style a component that was never actually placed (or whose catch-all rule is missing)
-    is a real caller error, not something to silently paper over.
+    Returns `(new_css_text, blocks_updated)` -- `blocks_updated` is the number of
+    `#id{}` rules actually found and merged into. Raises `KeyError` if the element has
+    no `#id{}` rule ANYWHERE -- asking to style a component that was never actually
+    placed is a real caller error, not something to silently paper over.
     """
     id_pattern = re.compile(r"#" + re.escape(element_id) + r"\s*\{(?P<decls>[^{}]*)\}")
-    for start, end in find_media_block_spans(css_text, query):
-        block = css_text[start:end]
-        m = id_pattern.search(block)
-        if m is None:
-            continue
+
+    def merged_rule(decls_text: str) -> str:
         decl_pairs: list[list[str]] = []
-        for decl in m.group("decls").split(";"):
+        for decl in decls_text.split(";"):
             decl = decl.strip()
             if not decl or ":" not in decl:
                 continue
@@ -331,10 +367,19 @@ def update_element_declarations(css_text: str, query: str, element_id: str, decl
                 new_pair = [key, value]
                 decl_pairs.append(new_pair)
                 by_key[key] = new_pair
-        new_rule = f"#{element_id}{{" + "; ".join(f"{k}: {v}" for k, v in decl_pairs) + ";}"
-        new_block = block[:m.start()] + new_rule + block[m.end():]
-        return css_text[:start] + new_block + css_text[end:]
-    raise KeyError(f"No {query!r} block contains a rule for #{element_id} -- cannot apply style")
+        return f"#{element_id}{{" + "; ".join(f"{k}: {v}" for k, v in decl_pairs) + ";}"
+
+    # Collect every match first, then splice from the END backward -- editing in place
+    # front-to-back would invalidate every later offset the moment a rewritten rule's
+    # length differs from the original (the same technique reflow_file already uses for
+    # its own multi-span target-block replacement).
+    matches = [m for start, end in find_all_media_block_spans(css_text)
+              for m in [id_pattern.search(css_text, start, end)] if m is not None]
+    for m in reversed(matches):
+        css_text = css_text[:m.start()] + merged_rule(m.group("decls")) + css_text[m.end():]
+    if not matches:
+        raise KeyError(f"No #{element_id} rule found in any @media block -- cannot apply style")
+    return css_text, len(matches)
 
 
 def build_reflow_block(elements: dict[str, dict], orientation: str, width: int, height: int) -> str:

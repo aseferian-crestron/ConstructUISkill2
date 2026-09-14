@@ -58,7 +58,7 @@ for page_path in list(OUT.glob("*.cuig")) + list(OUT.glob("*.cuiw")):
     if ids:
         before_buttons[page_path.name] = ids
 total_before = sum(len(v) for v in before_buttons.values())
-assert total_before == 24, f"expected 24 real button instances, found {total_before}"
+assert total_before > 0, "expected at least one real button instance in the live project"
 print(f"baseline: {total_before} real ch5-button instances across {len(before_buttons)} pages: OK")
 
 applied_palette, warnings = theme_chat.apply_chat_style(
@@ -68,7 +68,7 @@ assert applied_palette == {
     "background_color": "#00008b", "text_color": "#ffffff", "border_color": "#ffa500",
 }
 
-# Every single one of those 24 buttons, across every page, got all 3 values.
+# Every single one of those buttons, across every page, got all 3 values.
 checked = 0
 for page_name, ids in before_buttons.items():
     css = compare.split_sections((OUT / page_name).read_text(encoding="utf-8"),
@@ -80,7 +80,7 @@ for page_name, ids in before_buttons.items():
         assert v.get("--ch5-button--default-label-font-color") == "#ffffff", (page_name, eid, v)
         assert v.get("--ch5-button--default-border-color") == "#ffa500", (page_name, eid, v)
         checked += 1
-assert checked == 24
+assert checked == total_before
 print(f"all {checked} real button instances across every page got the full palette: OK")
 
 # Non-button elements are completely unaffected -- spot-check ReflowTest.cuig's dpad.
@@ -123,7 +123,7 @@ for page_name, ids in before_buttons.items():
         assert v.get("--ch5-button--default-background-color") == "#0b2265", (page_name, eid, v)
         assert v.get("--ch5-button--default-label-font-color") == "#a71930", (page_name, eid, v)
         checked2 += 1
-assert checked2 == 24
+assert checked2 == total_before
 print(f"apply_palette_project_wide: an already-resolved palette (no parsing involved) "
       f"applies to all {checked2} real button instances the same way: OK")
 

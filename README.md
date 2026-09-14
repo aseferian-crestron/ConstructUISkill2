@@ -9,6 +9,57 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes) MAJOR CORRECTION: custom-mode styling was writing an
+incomplete rule the whole time -- property grid and canvas disagreed.** User:
+*"the property grid and the objects on the canvas are not in sync. are you sure
+you are setting both the CSS and XML sections of the data files when theming
+components?"* Then, after I first (wrongly) proposed writing to every `@media`
+block was the fix and the user tested this themselves in Construct and reported
+it contradicted normal cascade: *"i just created a new page called Check and
+dropped a button on the primary resolution and changed the fill color to red.
+the button remains red through all of the breakpoints without having to
+explicitly define red on each one."* Real, confirmed, two-part bug -- found by
+diffing this exact real file (`Check.cuig`, Construct's own hand-styled button)
+against what this generator was writing:
+
+1. **The property grid does not read the `--ch5-*` CSS var at all.** Traced to
+   `style-manager.ts::updateStyleManagerIndividualSectorPropertyView`'s
+   `getNearestPropValue` lookup. `Check.cuig` shows the REAL mechanism: a
+   literal `{sectorPrefix}{sourceProperty}` pseudo-property
+   (`Appearance_background-color:#ff0000`) written SIDE BY SIDE with the real
+   `--ch5-button--default-background-color:#ff0000` CSS var in the same rule
+   -- one for the web component's actual render, one for the property grid's
+   display. `style_property_catalog` had captured `sector_prefix` from day
+   one but `set_component_style` never wrote it anywhere -- an unused field,
+   not a deliberate omission.
+2. **Values ARE duplicated into every configured resolution's own block, not
+   just the catch-all.** The user's live test is real (Construct's UI lets you
+   set a color once and it applies everywhere) but that's Construct fanning
+   the value out at write time, not the file relying on runtime CSS cascade --
+   confirmed directly: `Check.cuig`'s `--ch5-button--default-background-color`
+   appears in BOTH its catch-all and its 1280x800 device block. Matches the
+   same duplication this generator's own size vars already use everywhere
+   else; the style-property code had been the one inconsistent corner.
+
+Fixed both in one pass: `layout.py::update_element_declarations` (renamed from
+a query-scoped version) now finds and updates the element's rule in EVERY
+`@media` block via new `find_all_media_block_spans`, splicing edits from the
+end backward (the same technique `reflow_file` already uses for multi-span
+replacement) rather than the recursive first-draft attempt that got reverted
+mid-session for being needlessly complex. `style.py::set_component_style` now
+writes the sector-prefixed pseudo-property alongside the real CSS var for
+every property that has one. `custom_style_test.py` extended: asserts the
+sector-prefix property is present, and that the CSS var now correctly appears
+in the device block too (inverting the old, wrong assertion that it must NOT).
+Full suite re-run clean except the one known pre-existing unrelated failure.
+
+Re-applied to every live-themed element in `GenTestProject2` with the corrected
+code (NY Giants colors project-wide, spring theme on `ReflowTest.cuig`),
+verified directly against the real file: every block containing a themed
+button's rule now carries both the CSS var and its sector-prefixed
+counterpart. Awaiting the user's live Construct confirmation that the
+property grid and canvas now agree.
+
 **Phase 7 (themes), Stage 2 extended: palette coverage for every real component
 type that has ANY stylable property, not just ch5-button.** User: *"what other
 components dont have palette mapping? that should be addressed now."* Surveyed

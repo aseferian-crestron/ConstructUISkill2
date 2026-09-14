@@ -38,8 +38,6 @@ import re
 import layout
 from sdk import UiSdk
 
-CATCH_ALL_QUERY = "(max-width: 99999px)"
-
 
 def style_property_catalog(sdk: UiSdk, tag_name: str) -> list[dict]:
     """Every stylable property this tag's real SDK schema exposes with a
@@ -173,17 +171,29 @@ def set_component_style(
     attributes: dict[str, str] | None = None,
 ) -> str:
     """Apply one or more `(class_name, source_property, value)` style values to
-    `element_id`'s CSS, resolved against `tag_name`'s real schema. Written into the
-    catch-all (99999px) block's own `#id{...}` rule as `--ch5-*` custom properties --
-    the same placement already proven for size (component.py::size_css_vars /
-    layout.py::build_position_css's `extra_vars`). Style values are not
-    resolution-dependent, so unlike size they only ever need writing once, in the
-    catch-all; per-resolution device blocks inherit them via normal CSS cascade.
+    `element_id`'s CSS, written into EVERY `@media` block's own `#id{...}` rule
+    (catch-all AND every configured resolution's device block -- confirmed required
+    against a real Construct-authored file, see layout.update_element_declarations'
+    docstring) as TWO parallel declarations per property:
+
+      - the `--ch5-*` custom property (`target_property`) the CH5 web component
+        actually reads to render -- the same placement already proven for size
+        (component.py::size_css_vars / layout.py::build_position_css's `extra_vars`).
+      - a literal `{sectorPrefix}{sourceProperty}` pseudo-property (e.g.
+        `Appearance_background-color`, `Label_color`) -- CORRECTED 2026-09-13, a real
+        gap found via a user-reported property-grid/canvas desync: Construct's
+        property grid does NOT read the `--ch5-*` var at all to decide what to
+        display, it reads THIS literal declaration (confirmed against a real file:
+        `Check.cuig`, a button styled by hand in Construct, carries BOTH
+        `--ch5-button--default-background-color:#ff0000` AND
+        `Appearance_background-color:#ff0000` side by side in the same rule). This
+        generator had captured `sector_prefix` in style_property_catalog's own output
+        from day one but never actually written it anywhere -- an unused field, not a
+        deliberate omission.
 
     `value` is the literal CSS value to write (e.g. "#1a2b3c" for a color, "2px" for
-    a border-width, "600" for a font-weight, "solid" for a border-style) -- unlike
-    size_css_vars this never appends "px" itself, since these properties are not all
-    lengths.
+    a border-width, "600" for a font-weight, "solid" for a border-style) -- this never
+    appends "px" itself, since these properties are not all lengths.
     """
     catalog = style_property_catalog(sdk, tag_name)
     resolved_attributes = attributes or {}
@@ -192,4 +202,7 @@ def set_component_style(
         entry = find_property(catalog, class_name, source_property)
         target = resolve_target_property(entry, resolved_attributes)
         declarations[target] = value
-    return layout.update_element_declarations(css_text, CATCH_ALL_QUERY, element_id, declarations)
+        if entry.get("sector_prefix"):
+            declarations[f"{entry['sector_prefix']}{source_property}"] = value
+    new_css, _blocks_updated = layout.update_element_declarations(css_text, element_id, declarations)
+    return new_css

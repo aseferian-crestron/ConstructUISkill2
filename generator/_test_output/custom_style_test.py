@@ -79,6 +79,17 @@ assert after["extra_vars"]["--ch5-button--default-border-color"] == "#445566"
 assert after["extra_vars"]["--ch5-button--default-label-font-color"] == "#ffffff"
 print("ibtnicon: new style vars added, pre-existing position/size/size-vars preserved: OK")
 
+# --- the sector-prefixed pseudo-property (what the property grid actually reads, per --
+# --- the real Check.cuig file) is ALSO written, alongside the --ch5-* CSS var ---------
+import re as _re
+ibtnicon_rule_match = _re.search(r"#ibtnicon\{([^{}]*)\}", new_css)
+assert ibtnicon_rule_match, "no #ibtnicon{} rule found"
+ibtnicon_rule_text = ibtnicon_rule_match.group(1)
+assert "Appearance_background-color: #112233" in ibtnicon_rule_text, ibtnicon_rule_text
+assert "Appearance_border-color: #445566" in ibtnicon_rule_text, ibtnicon_rule_text
+assert "Label_color: #ffffff" in ibtnicon_rule_text, ibtnicon_rule_text
+print("the sector-prefixed pseudo-property (Appearance_/Label_) is written alongside the CSS var: OK")
+
 # --- a sibling element the caller did NOT touch is completely unaffected --------------
 sibling_before = elements_before["ibtnimage"]
 sibling_after = layout.parse_all_position_rules(new_css, "(max-width: 99999px)")["ibtnimage"]
@@ -104,13 +115,13 @@ raw_rule_count = ibtnicon_rule.count("--ch5-button--default-background-color")
 assert raw_rule_count == 1, f"expected the var written exactly once within ibtnicon's own rule, found {raw_rule_count}"
 print("re-applying a style property updates in place, no duplicate declaration: OK")
 
-# --- per-resolution device block is untouched -- style is not resolution-dependent ----
+# --- CORRECTED 2026-09-13: style properties ARE duplicated into the per-resolution ----
+# --- device block too, confirmed against a real Construct-authored file (Check.cuig) --
 device_query = layout.landscape_media_query(1280, 800)
 device_elements = layout.parse_all_position_rules(newer_css, device_query)
-if "ibtnicon" in device_elements:
-    assert "--ch5-button--default-background-color" not in device_elements["ibtnicon"].get("extra_vars", {}), \
-        "style properties must live only in the catch-all block, not per-resolution device blocks"
-print("device block (if any) carries no style vars -- catch-all only, per design: OK")
+assert "ibtnicon" in device_elements, "ibtnicon must have a rule in the device block too"
+assert device_elements["ibtnicon"]["extra_vars"].get("--ch5-button--default-background-color") == "#000000"
+print("the device block ALSO carries the style var, matching real Construct behavior: OK")
 
 # --- write back to disk and confirm the file still round-trips section-for-section ----
 new_sections = [
