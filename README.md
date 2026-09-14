@@ -47,6 +47,18 @@ doesn't match the unquoted form. Not caused by today's work (`set_page_
 background_color` never touches fonts); flagged for a future session, not
 fixed now.
 
+Applied live to `GenTestProject2`: real Cornell brand colors --
+`background_color`/`text_color`/`border_color`/`icon_color` =
+Carnelian/White/Dark gray/White applied project-wide across every mapped
+component type (`apply_palette_project_wide_all_types`, full 3-state
+coverage), and `#F7F7F7` (Cornell's own secondary/neutral light gray) set as
+the solid background on all 12 pages/widgets via the new
+`set_page_background_color` -- a neutral canvas reserving the bold primary
+red for interactive elements, standard brand-usage practice rather than
+painting every page background the same saturated primary color. Verified on
+disk: every file round-trips byte-identical. Awaiting the user's live
+Construct confirmation.
+
 **Phase 7 (themes) SECOND CORRECTION: styling was over-replicating into every
 resolution block; corrected to catch-all + primary only, matching real CSS
 cascade.** User demonstrated the real rule directly in Construct: *"i just added
