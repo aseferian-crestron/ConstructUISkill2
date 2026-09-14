@@ -373,13 +373,20 @@ def derive_states(resolved_palette: dict[str, str]) -> dict[str, str]:
     return derived
 
 
-def apply_palette(css_text: str, element_id: str, sdk: UiSdk, tag_name: str, palette: dict[str, str]) -> str:
+def apply_palette(
+    css_text: str, element_id: str, sdk: UiSdk, tag_name: str, palette: dict[str, str],
+    *, primary_query: str | None = None,
+) -> str:
     """Apply a subset of `tag_name`'s palette keys (colors/border values) to
     `element_id`, resolved through the curated mapping and then Stage 1's real
     schema catalog (`style.set_component_style`). Raises `KeyError` up front --
     before writing anything -- if `tag_name` has no mapping yet, or if `palette`
     names a key this type's mapping doesn't cover; never silently drops a key the
     caller asked to set.
+
+    `primary_query`: forwarded to style.set_component_style -- the project's
+    primary resolution's own media query, so its block gets the value written
+    too, matching Construct's real behavior (see that function's docstring).
     """
     mapping = PALETTE_MAPPING.get(tag_name)
     if mapping is None:
@@ -391,4 +398,4 @@ def apply_palette(css_text: str, element_id: str, sdk: UiSdk, tag_name: str, pal
             f"supported: {sorted(mapping)}"
         )
     style_values = [(*mapping[key], value) for key, value in palette.items()]
-    return style.set_component_style(css_text, element_id, sdk, tag_name, style_values)
+    return style.set_component_style(css_text, element_id, sdk, tag_name, style_values, primary_query=primary_query)

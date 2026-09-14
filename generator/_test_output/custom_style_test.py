@@ -2,6 +2,7 @@
 against the real SDK schema, then applying real style values to a real component's
 CSS in a scratch copy of GenTestProject2, verified on disk.
 """
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -59,6 +60,14 @@ before = elements_before["ibtnicon"]
 assert before["width"] == 150 and before["height"] == 50 and before["left"] == 20 and before["top"] == 20
 print("baseline: ibtnicon's existing position/size confirmed before any style edit: OK")
 
+# Snapshot of ibtnicon's device-block rule BEFORE any edit in this test -- used later to
+# confirm a call with no primary_query touches this block NOT AT ALL (byte-identical),
+# regardless of whatever this scratch copy's own source file happens to already carry.
+_device_query_snapshot = layout.landscape_media_query(1280, 800)
+_device_block_before = layout.find_media_block(css_before, _device_query_snapshot) or ""
+_device_rule_match_before = re.search(r"#ibtnicon\{[^{}]*\}", _device_block_before)
+_device_rule_before = _device_rule_match_before.group(0) if _device_rule_match_before else None
+
 new_css = style.set_component_style(
     css_before, "ibtnicon", ui_sdk, "ch5-button",
     [
@@ -81,8 +90,7 @@ print("ibtnicon: new style vars added, pre-existing position/size/size-vars pres
 
 # --- the sector-prefixed pseudo-property (what the property grid actually reads, per --
 # --- the real Check.cuig file) is ALSO written, alongside the --ch5-* CSS var ---------
-import re as _re
-ibtnicon_rule_match = _re.search(r"#ibtnicon\{([^{}]*)\}", new_css)
+ibtnicon_rule_match = re.search(r"#ibtnicon\{([^{}]*)\}", new_css)
 assert ibtnicon_rule_match, "no #ibtnicon{} rule found"
 ibtnicon_rule_text = ibtnicon_rule_match.group(1)
 assert "Appearance_background-color: #112233" in ibtnicon_rule_text, ibtnicon_rule_text
@@ -115,13 +123,43 @@ raw_rule_count = ibtnicon_rule.count("--ch5-button--default-background-color")
 assert raw_rule_count == 1, f"expected the var written exactly once within ibtnicon's own rule, found {raw_rule_count}"
 print("re-applying a style property updates in place, no duplicate declaration: OK")
 
-# --- CORRECTED 2026-09-13: style properties ARE duplicated into the per-resolution ----
-# --- device block too, confirmed against a real Construct-authored file (Check.cuig) --
+# --- CORRECTED 2026-09-13, a SECOND time (real user experiment in Construct with three --
+# --- distinct fill colors proved only catch-all+primary get a value, never every block) -
+# --- with no primary_query given, the device block is untouched -- compared against the --
+# --- snapshot taken before ANY edit in this test, not an absolute "must be empty" check,
+# --- since this scratch copy's own live source may independently carry pre-existing data.
 device_query = layout.landscape_media_query(1280, 800)
-device_elements = layout.parse_all_position_rules(newer_css, device_query)
-assert "ibtnicon" in device_elements, "ibtnicon must have a rule in the device block too"
-assert device_elements["ibtnicon"]["extra_vars"].get("--ch5-button--default-background-color") == "#000000"
-print("the device block ALSO carries the style var, matching real Construct behavior: OK")
+device_block_after = layout.find_media_block(newer_css, device_query) or ""
+device_rule_match_after = re.search(r"#ibtnicon\{[^{}]*\}", device_block_after)
+device_rule_after = device_rule_match_after.group(0) if device_rule_match_after else None
+assert device_rule_after == _device_rule_before, \
+    f"with no primary_query, ibtnicon's device-block rule must be byte-identical to before " \
+    f"this test's own edits -- before={_device_rule_before!r} after={device_rule_after!r}"
+print("with no primary_query given, no other block is touched -- relies on real CSS cascade: OK")
+
+# Snapshot a THIRD, non-primary resolution's rule before this next edit too.
+other_query = layout.landscape_media_query(640, 360)
+other_block_before = layout.find_media_block(new_css, other_query) or ""
+other_rule_match_before = re.search(r"#ibtnicon\{[^{}]*\}", other_block_before)
+other_rule_before = other_rule_match_before.group(0) if other_rule_match_before else None
+
+# --- WITH an explicit primary_query, that SPECIFIC block (and only that one) also gets it
+with_primary = style.set_component_style(
+    new_css, "ibtnicon", ui_sdk, "ch5-button",
+    [(".ch5-button--default", "background-color", "#123123")],
+    primary_query=device_query,
+)
+primary_block_elements = layout.parse_all_position_rules(with_primary, device_query)
+assert primary_block_elements["ibtnicon"]["extra_vars"]["--ch5-button--default-background-color"] == "#123123"
+print("an explicit primary_query's own block DOES get the value: OK")
+
+# a DIFFERENT, non-primary resolution's block is still byte-identical to before this edit
+other_block_after = layout.find_media_block(with_primary, other_query) or ""
+other_rule_match_after = re.search(r"#ibtnicon\{[^{}]*\}", other_block_after)
+other_rule_after = other_rule_match_after.group(0) if other_rule_match_after else None
+assert other_rule_after == other_rule_before, \
+    f"a non-primary resolution's block must stay byte-identical -- before={other_rule_before!r} after={other_rule_after!r}"
+print("a non-primary resolution's block is still untouched even when primary_query is given: OK")
 
 # --- write back to disk and confirm the file still round-trips section-for-section ----
 new_sections = [

@@ -169,12 +169,22 @@ def set_component_style(
     style_values: list[tuple[str, str, str]],
     *,
     attributes: dict[str, str] | None = None,
+    primary_query: str | None = None,
 ) -> str:
     """Apply one or more `(class_name, source_property, value)` style values to
-    `element_id`'s CSS, written into EVERY `@media` block's own `#id{...}` rule
-    (catch-all AND every configured resolution's device block -- confirmed required
-    against a real Construct-authored file, see layout.update_element_declarations'
-    docstring) as TWO parallel declarations per property:
+    `element_id`'s CSS, written into the catch-all block's own `#id{...}` rule AND,
+    when `primary_query` is given, that SAME query's own block too -- matching
+    Construct's own real behavior (confirmed via two real user experiments, see
+    layout.update_element_declarations' docstring): a style value is replicated into
+    the catch-all and the project's PRIMARY resolution's own block, and left OUT of
+    every other resolution's block entirely, relying on real CSS cascade. Pass
+    `primary_query` (the primary resolution's own media query -- see
+    layout.orientation_media_query/landscape_media_query) whenever the caller knows
+    it; omitting it (None) still correctly styles the catch-all (and therefore every
+    resolution via cascade) but leaves the property grid unable to show the right
+    value while the user is viewing the primary resolution specifically.
+
+    Each property is written as TWO parallel declarations:
 
       - the `--ch5-*` custom property (`target_property`) the CH5 web component
         actually reads to render -- the same placement already proven for size
@@ -204,5 +214,7 @@ def set_component_style(
         declarations[target] = value
         if entry.get("sector_prefix"):
             declarations[f"{entry['sector_prefix']}{source_property}"] = value
-    new_css, _blocks_updated = layout.update_element_declarations(css_text, element_id, declarations)
+    extra_queries = (primary_query,) if primary_query else ()
+    new_css, _blocks_updated = layout.update_element_declarations(
+        css_text, element_id, declarations, extra_queries=extra_queries)
     return new_css

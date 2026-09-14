@@ -323,31 +323,47 @@ def parse_all_position_rules(css_text: str, query: str) -> dict[str, dict]:
     return elements
 
 
-def update_element_declarations(css_text: str, element_id: str, declarations: dict[str, str]) -> tuple[str, int]:
+CATCH_ALL_QUERY = "(max-width: 99999px)"
+
+
+def update_element_declarations(
+    css_text: str, element_id: str, declarations: dict[str, str], *, extra_queries: tuple[str, ...] = (),
+) -> tuple[str, int]:
     """Merge `declarations` ({css-property-or-var-name: value}) into `element_id`'s own
-    `#id{...}` rule, in EVERY `@media {...}` block that contains one (catch-all AND every
-    per-resolution device block). An existing declaration keeps its position and is
-    overwritten; a new one is appended at the end. Re-serialized as `key: value` pairs
-    joined by `"; "` with a single trailing `;` -- the exact shape build_position_css's
-    own base_rule/device_rule strings already produce.
+    `#id{...}` rule, in the catch-all block AND any block matching a query in
+    `extra_queries` (typically just the project's PRIMARY resolution's own query) --
+    NOT every configured resolution's block. An existing declaration keeps its position
+    and is overwritten; a new one is appended at the end. Re-serialized as `key: value`
+    pairs joined by `"; "` with a single trailing `;` -- the exact shape
+    build_position_css's own base_rule/device_rule strings already produce.
 
-    CORRECTED 2026-09-13 (real user-reported property-grid/canvas desync, confirmed
-    against a real file): a first version of this function wrote ONLY into the catch-all
-    block, reasoning that plain CSS cascade would carry a style value into every device
-    block for free. WRONG per the user's own live test in Construct (a fresh button's
-    fill color set via the property grid stayed correct across every breakpoint without
-    the user touching each one) and per the resulting file itself: Construct duplicates
-    the SAME `--ch5-*` custom property into the catch-all AND the device-specific block
-    (`Check.cuig`, a real Construct-authored file: `--ch5-button--default-background-
-    color:#ff0000` appears in BOTH). The user's cascade-free UI *experience* is Construct
-    fanning the value out to every configured resolution's own rule at write time, not
-    the file relying on runtime CSS cascade across media queries -- matching the same
-    duplication this generator's own size vars already use everywhere else.
+    CORRECTED 2026-09-13, TWICE, both times from real user experiments in Construct:
 
-    Returns `(new_css_text, blocks_updated)` -- `blocks_updated` is the number of
-    `#id{}` rules actually found and merged into. Raises `KeyError` if the element has
-    no `#id{}` rule ANYWHERE -- asking to style a component that was never actually
-    placed is a real caller error, not something to silently paper over.
+    1. First version wrote ONLY into the catch-all, reasoning plain CSS cascade would
+       carry a value into every device block for free. The user's OWN property grid
+       showed a stale/theme value for border/label color despite the CSS var being
+       correct -- traced to `getNearestPropValue` needing an explicit value in the
+       CURRENTLY-ACTIVE breakpoint's own rule, not just the catch-all's.
+    2. That fix over-corrected to writing EVERY block unconditionally. The user then
+       demonstrated the REAL rule directly in Construct: set three different colors on
+       ONE button -- primary resolution (replicated into catch-all, Construct's own
+       ONE deviation from pure cascade), one resolution left unchanged (got NO media
+       query at all, correctly inherits from primary at runtime), one resolution
+       explicitly changed (got a query with ONLY that delta). Verbatim: "the only
+       thing that should ever be written to a media query is a delta between the
+       parent query and the active query... no replicated data in any media query
+       should exist [beyond primary->catch-all]." Writing to every block was
+       reintroducing exactly the un-cascaded duplication real Construct never does.
+
+    So: catch-all always gets it (mirrors primary); `extra_queries` (the primary
+    resolution's own query, when the caller knows it) gets it too, matching
+    Construct's one real duplication; every OTHER resolution is left alone entirely,
+    relying on real CSS cascade, exactly like every other property this generator
+    was already correct about before this whole detour.
+
+    Returns `(new_css_text, blocks_updated)`. Raises `KeyError` if the element has no
+    `#id{}` rule in the catch-all -- asking to style a component that was never
+    actually placed is a real caller error, not something to silently paper over.
     """
     id_pattern = re.compile(r"#" + re.escape(element_id) + r"\s*\{(?P<decls>[^{}]*)\}")
 
@@ -369,16 +385,24 @@ def update_element_declarations(css_text: str, element_id: str, declarations: di
                 by_key[key] = new_pair
         return f"#{element_id}{{" + "; ".join(f"{k}: {v}" for k, v in decl_pairs) + ";}"
 
+    target_spans: list[tuple[int, int]] = list(find_media_block_spans(css_text, CATCH_ALL_QUERY))
+    for query in extra_queries:
+        if query != CATCH_ALL_QUERY:
+            target_spans.extend(find_media_block_spans(css_text, query))
+
     # Collect every match first, then splice from the END backward -- editing in place
     # front-to-back would invalidate every later offset the moment a rewritten rule's
     # length differs from the original (the same technique reflow_file already uses for
     # its own multi-span target-block replacement).
-    matches = [m for start, end in find_all_media_block_spans(css_text)
+    matches = [m for start, end in target_spans
               for m in [id_pattern.search(css_text, start, end)] if m is not None]
     for m in reversed(matches):
         css_text = css_text[:m.start()] + merged_rule(m.group("decls")) + css_text[m.end():]
-    if not matches:
-        raise KeyError(f"No #{element_id} rule found in any @media block -- cannot apply style")
+    catch_all_matched = any(
+        id_pattern.search(css_text, s, e) for s, e in find_media_block_spans(css_text, CATCH_ALL_QUERY)
+    )
+    if not catch_all_matched:
+        raise KeyError(f"No #{element_id} rule found in the catch-all block -- cannot apply style")
     return css_text, len(matches)
 
 

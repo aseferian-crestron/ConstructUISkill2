@@ -31,13 +31,34 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import background
 import color_words
 import compare
+import layout
 import palette
 import reflow
 from sdk import UiSdk
 
 SEGMENT_SPLIT_RE = re.compile(r"\band\b|\bwith\b|,", re.IGNORECASE)
+
+
+def _primary_query_for(project_dir: Path) -> str | None:
+    """The project's primary resolution's own media query (see layout.py's
+    orientation_media_query), or None if no `.cuip` is found in `project_dir` or the
+    project has no resolutions configured yet. Passed to palette.apply_palette so a
+    themed value reaches the primary resolution's own block, not just the catch-all
+    -- matching Construct's real behavior (see layout.update_element_declarations'
+    docstring). Looks for exactly one `*.cuip` in `project_dir`, the same
+    one-project-per-folder convention this whole generator already assumes."""
+    cuip_candidates = list(project_dir.glob("*.cuip"))
+    if len(cuip_candidates) != 1:
+        return None
+    resolutions = background._project_resolutions(cuip_candidates[0])
+    primary = reflow.pick_primary(resolutions, "landscape") or reflow.pick_primary(resolutions, "portrait")
+    if primary is None:
+        return None
+    orientation = reflow._orientation_name(primary)
+    return layout.orientation_media_query(orientation, primary["width"], primary["height"])
 
 #: property keyword -> palette key, checked in this order (first match wins per
 #: segment) -- matches palette.py's own PALETTE_MAPPING keys.
@@ -93,6 +114,7 @@ def apply_palette_to_page(
     *,
     tag_name: str = "ch5-button",
     derive_states: bool = True,
+    primary_query: str | None = "auto",
 ) -> list[str]:
     """Apply an ALREADY-RESOLVED palette dict to EVERY `tag_name` instance on
     ONE page/widget file. "Every `tag_name` instance", not "every object" --
@@ -109,10 +131,20 @@ def apply_palette_to_page(
     written) or when `resolved_palette` already fully specifies every state
     itself.
 
+    `primary_query`: the project's primary resolution's own media query, so its
+    block also gets the value (matching Construct's real behavior -- see
+    layout.update_element_declarations' docstring). Left at the sentinel
+    `"auto"` (default), this is computed once via `_primary_query_for(page_path.
+    parent)`; pass an explicit query string to reuse one already computed
+    (project-wide callers do this to avoid recomputing per page), or `None` to
+    skip it entirely (catch-all only).
+
     Returns `warnings` -- covers both unmapped types present on the page and any
     element `tag_name`'s own mapping doesn't cover (see palette.apply_palette);
     never raises for them.
     """
+    if primary_query == "auto":
+        primary_query = _primary_query_for(page_path.parent)
     if derive_states:
         resolved_palette = palette.derive_states(resolved_palette)
     warnings: list[str] = []
@@ -145,7 +177,8 @@ def apply_palette_to_page(
     new_css = css_text
     for element_id in target_ids:
         try:
-            new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, resolved_palette)
+            new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, resolved_palette,
+                                            primary_query=primary_query)
         except KeyError as e:
             warnings.append(f"{page_path.name}: {element_id!r} -- {e}")
 
@@ -159,7 +192,8 @@ def apply_palette_to_page(
 
 
 def apply_palette_to_page_all_types(
-    resolved_palette: dict[str, str], page_path: Path, sdk: UiSdk, *, derive_states: bool = True,
+    resolved_palette: dict[str, str], page_path: Path, sdk: UiSdk, *,
+    derive_states: bool = True, primary_query: str | None = "auto",
 ) -> list[str]:
     """Apply an ALREADY-RESOLVED palette across EVERY MAPPED component type on
     ONE page/widget -- "style all objects on this page" in the literal sense,
@@ -179,6 +213,8 @@ def apply_palette_to_page_all_types(
     not a real gap); any element an applicable mapping still doesn't cover is
     also reported. Never raises for them.
     """
+    if primary_query == "auto":
+        primary_query = _primary_query_for(page_path.parent)
     if derive_states:
         resolved_palette = palette.derive_states(resolved_palette)
     warnings: list[str] = []
@@ -210,7 +246,8 @@ def apply_palette_to_page_all_types(
             continue
         for element_id in ids:
             try:
-                new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, subset)
+                new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, subset,
+                                                primary_query=primary_query)
             except KeyError as e:
                 warnings.append(f"{page_path.name}: {element_id!r} -- {e}")
 
@@ -228,13 +265,16 @@ def apply_palette_project_wide_all_types(
 ) -> list[str]:
     """apply_palette_to_page_all_types over every page/widget file in `project_dir`
     -- "theme my whole project, every object" in the fullest sense. Derives
-    pressed/selected once here (not per-page) so it's computed a single time;
-    `derive_states=False` passes the palette through unchanged."""
+    pressed/selected once here (not per-page) so it's computed a single time; same
+    for the project's primary-resolution query (see _primary_query_for). Pass
+    `derive_states=False` to skip state derivation."""
     if derive_states:
         resolved_palette = palette.derive_states(resolved_palette)
+    primary_query = _primary_query_for(project_dir)
     warnings: list[str] = []
     for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
-        warnings.extend(apply_palette_to_page_all_types(resolved_palette, page_path, sdk, derive_states=False))
+        warnings.extend(apply_palette_to_page_all_types(
+            resolved_palette, page_path, sdk, derive_states=False, primary_query=primary_query))
     return warnings
 
 
@@ -265,9 +305,11 @@ def apply_palette_project_wide(
     """
     if derive_states:
         resolved_palette = palette.derive_states(resolved_palette)
+    primary_query = _primary_query_for(project_dir)
     warnings: list[str] = []
     for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
-        warnings.extend(apply_palette_to_page(resolved_palette, page_path, sdk, tag_name=tag_name, derive_states=False))
+        warnings.extend(apply_palette_to_page(
+            resolved_palette, page_path, sdk, tag_name=tag_name, derive_states=False, primary_query=primary_query))
     return warnings
 
 

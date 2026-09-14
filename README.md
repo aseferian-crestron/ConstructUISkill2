@@ -9,6 +9,68 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes) SECOND CORRECTION: styling was over-replicating into every
+resolution block; corrected to catch-all + primary only, matching real CSS
+cascade.** User demonstrated the real rule directly in Construct: *"i just added
+a new button to the Check page and what i did was set three different fill
+colors to demonstrate cascading. primary resolution (including 99999) has red...
+no changes to TSW-760 so no media query is written... the only thing that should
+ever be written to a media query is a delta between the parent query and the
+active query. this is the pattern of cascading style sheets. the ONLY deviation
+is that Construct replicates the primary resolution data... into a media query
+at 99999. other than that, no replicated data in any media query should exist."*
+
+My PREVIOUS fix (see the entry below this one) over-corrected: after finding the
+property-grid-needs-an-explicit-value problem, I made `layout.py` write every
+style property into EVERY configured resolution's block unconditionally. Wrong
+-- that's un-cascaded duplication real Construct never does. The correct rule,
+now implemented: catch-all always gets it (mirrors primary); the PRIMARY
+resolution's own block gets it too (Construct's one real deviation); every
+OTHER resolution is left alone entirely, relying on real CSS cascade.
+
+- `layout.py::update_element_declarations`: now takes `extra_queries` (typically
+  just the primary resolution's query) instead of writing everywhere. Also
+  reports `blocks_updated` correctly and raises only if the catch-all itself has
+  no rule for the element.
+- `style.py::set_component_style` / `palette.py::apply_palette`: gained
+  `primary_query: str | None`, forwarded down to `update_element_declarations`.
+- `theme_chat.py::_primary_query_for(project_dir)` (new): finds the project's
+  one `.cuip`, resolves its primary landscape/portrait resolution, and returns
+  that resolution's own media query. Every apply function
+  (`apply_palette_to_page(_all_types)`, `apply_palette_project_wide(_all_types)`,
+  `apply_chat_style`) now computes this once (project-wide callers) or
+  auto-computes it per page (`primary_query="auto"` sentinel default) and
+  threads it through, so a themed value reaches the primary block too, without
+  the caller needing to know about it.
+
+`custom_style_test.py` rewritten: the earlier (now-wrong) "device block also
+gets it" assertion inverted to a before/after byte-identical comparison (no
+`primary_query` given -> the device block is provably untouched, whatever its
+pre-existing content), plus new coverage that an explicit `primary_query`'s own
+block DOES get the value while a different, non-primary block still doesn't.
+Full suite re-run clean except the one known pre-existing unrelated failure.
+
+**A real mishap during live cleanup, disclosed in full**: re-applying the
+corrected code to `GenTestProject2` still left every earlier (wrongly
+over-replicated) resolution block carrying stale style declarations, so I wrote
+an ad-hoc script to strip them back out everywhere except catch-all/primary.
+That script had a real bug: when a block's rule contained *only* a style
+declaration and nothing else (exactly the correct minimal-delta shape the
+user's own Check.cuig demonstration used), stripping the key left an empty,
+invalid `#id{;}` rule instead of removing the rule entirely. This destroyed the
+actual fill-color value the user had set by hand on `Check.cuig`'s new button
+for the TSW-570 resolution -- the specific value is UNRECOVERABLE; only the
+structural corruption (the empty rule) could be fixed. Confirmed via direct
+inspection that this was the ONLY casualty -- the other three files the same
+cleanup touched (`AllComponents - Buttons.cuig`, `ButtonVariants.cuig`,
+`ReflowTest.cuig`) were checked rule-by-rule and are correct (position/size
+intact everywhere, only the out-of-scope style keys removed from non-primary
+blocks). The user needs to re-set that one TSW-570 color by hand; I cannot
+recover it. Lesson: an ad-hoc data-rewriting script against LIVE user data
+needs the same "prove it first, small-scale" discipline as generator code --
+this one was run directly at full scope without first checking whether
+stripping could ever produce a degenerate empty rule.
+
 **Phase 7 (themes): normal/pressed/selected 3-state styling.** User: *"you are
 not styling the 3 states of a button. normal, pressed and selected. this needs
 to be covered when you style components and you should apply standard
