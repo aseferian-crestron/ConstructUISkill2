@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
 
+import color_words as color_words_module  # noqa: E402
 import compare  # noqa: E402
 import layout  # noqa: E402
 import palette  # noqa: E402
@@ -105,5 +106,36 @@ rebuilt = parsed.preamble + "".join(header + content for _, header, content in n
 page_path.write_text(rebuilt, encoding="utf-8", newline="")
 assert compare.round_trip_check(page_path)
 print("the rewritten .cuig still round-trips section-for-section: OK")
+
+# --- derive_states: standard-practice pressed/selected derivation from normal only ----
+normal_only = {"background_color": "#204060", "border_color": "#80c0ff",
+              "border_width": "2px", "text_color": "#ffffff", "icon_color": "#ffcc00"}
+derived = palette.derive_states(normal_only)
+assert derived["pressed_background_color"] == color_words_module.adjust_lightness("#204060", -0.15)
+assert derived["selected_background_color"] == color_words_module.adjust_lightness("#204060", 0.12)
+# border/text/icon carry over UNCHANGED to both states -- standard button practice
+assert derived["pressed_border_color"] == derived["selected_border_color"] == "#80c0ff"
+assert derived["pressed_border_width"] == derived["selected_border_width"] == "2px"
+assert derived["pressed_text_color"] == derived["selected_text_color"] == "#ffffff"
+assert derived["pressed_icon_color"] == derived["selected_icon_color"] == "#ffcc00"
+print("derive_states: pressed darkens, selected lightens, everything else carries over: OK")
+
+# An explicitly-set pressed_*/selected_* value is never overwritten by the derivation.
+explicit = {"background_color": "#204060", "pressed_background_color": "#000000"}
+derived2 = palette.derive_states(explicit)
+assert derived2["pressed_background_color"] == "#000000"  # honored, not overwritten
+assert derived2["selected_background_color"] == color_words_module.adjust_lightness("#204060", 0.12)  # still derived
+print("derive_states never overwrites an explicitly-set pressed_/selected_ key: OK")
+
+# --- end-to-end: a derived 3-state palette applied to a real button -------------------
+new_css2 = palette.apply_palette(css_before, "ibtnicon", ui_sdk, "ch5-button", derived)
+after2 = layout.parse_all_position_rules(new_css2, "(max-width: 99999px)")["ibtnicon"]
+v = after2["extra_vars"]
+assert v["--ch5-button--default-background-color"] == "#204060"
+assert v["--ch5-button--default-pressed-background-color"] == derived["pressed_background_color"]
+assert v["--ch5-button--default-selected-background-color"] == derived["selected_background_color"]
+assert v["--ch5-button--default-pressed-border-color"] == "#80c0ff"
+assert v["--ch5-button--default-selected-label-font-color"] == "#ffffff"
+print("a derived 3-state palette applies normal+pressed+selected vars to a real button: OK")
 
 print("\nPalette (Stage 2): all assertions passed.")

@@ -51,13 +51,25 @@ NO_STYLABLE_PROPERTIES.
 """
 from __future__ import annotations
 
+import color_words
 import style
 from sdk import UiSdk
 
 # Logical palette key -> (class_name, source_property) in ch5-button's own Stage-1
-# catalog (verified against the real schema by this module's own test). Scoped to
-# the DEFAULT state only for v1 (not pressed/selected) -- matches "theme the base
-# look"; pressed/selected-state palettes are a named follow-up.
+# catalog (verified against the real schema by this module's own test).
+#
+# EXTENDED 2026-09-13 (user: "you are not styling the 3 states of a button.
+# normal, pressed and selected. this needs to be covered when you style
+# components"): the real schema carries a FULL parallel set of pressed_/
+# selected_ properties (confirmed via style.style_property_catalog --
+# `[pressed="true"] .ch5-button--default,.ch5-button--default.ch5-button--
+# pressed` etc., its own background/border/label/icon set, sectorPrefix
+# "pressedAppearance_"/"pressedLabel_"/"pressedIcon_" and the "selected"
+# equivalents) -- not guessed, the same schema-survey discipline as every
+# other entry here. See derive_states() for filling these in automatically
+# from a normal-state-only palette using standard UI convention (pressed =
+# darker, selected = lighter/highlighted) when the caller hasn't set them
+# explicitly.
 _BUTTON_PALETTE: dict[str, tuple[str, str]] = {
     "background_color": (".ch5-button--default", "background-color"),
     "border_color": (".ch5-button--default", "border-color"),
@@ -65,12 +77,40 @@ _BUTTON_PALETTE: dict[str, tuple[str, str]] = {
     "border_style": (".ch5-button--default", "border-style"),
     "text_color": (".ch5-button--default .ch5-button--label", "color"),
     "icon_color": (".ch5-button--default .ch5-button--icon", "color"),
+    "pressed_background_color": (
+        '[pressed="true"] .ch5-button--default,.ch5-button--default.ch5-button--pressed', "background-color"),
+    "pressed_border_color": (
+        '[pressed="true"] .ch5-button--default,.ch5-button--default.ch5-button--pressed', "border-color"),
+    "pressed_border_width": (
+        '[pressed="true"] .ch5-button--default,.ch5-button--default.ch5-button--pressed', "border-width"),
+    "pressed_border_style": (
+        '[pressed="true"] .ch5-button--default,.ch5-button--default.ch5-button--pressed', "border-style"),
+    "pressed_text_color": (
+        '[pressed="true"] .ch5-button--default.ch5-button--pressed .ch5-button--label,'
+        '.ch5-button--default.ch5-button--pressed .ch5-button--label', "color"),
+    "pressed_icon_color": (
+        '[pressed="true"] .ch5-button--default.ch5-button--pressed .ch5-button--icon,'
+        '.ch5-button--default.ch5-button--pressed .ch5-button--icon', "color"),
+    "selected_background_color": (
+        '[selected="true"] .ch5-button--default,.ch5-button--default.ch5-button--selected', "background-color"),
+    "selected_border_color": (
+        '[selected="true"] .ch5-button--default,.ch5-button--default.ch5-button--selected', "border-color"),
+    "selected_border_width": (
+        '[selected="true"] .ch5-button--default,.ch5-button--default.ch5-button--selected', "border-width"),
+    "selected_border_style": (
+        '[selected="true"] .ch5-button--default,.ch5-button--default.ch5-button--selected', "border-style"),
+    "selected_text_color": (
+        '[selected="true"] .ch5-button--default.ch5-button--selected .ch5-button--label,'
+        '.ch5-button--default.ch5-button--selected .ch5-button--label', "color"),
+    "selected_icon_color": (
+        '[selected="true"] .ch5-button--default.ch5-button--selected .ch5-button--icon,'
+        '.ch5-button--default.ch5-button--selected .ch5-button--icon', "color"),
 }
 
-# Button-family types: same shape as _BUTTON_PALETTE, own selector prefix, but
-# targeting ch5-button's OWN --ch5-button--* vars (confirmed real, not a typo --
-# button-list/tab-button share that namespace for their default/unpressed/
-# unselected state).
+# Button-family types: same shape as _BUTTON_PALETTE (now including pressed_/
+# selected_ keys), own selector prefix, but targeting ch5-button's OWN
+# --ch5-button--* vars (confirmed real, not a typo -- button-list/tab-button
+# share that namespace for every state).
 _BUTTON_LIST_PALETTE: dict[str, tuple[str, str]] = {
     "background_color": (".ch5-button-list--button-type-default", "background-color"),
     "border_color": (".ch5-button-list--button-type-default", "border-color"),
@@ -78,6 +118,22 @@ _BUTTON_LIST_PALETTE: dict[str, tuple[str, str]] = {
     "border_style": (".ch5-button-list--button-type-default", "border-style"),
     "text_color": (".ch5-button-list--button-type-default .ch5-button--span .ch5-button--label", "color"),
     "icon_color": (".ch5-button-list--button-type-default .ch5-button--span .ch5-button--icon", "color"),
+    "pressed_background_color": (".ch5-button-list--button-type-default.ch5-button--pressed", "background-color"),
+    "pressed_border_color": (".ch5-button-list--button-type-default.ch5-button--pressed", "border-color"),
+    "pressed_border_width": (".ch5-button-list--button-type-default.ch5-button--pressed", "border-width"),
+    "pressed_border_style": (".ch5-button-list--button-type-default.ch5-button--pressed", "border-style"),
+    "pressed_text_color": (
+        ".ch5-button-list--button-type-default.ch5-button--pressed .ch5-button--span .ch5-button--label", "color"),
+    "pressed_icon_color": (
+        ".ch5-button-list--button-type-default.ch5-button--pressed .ch5-button--span .ch5-button--icon", "color"),
+    "selected_background_color": (".ch5-button-list--button-type-default.ch5-button--selected", "background-color"),
+    "selected_border_color": (".ch5-button-list--button-type-default.ch5-button--selected", "border-color"),
+    "selected_border_width": (".ch5-button-list--button-type-default.ch5-button--selected", "border-width"),
+    "selected_border_style": (".ch5-button-list--button-type-default.ch5-button--selected", "border-style"),
+    "selected_text_color": (
+        ".ch5-button-list--button-type-default.ch5-button--selected .ch5-button--span .ch5-button--label", "color"),
+    "selected_icon_color": (
+        ".ch5-button-list--button-type-default.ch5-button--selected .ch5-button--span .ch5-button--icon", "color"),
 }
 
 _TAB_BUTTON_PALETTE: dict[str, tuple[str, str]] = {
@@ -87,6 +143,22 @@ _TAB_BUTTON_PALETTE: dict[str, tuple[str, str]] = {
     "border_style": (".ch5-tab-button--button-type-default", "border-style"),
     "text_color": (".ch5-tab-button--button-type-default .ch5-button--span .ch5-button--label", "color"),
     "icon_color": (".ch5-tab-button--button-type-default .ch5-button--span .ch5-button--icon", "color"),
+    "pressed_background_color": (".ch5-tab-button--button-type-default.ch5-button--pressed", "background-color"),
+    "pressed_border_color": (".ch5-tab-button--button-type-default.ch5-button--pressed", "border-color"),
+    "pressed_border_width": (".ch5-tab-button--button-type-default.ch5-button--pressed", "border-width"),
+    "pressed_border_style": (".ch5-tab-button--button-type-default.ch5-button--pressed", "border-style"),
+    "pressed_text_color": (
+        ".ch5-tab-button--button-type-default.ch5-button--pressed .ch5-button--span .ch5-button--label", "color"),
+    "pressed_icon_color": (
+        ".ch5-tab-button--button-type-default.ch5-button--pressed .ch5-button--span .ch5-button--icon", "color"),
+    "selected_background_color": (".ch5-tab-button--button-type-default.ch5-button--selected", "background-color"),
+    "selected_border_color": (".ch5-tab-button--button-type-default.ch5-button--selected", "border-color"),
+    "selected_border_width": (".ch5-tab-button--button-type-default.ch5-button--selected", "border-width"),
+    "selected_border_style": (".ch5-tab-button--button-type-default.ch5-button--selected", "border-style"),
+    "selected_text_color": (
+        ".ch5-tab-button--button-type-default.ch5-button--selected .ch5-button--span .ch5-button--label", "color"),
+    "selected_icon_color": (
+        ".ch5-tab-button--button-type-default.ch5-button--selected .ch5-button--span .ch5-button--icon", "color"),
 }
 
 # No background-color concept at all -- an on/off switch styled by label/icon
@@ -241,6 +313,64 @@ def applicable_subset(tag_name: str, resolved_palette: dict[str, str]) -> dict[s
     not applying to a given type is normal, not a mistake."""
     mapping = PALETTE_MAPPING.get(tag_name, {})
     return {k: v for k, v in resolved_palette.items() if k in mapping}
+
+
+#: Standard UI convention (not Construct-specific -- ordinary web/native button
+#: practice) for deriving pressed/selected looks from a normal-state color when the
+#: caller hasn't set one explicitly: pressed recedes (darker, "pushed in"), selected
+#: stands out (lighter, "highlighted"). See derive_states.
+PRESSED_LIGHTNESS_DELTA = -0.15
+SELECTED_LIGHTNESS_DELTA = 0.12
+
+#: normal-state key -> its pressed_/selected_ counterparts, and whether that
+#: counterpart's value should be DERIVED from the normal key when missing (colors)
+#: or simply COPIED unchanged (border width/style, text/icon color -- standard
+#: practice leaves these the same across states; only the fill visibly shifts).
+_DERIVED_COLOR_KEYS = ("background_color",)
+_COPIED_KEYS = ("border_color", "border_width", "border_style", "text_color", "icon_color")
+
+
+def derive_states(resolved_palette: dict[str, str]) -> dict[str, str]:
+    """Expand a NORMAL-state-only palette (background_color/border_color/border_width/
+    border_style/text_color/icon_color) into a full normal+pressed+selected palette,
+    using standard UI convention -- pressed = background darkened (recedes, "pushed
+    in"), selected = background lightened (stands out, "highlighted"); every other
+    property (border, text, icon) carries over UNCHANGED to both states, matching
+    ordinary button behavior where only the fill visibly shifts between states.
+
+    ADDED 2026-09-13, user: "you are not styling the 3 states of a button. normal,
+    pressed and selected. this needs to be covered when you style components and you
+    should apply standard practices for web components when you need to show a
+    normal, pressed and selected state." This is that standard-practice derivation --
+    a judgment call (there's no Construct spec for "what pressed should look like"),
+    clearly distinct from the schema-grounded facts elsewhere in this module.
+
+    Never overwrites a `pressed_*`/`selected_*` key the caller ALREADY set explicitly
+    -- this only fills in what's missing, so an explicit request for "black when
+    pressed" is always honored over the derived default. Keys for states a given
+    component type doesn't support are harmless -- applicable_subset filters them
+    out per type before writing.
+    """
+    derived = dict(resolved_palette)
+    for key in _DERIVED_COLOR_KEYS:
+        value = resolved_palette.get(key)
+        if value is None:
+            continue
+        pressed_key, selected_key = f"pressed_{key}", f"selected_{key}"
+        if pressed_key not in derived:
+            derived[pressed_key] = color_words.adjust_lightness(value, PRESSED_LIGHTNESS_DELTA)
+        if selected_key not in derived:
+            derived[selected_key] = color_words.adjust_lightness(value, SELECTED_LIGHTNESS_DELTA)
+    for key in _COPIED_KEYS:
+        value = resolved_palette.get(key)
+        if value is None:
+            continue
+        pressed_key, selected_key = f"pressed_{key}", f"selected_{key}"
+        if pressed_key not in derived:
+            derived[pressed_key] = value
+        if selected_key not in derived:
+            derived[selected_key] = value
+    return derived
 
 
 def apply_palette(css_text: str, element_id: str, sdk: UiSdk, tag_name: str, palette: dict[str, str]) -> str:

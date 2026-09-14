@@ -9,6 +9,51 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes): normal/pressed/selected 3-state styling.** User: *"you are
+not styling the 3 states of a button. normal, pressed and selected. this needs
+to be covered when you style components and you should apply standard
+practices for web components when you need to show a normal, pressed and
+selected state."* Real gap -- Stage 1/2 only ever covered the "default"/normal
+state. Confirmed via `style.style_property_catalog` that `ch5-button`/
+`ch5-button-list`/`ch5-tab-button` (the three button-family types) carry a full
+PARALLEL pressed/selected property set in the real schema (their own background/
+border/label/icon selectors, sectorPrefix `pressedAppearance_`/`pressedLabel_`/
+`pressedIcon_` and the `selected` equivalents) -- not guessed, the same
+schema-survey discipline as every other palette entry.
+
+- `palette.py`: `_BUTTON_PALETTE`/`_BUTTON_LIST_PALETTE`/`_TAB_BUTTON_PALETTE`
+  extended from 6 keys to 18 (`pressed_background_color`, `selected_border_color`,
+  etc. -- full parallel set for all three types).
+- `palette.py::derive_states` (new): expands a normal-state-only palette into a
+  full 3-state one using STANDARD UI CONVENTION (not a Construct fact, a
+  judgment call, clearly flagged as such) -- pressed = background darkened 15%
+  ("pushed in"), selected = background lightened 12% ("highlighted"); border/
+  text/icon carry over UNCHANGED to both states (ordinary button behavior: only
+  the fill visibly shifts). Never overwrites a `pressed_*`/`selected_*` key the
+  caller already set explicitly -- only fills in what's missing.
+- `theme_chat.py`'s apply functions (`apply_palette_to_page(_all_types)`,
+  `apply_palette_project_wide(_all_types)`, `apply_chat_style`) now call
+  `derive_states` by default (`derive_states=True`) before applying -- "theme my
+  project" requests get full 3-state coverage automatically going forward, per
+  the user's ask. `derive_states=False` available for exact, no-magic control
+  (tests, or a caller that already fully specifies every state itself).
+
+`palette_test.py` extended: derivation math verified directly (darken/lighten
+formula, unchanged-carryover for border/text/icon), explicit values never
+overwritten, a derived 3-state palette applied end-to-end to a real button
+(all `--ch5-button--default-{pressed,selected}-*` vars present and correct).
+Full suite re-run clean except the one known pre-existing unrelated failure.
+
+Re-applied live to `GenTestProject2` with 3-state coverage (NY Giants colors
+project-wide, spring theme on `ReflowTest.cuig`) -- verified directly that
+every `@media` block for a themed button carries the pressed/selected vars AND
+their sector-prefix counterparts. One real mishap along the way, caught and
+handled per the user's own call: the project-wide re-apply's glob touched
+`Check.cuig` too, overwriting the user's own manually-set red test button with
+the project's blue theme -- flagged immediately; user's call was to leave it
+(it was a debugging artifact, not real project content). Awaiting the user's
+live Construct confirmation that pressed/selected states now render correctly.
+
 **Phase 7 (themes) MAJOR CORRECTION: custom-mode styling was writing an
 incomplete rule the whole time -- property grid and canvas disagreed.** User:
 *"the property grid and the objects on the canvas are not in sync. are you sure

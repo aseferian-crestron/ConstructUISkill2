@@ -92,6 +92,7 @@ def apply_palette_to_page(
     sdk: UiSdk,
     *,
     tag_name: str = "ch5-button",
+    derive_states: bool = True,
 ) -> list[str]:
     """Apply an ALREADY-RESOLVED palette dict to EVERY `tag_name` instance on
     ONE page/widget file. "Every `tag_name` instance", not "every object" --
@@ -101,10 +102,19 @@ def apply_palette_to_page(
     silently skipped, since "style everything on this page" is what was asked
     for and a caller needs to know what didn't happen and why.
 
+    `derive_states=True` (default): a normal-state-only palette is expanded via
+    palette.derive_states to also cover pressed/selected, using standard UI
+    convention, before applying -- see that function's docstring. Pass False
+    for exact, no-magic control (e.g. a test asserting precisely which keys got
+    written) or when `resolved_palette` already fully specifies every state
+    itself.
+
     Returns `warnings` -- covers both unmapped types present on the page and any
     element `tag_name`'s own mapping doesn't cover (see palette.apply_palette);
     never raises for them.
     """
+    if derive_states:
+        resolved_palette = palette.derive_states(resolved_palette)
     warnings: list[str] = []
     raw = page_path.read_text(encoding="utf-8")
     parsed = compare.split_sections(raw, page_path.suffix.lower())
@@ -148,7 +158,9 @@ def apply_palette_to_page(
     return warnings
 
 
-def apply_palette_to_page_all_types(resolved_palette: dict[str, str], page_path: Path, sdk: UiSdk) -> list[str]:
+def apply_palette_to_page_all_types(
+    resolved_palette: dict[str, str], page_path: Path, sdk: UiSdk, *, derive_states: bool = True,
+) -> list[str]:
     """Apply an ALREADY-RESOLVED palette across EVERY MAPPED component type on
     ONE page/widget -- "style all objects on this page" in the literal sense,
     not one tag at a time (see apply_palette_to_page, which only ever touches
@@ -157,11 +169,18 @@ def apply_palette_to_page_all_types(resolved_palette: dict[str, str], page_path:
     e.g. `icon_color` is silently skipped for `ch5-text`, which has no icon;
     that is normal filtering, not an error.
 
+    `derive_states=True` (default): see apply_palette_to_page's docstring --
+    expands a normal-only palette to cover pressed/selected first (types that
+    don't support those keys simply filter them back out via
+    applicable_subset, so this is harmless for e.g. `ch5-text`).
+
     Returns `warnings`: a type with no mapping at all is reported UNLESS it's in
     palette.NO_STYLABLE_PROPERTIES (nothing this mechanism could ever do for it,
     not a real gap); any element an applicable mapping still doesn't cover is
     also reported. Never raises for them.
     """
+    if derive_states:
+        resolved_palette = palette.derive_states(resolved_palette)
     warnings: list[str] = []
     raw = page_path.read_text(encoding="utf-8")
     parsed = compare.split_sections(raw, page_path.suffix.lower())
@@ -204,12 +223,18 @@ def apply_palette_to_page_all_types(resolved_palette: dict[str, str], page_path:
     return warnings
 
 
-def apply_palette_project_wide_all_types(resolved_palette: dict[str, str], project_dir: Path, sdk: UiSdk) -> list[str]:
+def apply_palette_project_wide_all_types(
+    resolved_palette: dict[str, str], project_dir: Path, sdk: UiSdk, *, derive_states: bool = True,
+) -> list[str]:
     """apply_palette_to_page_all_types over every page/widget file in `project_dir`
-    -- "theme my whole project, every object" in the fullest sense."""
+    -- "theme my whole project, every object" in the fullest sense. Derives
+    pressed/selected once here (not per-page) so it's computed a single time;
+    `derive_states=False` passes the palette through unchanged."""
+    if derive_states:
+        resolved_palette = palette.derive_states(resolved_palette)
     warnings: list[str] = []
     for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
-        warnings.extend(apply_palette_to_page_all_types(resolved_palette, page_path, sdk))
+        warnings.extend(apply_palette_to_page_all_types(resolved_palette, page_path, sdk, derive_states=False))
     return warnings
 
 
@@ -219,6 +244,7 @@ def apply_palette_project_wide(
     sdk: UiSdk,
     *,
     tag_name: str = "ch5-button",
+    derive_states: bool = True,
 ) -> list[str]:
     """Apply an ALREADY-RESOLVED palette dict (see palette.py's PALETTE_MAPPING
     keys, e.g. {"background_color": "#0b2265", "text_color": "#a71930"} for "NY
@@ -230,12 +256,18 @@ def apply_palette_project_wide(
     what "Halloween" or a sports team's colors are -- this function only knows
     how to apply values it's given, never how to invent them.
 
+    `derive_states=True` (default): expands a normal-only palette to also cover
+    pressed/selected via palette.derive_states, computed ONCE here rather than
+    per-page. Pass False for exact, no-magic control.
+
     Just apply_palette_to_page over every page/widget file -- returns the
     combined warnings.
     """
+    if derive_states:
+        resolved_palette = palette.derive_states(resolved_palette)
     warnings: list[str] = []
     for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
-        warnings.extend(apply_palette_to_page(resolved_palette, page_path, sdk, tag_name=tag_name))
+        warnings.extend(apply_palette_to_page(resolved_palette, page_path, sdk, tag_name=tag_name, derive_states=False))
     return warnings
 
 
@@ -245,18 +277,22 @@ def apply_chat_style(
     sdk: UiSdk,
     *,
     tag_name: str = "ch5-button",
+    derive_states: bool = True,
 ) -> tuple[dict[str, str], list[str]]:
     """Parse `description` for LITERAL color words (see module docstring -- this
     is the narrow, inspectable path, not a general theme-name resolver) and
-    apply the result via apply_palette_project_wide. Returns
-    `(parsed_palette, warnings)`; raises ValueError up front if the description
-    named no recognizable color/property at all, before touching any file --
-    a broad/named description ("Halloween theme") is expected to hit this and
-    should be resolved to real colors by the caller instead (see
+    apply the result via apply_palette_project_wide (which, by default, also
+    derives pressed/selected states -- see palette.derive_states). Returns
+    `(parsed_palette, warnings)` -- `parsed_palette` is the palette AS PARSED
+    from the description, before state derivation, so callers see exactly what
+    was read from the text. Raises ValueError up front if the description named
+    no recognizable color/property at all, before touching any file -- a broad/
+    named description ("Halloween theme") is expected to hit this and should be
+    resolved to real colors by the caller instead (see
     apply_palette_project_wide's docstring).
     """
     parsed_palette = parse_style_description(description)
     if not parsed_palette:
         raise ValueError(f"no recognized color/property found in {description!r}")
-    warnings = apply_palette_project_wide(parsed_palette, project_dir, sdk, tag_name=tag_name)
+    warnings = apply_palette_project_wide(parsed_palette, project_dir, sdk, tag_name=tag_name, derive_states=derive_states)
     return parsed_palette, warnings
