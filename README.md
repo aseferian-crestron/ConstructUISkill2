@@ -9,6 +9,45 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 3, source #1: chat-described theming.** User: "yes,
+start with chat-described values." Two new modules:
+
+- `generator/color_words.py`: the real, standardized CSS Color Module Level 4 /
+  SVG 1.1 extended color keyword table (147 names, not invented) +
+  `adjust_lightness` (plain HSL math). `resolve_color_phrase` prefers an EXACT
+  named color over a computed one -- "dark blue" resolves to `darkblue`'s real
+  spec hex (`#00008b`), not `blue` algorithmically darkened, since CSS itself
+  defines a distinct hex for many "light X"/"dark X" combinations; only a
+  combination with no real CSS name (e.g. "dark yellow") falls back to an HSL
+  lightness shift.
+- `generator/theme_chat.py`: `parse_style_description` splits a description on
+  "and"/"with"/commas into segments, resolves each segment's color via
+  `color_words.py`, and matches a property keyword (background/text/border/icon)
+  within the same segment -- a segment naming a color with no property keyword
+  defaults to `background_color` (the natural reading of "make the buttons X").
+  Intentionally simple and inspectable, not an LLM/black box. `apply_chat_style`
+  applies the parsed palette to EVERY `ch5-button` instance across EVERY page/
+  widget in the project -- "theme my project" in the whole-project sense the
+  original request was about, not one component at a time. Scope: `ch5-button`
+  only, matching `palette.py`'s own `PALETTE_MAPPING` (Stage 2) -- extending to
+  more types is the same per-type-verified work already used throughout this
+  project.
+
+`generator/_test_output/color_words_test.py` and `theme_chat_test.py` cover:
+exact CSS names, the real-name-wins-over-computed rule, the HSL fallback for
+combinations CSS has no name for, unrecognized words resolving to `None` rather
+than a guess, and (whole-project) applying "dark blue buttons with white text and
+an orange border" against a scratch copy of GenTestProject2 -- all 24 real
+`ch5-button` instances across all 3 pages that have any got the full palette,
+non-button elements completely unaffected, every touched file round-trips. Full
+suite re-run clean except the one known pre-existing unrelated failure. Applied
+live: "dark green buttons with white text and a gold border" themed all 24 real
+buttons across `GenTestProject2`'s 3 button-bearing pages uniformly (superseding
+the individually hand-set demo colors from the Stage 1/2 live checks, which is
+the intended whole-project effect). Verified on disk, every file round-trips.
+Awaiting the user's live Construct confirmation. Sources #2 (reference-project
+extraction) and #3 (deferred design-doc/image) are next.
+
 **Page/widget background rules (new capability, entered from a "before we get to
 Stage 3" detour, not itself a theming/Stage 3 piece).** User's standing rule,
 2026-09-11: *"Construct projects need to be 'page based', rules need to be
