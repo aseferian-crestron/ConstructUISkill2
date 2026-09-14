@@ -9,6 +9,35 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 3 source #1: single-page scope + explicit unmapped-type
+warnings.** User: *"please style all objects on the ReflowTest page with a spring
+theme."* Two real gaps this surfaced: `apply_palette_project_wide` only ever
+operated whole-project (no way to scope to one page), and it silently said
+nothing about component types the request implied ("all objects") that
+`palette.py`'s `PALETTE_MAPPING` doesn't cover yet (Stage 2 scope is `ch5-button`
+only).
+
+`theme_chat.py::apply_palette_to_page` (new): the real per-page worker,
+extracted from `apply_palette_project_wide` (which is now just that function
+called over every page/widget file). Also now reports every OTHER real
+component type found on the page that has no palette mapping yet (e.g. a dpad,
+a slider) as an explicit warning -- "left unstyled, see
+palette.py::supported_tags()" -- rather than quietly only doing the buttons and
+saying nothing about the rest. `theme_chat_test.py`'s existing whole-project run
+against GenTestProject2 now surfaces these warnings for real (button-list,
+tab-button, toggle, gauges, dpad, keypad, media-player, video-switcher, text,
+textinput, datetime, qrcode, color-chip/picker, image, template, div -- the
+full real inventory of what this project's test pages contain beyond buttons).
+Full suite re-run clean except the one known pre-existing unrelated failure.
+
+Applied live: resolved "spring theme" myself (pale green background `#98fb98`,
+dark green text `#1b4d1b` for contrast, blossom-pink border `#ffb6c1`, khaki
+icon accent `#f0e68c`) and applied it to `GenTestProject2`'s `ReflowTest.cuig`
+only (not project-wide, per the request) -- all real `ch5-button` instances on
+that page got it; the page's `ch5-dpad`/`ch5-dpad-button` were correctly
+reported as unmapped rather than silently skipped. Verified on disk,
+round-trips. Awaiting the user's live Construct confirmation.
+
 **Phase 7 (themes), Stage 3 source #1 corrected: no theme-name lookup table --
 resolution is the driving chat AI's job, not this generator's.** User, after I
 proposed adding a `NAMED_THEMES` preset dict (Halloween, Christmas, etc.):

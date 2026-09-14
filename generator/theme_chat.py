@@ -86,6 +86,64 @@ def parse_style_description(description: str) -> dict[str, str]:
     return result
 
 
+def apply_palette_to_page(
+    resolved_palette: dict[str, str],
+    page_path: Path,
+    sdk: UiSdk,
+    *,
+    tag_name: str = "ch5-button",
+) -> list[str]:
+    """Apply an ALREADY-RESOLVED palette dict to EVERY `tag_name` instance on
+    ONE page/widget file. "Every `tag_name` instance", not "every object" --
+    palette.py's PALETTE_MAPPING (Stage 2) only covers `ch5-button` so far, so a
+    page with OTHER real component types (a dpad, a slider, ...) only gets its
+    buttons styled; those other types are named in `warnings` rather than
+    silently skipped, since "style everything on this page" is what was asked
+    for and a caller needs to know what didn't happen and why.
+
+    Returns `warnings` -- covers both unmapped types present on the page and any
+    element `tag_name`'s own mapping doesn't cover (see palette.apply_palette);
+    never raises for them.
+    """
+    warnings: list[str] = []
+    raw = page_path.read_text(encoding="utf-8")
+    parsed = compare.split_sections(raw, page_path.suffix.lower())
+    if parsed is None:
+        return [f"{page_path.name}: not a recognized section-based file -- skipped"]
+    html_text = next((c for n, _, c in parsed.sections if n == "Html"), "")
+    css_text = next((c for n, _, c in parsed.sections if n == "Css"), None)
+    if css_text is None:
+        return [f"{page_path.name}: no {{Css}} section -- skipped"]
+
+    tag_index = reflow._tag_index(html_text)
+    target_ids = [eid for eid, (tag, _) in tag_index.items() if tag == tag_name]
+    other_tags = sorted({tag for _, (tag, _) in tag_index.items() if tag != tag_name})
+    if other_tags:
+        unmapped = [t for t in other_tags if t not in palette.PALETTE_MAPPING]
+        if unmapped:
+            warnings.append(
+                f"{page_path.name}: no palette mapping yet for {unmapped} -- "
+                f"left unstyled (see palette.py::supported_tags())"
+            )
+    if not target_ids:
+        return warnings
+
+    new_css = css_text
+    for element_id in target_ids:
+        try:
+            new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, resolved_palette)
+        except KeyError as e:
+            warnings.append(f"{page_path.name}: {element_id!r} -- {e}")
+
+    new_sections = [
+        (name, header, new_css if name == "Css" else content)
+        for name, header, content in parsed.sections
+    ]
+    rebuilt = parsed.preamble + "".join(header + content for _, header, content in new_sections)
+    page_path.write_text(rebuilt, encoding="utf-8", newline="")
+    return warnings
+
+
 def apply_palette_project_wide(
     resolved_palette: dict[str, str],
     project_dir: Path,
@@ -103,38 +161,12 @@ def apply_palette_project_wide(
     what "Halloween" or a sports team's colors are -- this function only knows
     how to apply values it's given, never how to invent them.
 
-    Returns `warnings` -- any element a mapping doesn't cover (see
-    palette.apply_palette), never raises for them.
+    Just apply_palette_to_page over every page/widget file -- returns the
+    combined warnings.
     """
     warnings: list[str] = []
     for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
-        raw = page_path.read_text(encoding="utf-8")
-        parsed = compare.split_sections(raw, page_path.suffix.lower())
-        if parsed is None:
-            warnings.append(f"{page_path.name}: not a recognized section-based file -- skipped")
-            continue
-        html_text = next((c for n, _, c in parsed.sections if n == "Html"), "")
-        css_text = next((c for n, _, c in parsed.sections if n == "Css"), None)
-        if css_text is None:
-            continue
-        tag_index = reflow._tag_index(html_text)
-        target_ids = [eid for eid, (tag, _) in tag_index.items() if tag == tag_name]
-        if not target_ids:
-            continue
-
-        new_css = css_text
-        for element_id in target_ids:
-            try:
-                new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, resolved_palette)
-            except KeyError as e:
-                warnings.append(f"{page_path.name}: {element_id!r} -- {e}")
-
-        new_sections = [
-            (name, header, new_css if name == "Css" else content)
-            for name, header, content in parsed.sections
-        ]
-        rebuilt = parsed.preamble + "".join(header + content for _, header, content in new_sections)
-        page_path.write_text(rebuilt, encoding="utf-8", newline="")
+        warnings.extend(apply_palette_to_page(resolved_palette, page_path, sdk, tag_name=tag_name))
     return warnings
 
 
