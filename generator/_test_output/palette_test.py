@@ -17,16 +17,33 @@ import style  # noqa: E402
 
 ui_sdk = sdk_module.read_sdk("2.18.0")
 
-# --- self-check: every entry in the curated button palette resolves against the real --
-# --- schema catalog, catching drift if the SDK's schema ever changes shape ------------
-catalog = style.style_property_catalog(ui_sdk, "ch5-button")
-for key, (class_name, source_property) in palette._BUTTON_PALETTE.items():
-    entry = style.find_property(catalog, class_name, source_property)
-    assert entry["target_property"].startswith("--ch5-button--"), entry
-print("every _BUTTON_PALETTE entry resolves against the real ch5-button schema: OK")
+# --- self-check: EVERY curated mapping (every tag in PALETTE_MAPPING) resolves --------
+# --- against its own real schema catalog, catching drift if the SDK schema changes ----
+for tag_name, mapping in palette.PALETTE_MAPPING.items():
+    catalog = style.style_property_catalog(ui_sdk, tag_name)
+    for key, (class_name, source_property) in mapping.items():
+        entry = style.find_property(catalog, class_name, source_property)
+        assert entry["target_property"], (tag_name, key, entry)
+print(f"every entry across all {len(palette.PALETTE_MAPPING)} curated palette mappings "
+      f"resolves against its own real schema: OK")
 
-assert palette.supported_tags() == ["ch5-button"]
-print("supported_tags() correctly reports only the verified type: OK")
+assert "ch5-button" in palette.supported_tags()
+assert set(palette.supported_tags()) == set(palette.PALETTE_MAPPING)
+print("supported_tags() correctly reports every curated type: OK")
+
+# --- NO_STYLABLE_PROPERTIES types are confirmed to have a genuinely empty catalog -----
+for tag_name in palette.NO_STYLABLE_PROPERTIES:
+    assert style.style_property_catalog(ui_sdk, tag_name) == [], tag_name
+    assert tag_name not in palette.PALETTE_MAPPING
+print(f"every one of the {len(palette.NO_STYLABLE_PROPERTIES)} NO_STYLABLE_PROPERTIES "
+      f"types genuinely has an empty style catalog (not just unmapped): OK")
+
+# --- applicable_subset: filters a shared palette down to what each type supports ------
+shared = {"background_color": "#123456", "text_color": "#abcdef", "icon_color": "#fedcba"}
+assert palette.applicable_subset("ch5-button", shared) == shared  # button has all 3
+assert palette.applicable_subset("ch5-qrcode", shared) == {}  # qrcode has none of these
+assert palette.applicable_subset("ch5-toggle", shared) == {"text_color": "#abcdef", "icon_color": "#fedcba"}
+print("applicable_subset correctly filters a shared palette per component type: OK")
 
 # --- unknown tag / unknown key raise clearly, before writing anything -----------------
 try:

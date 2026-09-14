@@ -9,6 +9,59 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 2 extended: palette coverage for every real component
+type that has ANY stylable property, not just ch5-button.** User: *"what other
+components dont have palette mapping? that should be addressed now."* Surveyed
+every remaining type directly via `style.style_property_catalog` (not guessed)
+and split them cleanly in two:
+
+- **17 new curated mappings added** to `palette.py::PALETTE_MAPPING` (18 total
+  now): `ch5-button-list`/`ch5-tab-button` (button-family types sharing
+  ch5-button's own `--ch5-button--*` var namespace for their default state),
+  `ch5-toggle` (label/on-icon only, no fill), `ch5-signal-level-gauge`/
+  `ch5-wifi-signal-level-gauge` (mapped to the active/"selected" segment
+  color), `ch5-slider` (background/border/text mapped to the filled "connect"
+  portion -- track and handle are real but distinct parts, deliberately not
+  exposed under these generic keys yet), `ch5-dpad`/`ch5-keypad` (their
+  default/unpressed state), `ch5-animation` (its one `color` property, mapped
+  to `icon_color`), `ch5-subpage-reference-list` (Widget List, background
+  only), `ch5-video-switcher`, `ch5-color-chip`, `ch5-datetime`, `ch5-qrcode`
+  (border only), `ch5-text`, `ch5-textinput`, `ch5-image` (border only).
+- **11 types confirmed genuinely unstylable via this mechanism**, not a gap:
+  `ch5-button-list-individual-button`, `ch5-tab-button-individual-button`,
+  `ch5-segmented-gauge`, `ch5-dpad-button`, `ch5-keypad-button`, `ch5-video`,
+  `ch5-video-switcher-screen`, `ch5-video-switcher-source`,
+  `ch5-media-player`, `ch5-color-picker`, `ch5-template` -- each has a
+  genuinely EMPTY `classToVariableMapping` (confirmed, not assumed). Recorded
+  as `palette.NO_STYLABLE_PROPERTIES` so warnings can distinguish "nothing
+  this mechanism could ever do" from a real coverage gap.
+
+New `palette.py::applicable_subset(tag_name, resolved_palette)` filters a
+SHARED palette down to only the keys a given type supports (e.g. `icon_color`
+silently drops for `ch5-text`, which has no icon) -- needed because "style all
+objects" naturally means applying one palette across many DIFFERENT types that
+don't all expose the same properties, not an error case.
+`theme_chat.py::apply_palette_to_page_all_types`/`apply_palette_project_wide_all_types`
+(new) apply a resolved palette across EVERY mapped type on a page/project, not
+one `tag_name` at a time -- this is what "style all objects" actually needs;
+the existing single-tag_name functions are unchanged, still useful when a
+caller genuinely means one type.
+
+`palette_test.py` extended: every one of the 18 mappings self-checks against
+its own real schema, every `NO_STYLABLE_PROPERTIES` type confirmed to actually
+have an empty catalog, `applicable_subset` covered directly.
+`theme_all_types_test.py` (new) covers the ReflowTest.cuig case end-to-end in a
+scratch copy: buttons get their full 4-key subset, the dpad gets only its
+2-key subset (no border/icon), the genuinely-unstylable dpad-button produces
+no warning noise, file round-trips. Full suite re-run clean except the one
+known pre-existing unrelated failure.
+
+Re-applied live: the earlier spring theme on `GenTestProject2`'s
+`ReflowTest.cuig` now correctly covers its dpad too (previously left
+unstyled and flagged as a real gap -- now closed), applied via
+`apply_palette_to_page_all_types` with zero warnings. Verified on disk,
+round-trips. Awaiting the user's live Construct confirmation.
+
 **Phase 7 (themes), Stage 3 source #1: single-page scope + explicit unmapped-type
 warnings.** User: *"please style all objects on the ReflowTest page with a spring
 theme."* Two real gaps this surfaced: `apply_palette_project_wide` only ever

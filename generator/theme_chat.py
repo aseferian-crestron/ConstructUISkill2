@@ -119,7 +119,11 @@ def apply_palette_to_page(
     target_ids = [eid for eid, (tag, _) in tag_index.items() if tag == tag_name]
     other_tags = sorted({tag for _, (tag, _) in tag_index.items() if tag != tag_name})
     if other_tags:
-        unmapped = [t for t in other_tags if t not in palette.PALETTE_MAPPING]
+        # NO_STYLABLE_PROPERTIES types are excluded from this warning -- there is
+        # nothing this mechanism could ever do for them (empty schema), so
+        # naming them here would be noise, not a real gap to flag.
+        unmapped = [t for t in other_tags
+                   if t not in palette.PALETTE_MAPPING and t not in palette.NO_STYLABLE_PROPERTIES]
         if unmapped:
             warnings.append(
                 f"{page_path.name}: no palette mapping yet for {unmapped} -- "
@@ -141,6 +145,71 @@ def apply_palette_to_page(
     ]
     rebuilt = parsed.preamble + "".join(header + content for _, header, content in new_sections)
     page_path.write_text(rebuilt, encoding="utf-8", newline="")
+    return warnings
+
+
+def apply_palette_to_page_all_types(resolved_palette: dict[str, str], page_path: Path, sdk: UiSdk) -> list[str]:
+    """Apply an ALREADY-RESOLVED palette across EVERY MAPPED component type on
+    ONE page/widget -- "style all objects on this page" in the literal sense,
+    not one tag at a time (see apply_palette_to_page, which only ever touches
+    `tag_name`). For each real type present, only the palette keys THAT TYPE's
+    own mapping actually supports are applied (palette.applicable_subset) --
+    e.g. `icon_color` is silently skipped for `ch5-text`, which has no icon;
+    that is normal filtering, not an error.
+
+    Returns `warnings`: a type with no mapping at all is reported UNLESS it's in
+    palette.NO_STYLABLE_PROPERTIES (nothing this mechanism could ever do for it,
+    not a real gap); any element an applicable mapping still doesn't cover is
+    also reported. Never raises for them.
+    """
+    warnings: list[str] = []
+    raw = page_path.read_text(encoding="utf-8")
+    parsed = compare.split_sections(raw, page_path.suffix.lower())
+    if parsed is None:
+        return [f"{page_path.name}: not a recognized section-based file -- skipped"]
+    html_text = next((c for n, _, c in parsed.sections if n == "Html"), "")
+    css_text = next((c for n, _, c in parsed.sections if n == "Css"), None)
+    if css_text is None:
+        return [f"{page_path.name}: no {{Css}} section -- skipped"]
+
+    tag_index = reflow._tag_index(html_text)
+    ids_by_tag: dict[str, list[str]] = {}
+    for eid, (tag, _) in tag_index.items():
+        ids_by_tag.setdefault(tag, []).append(eid)
+
+    new_css = css_text
+    for tag_name, ids in sorted(ids_by_tag.items()):
+        if tag_name not in palette.PALETTE_MAPPING:
+            if tag_name not in palette.NO_STYLABLE_PROPERTIES:
+                warnings.append(
+                    f"{page_path.name}: no palette mapping yet for {tag_name!r} -- "
+                    f"left unstyled (see palette.py::supported_tags())"
+                )
+            continue
+        subset = palette.applicable_subset(tag_name, resolved_palette)
+        if not subset:
+            continue
+        for element_id in ids:
+            try:
+                new_css = palette.apply_palette(new_css, element_id, sdk, tag_name, subset)
+            except KeyError as e:
+                warnings.append(f"{page_path.name}: {element_id!r} -- {e}")
+
+    new_sections = [
+        (name, header, new_css if name == "Css" else content)
+        for name, header, content in parsed.sections
+    ]
+    rebuilt = parsed.preamble + "".join(header + content for _, header, content in new_sections)
+    page_path.write_text(rebuilt, encoding="utf-8", newline="")
+    return warnings
+
+
+def apply_palette_project_wide_all_types(resolved_palette: dict[str, str], project_dir: Path, sdk: UiSdk) -> list[str]:
+    """apply_palette_to_page_all_types over every page/widget file in `project_dir`
+    -- "theme my whole project, every object" in the fullest sense."""
+    warnings: list[str] = []
+    for page_path in list(project_dir.glob("*.cuig")) + list(project_dir.glob("*.cuiw")):
+        warnings.extend(apply_palette_to_page_all_types(resolved_palette, page_path, sdk))
     return warnings
 
 
