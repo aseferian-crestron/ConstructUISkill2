@@ -36,6 +36,7 @@ Grounded directly in C:\\Git\\CCIDE source:
 from __future__ import annotations
 
 import random
+import re
 import string
 from dataclasses import dataclass
 from datetime import datetime
@@ -45,6 +46,7 @@ from uuid import uuid4
 import contracts
 from elements import Element  # noqa: E402
 from project import FileMetadata, _toml_str  # reuse the same FileMetadata/TOML helpers
+from toml_util import override_attr
 
 
 def generate_element_id() -> str:
@@ -243,3 +245,54 @@ def add_widget_reference_to_page(page_html: str, page_elements: list[Element], w
     html_tag, element = make_widget_reference(widget_id, widget_name)
     new_html = (page_html + "\n" + html_tag) if page_html else html_tag
     return new_html, [*page_elements, element]
+
+
+def set_page_background_color(page_path: Path, background_color: str, *, display: bool = True) -> None:
+    """Set (or update) `DisplayBackgroundColor`/`BackgroundColor` on an EXISTING
+    page's or widget's `{PageAttributes}` `[Attributes]` table -- the same solid-
+    color mechanism `build_page_attributes`/`build_widget_attributes` already write
+    at CREATION time (see this module's docstring for the real, confirmed key
+    order), now editable after the fact. Only the `[Attributes]` table's own lines
+    are touched -- `{Html}`/`{Css}`/the `[[Elements]]` tree are left completely
+    alone, via the same text-splicing discipline this project uses throughout
+    rather than a full TOML round-trip (which would risk losing the
+    confirmed-load-bearing attribute order).
+
+    `display=True` (default) also sets `DisplayBackgroundColor="True"` -- setting
+    just `BackgroundColor` without this has no visible effect in Construct (the
+    flag gates whether the color is actually shown, per the real attribute pair).
+    """
+    raw = page_path.read_text(encoding="utf-8")
+    header = "{PageAttributes}\n\n[Attributes]\n"
+    idx = raw.index(header)
+    attrs_start = idx + len(header)
+    # Attribute lines run until the first blank line (separating them from any
+    # [[Elements]] blocks) or end of file, for a page with none.
+    blank_line = re.search(r"\n\n", raw[attrs_start:])
+    attrs_end = attrs_start + blank_line.start() + 1 if blank_line else len(raw)
+    attrs_text = raw[attrs_start:attrs_end]
+
+    attrs: list[tuple[str, str]] = []
+    for line in attrs_text.splitlines():
+        if not line.strip():
+            continue
+        key, _, raw_value = line.partition(" = ")
+        value = raw_value[1:-1] if raw_value.startswith('"') and raw_value.endswith('"') else raw_value
+        attrs.append((key, value))
+
+    keys = [k for k, _ in attrs]
+    if "DisplayBackgroundColor" in keys:
+        override_attr(attrs, "DisplayBackgroundColor", str(display))
+    else:
+        attrs.append(("DisplayBackgroundColor", str(display)))
+
+    keys = [k for k, _ in attrs]
+    if "BackgroundColor" in keys:
+        override_attr(attrs, "BackgroundColor", background_color)
+    else:
+        attrs.insert(keys.index("DisplayBackgroundColor") + 1, ("BackgroundColor", background_color))
+
+    new_attrs_text = "".join(f"{key} = {_toml_str(value)}\n" for key, value in attrs)
+    new_raw = raw[:attrs_start] + new_attrs_text + raw[attrs_end:]
+    page_path.write_text(new_raw, encoding="utf-8", newline="")
+    contracts.mark_project_stale_for(page_path)

@@ -9,6 +9,44 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Phase 7 (themes), Stage 3 source (online style guide) + page/widget background
+color support.** User: *"i want to test pointing the skill to an online style
+guide... i want the project styled according to this guide:
+https://brand.cornell.edu/design-center/colors/ and it should include any
+background colors required."*
+
+Same architecture as the NY Giants/Halloween case: no new resolution logic
+needed in the generator -- I (the driving chat AI) fetch and read the real
+page, extract the actual published colors, and call the existing
+`apply_palette_project_wide_all_types` with a resolved dict. Real Cornell
+palette fetched (`brand.cornell.edu/design-center/colors/`): Carnelian
+`#B31B1B` (primary), Dark gray `#222222`, White `#FFFFFF`, Light gray
+`#F7F7F7` (secondary/neutral).
+
+One real gap surfaced by "should include any background colors required":
+page/widget SOLID background color (`DisplayBackgroundColor`/`BackgroundColor`
+in `{PageAttributes}`) had a WRITE path only at project-CREATION time
+(`page.py::build_page_attributes`/`build_widget_attributes`) -- no way to set
+it on an EXISTING page, which is all this live project has. Added
+`page.py::set_page_background_color(page_path, background_color, *,
+display=True)`: edits only the `[Attributes]` table's own lines via the same
+text-splicing discipline used throughout this project (never a full TOML
+round-trip, which would risk the confirmed-load-bearing attribute order) --
+`{Html}`/`{Css}`/the `[[Elements]]` tree are provably untouched.
+`page_background_color_test.py` (new) covers: setting on a fresh page (flag
+flips, color inserted right after `DisplayBackgroundColor`, Html/Css
+byte-identical, round-trips), re-applying a different color updates in place
+with no duplicate line, and the same function works on a real widget (`.cuiw`)
+too. Full suite re-run: clean except the one known pre-existing unrelated
+catalog-count failure, PLUS a newly-noticed SECOND pre-existing drift item
+(unrelated to this work, confirmed by inspection): `fonts_global_swap_test.py`
+now fails against the live project's `ReflowTest.cuig` because one slider's
+theme-selector rule carries an unquoted `font-family:Creepster;` (every other
+occurrence in the project is quoted) -- `fonts.py::set_project_font`'s regex
+doesn't match the unquoted form. Not caused by today's work (`set_page_
+background_color` never touches fonts); flagged for a future session, not
+fixed now.
+
 **Phase 7 (themes) SECOND CORRECTION: styling was over-replicating into every
 resolution block; corrected to catch-all + primary only, matching real CSS
 cascade.** User demonstrated the real rule directly in Construct: *"i just added
