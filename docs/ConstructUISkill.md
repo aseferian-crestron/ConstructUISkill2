@@ -131,6 +131,7 @@ The following are a list of functions the skill should provide:
 * Ability to customize the look of all components (using the components CSS properties) when the components are in custom mode
 * Ability to globally replace the font family across the entire project
 * Ability to provide font family suggestions by searching the internet for free webfonts and then automatically install add them to Construct and globally apply the new font to all components
+* Ability to provide a full user interface design that follows industry standards for touch-based interfaces
 
 ## 9. Multi-Resolution Reflow
 The skill must handle all of the required reflow operations when working with multi-resolution projects. The reflow operations are always based on the orientation-primary: highest landscape resolution and highest portrait resolution.
