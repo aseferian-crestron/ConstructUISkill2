@@ -9,6 +9,20 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**`generator/_test_output` regenerated output is no longer tracked in git.**
+Every test script in that folder wipes and rebuilds its own output on each run
+(one even recopies from the live external project), so the previous partial
+`.gitignore` rules (by file extension + by named Smoke/Reflow dir) still let
+`ContractsAutoStale/`, `ContractsE2E/`, `ContractsTask3/`, and `FontsGlobalSwap/`
+through -- exactly the four dirs that kept dirtying `git status` after every
+test run (see the two entries below). Replaced the whole enumerated list with
+`generator/_test_output/*` + `!generator/_test_output/*.py` -- ignore
+everything in the folder by default, re-include only the 61 top-level
+`*_test.py` scripts (the real source; confirmed none are nested deeper, so the
+one-level re-include is complete). `git rm -r --cached` on the 59 previously
+tracked non-`.py` files (output data only, verified by folder) removed them
+from tracking without touching them on disk.
+
 **Fixed the flagged font-regex bug + cleaned up `generator/_test_output` churn.**
 `fonts.py::_FONT_FAMILY_RE` required a leading quote character, so it silently
 skipped an unquoted `font-family:Creepster;` value in the live project's
