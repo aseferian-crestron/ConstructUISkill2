@@ -373,6 +373,24 @@ def derive_states(resolved_palette: dict[str, str]) -> dict[str, str]:
     return derived
 
 
+#: WCAG AA normal-text minimum -- design-system §2's contrast rule. (Large-text's 3:1
+#: floor is not checked here yet: this project has no notion of "large text" separate
+#: from §3's type scale, which is a later phase -- see the design-system plan.)
+MIN_CONTRAST_RATIO = 4.5
+
+
+def check_contrast(resolved_palette: dict[str, str]) -> tuple[bool | None, float | None]:
+    """Whether `resolved_palette`'s text_color meets MIN_CONTRAST_RATIO against its own
+    background_color (design-system §2's contrast rule). Returns (None, None) if either
+    key is missing -- there is nothing to check, not a failure."""
+    background = resolved_palette.get("background_color")
+    text = resolved_palette.get("text_color")
+    if background is None or text is None:
+        return None, None
+    ratio = color_words.contrast_ratio(background, text)
+    return ratio >= MIN_CONTRAST_RATIO, ratio
+
+
 def apply_palette(
     css_text: str, element_id: str, sdk: UiSdk, tag_name: str, palette: dict[str, str],
     *, primary_query: str | None = None,
