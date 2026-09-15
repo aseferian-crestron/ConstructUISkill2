@@ -9,6 +9,44 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design-system policy doc: §1 Layout Patterns filled in.** User added the five
+patterns directly (Header-Content-Footer, Bento Box, Card-Based, Tabbed,
+Left-Side Menu) plus the rule that the skill asks Commercial-vs-Residential
+when no design is given. I then fleshed out each pattern to match the rest of
+the doc's rigor -- per pattern: composition (grounded in `ConstructUISkill.md`
+§5's page-per-selection + header/footer-as-widget rules, e.g. Tabbed reuses the
+header widget as a tab strip, Left-Side Menu is structurally a widget pinned
+like a footer), when to use it, how it reflows across resolutions, and which
+§§2-8 rules constrain it most (e.g. Bento Box flagged as most likely to violate
+§7's density ceiling; Tabbed's selected state reuses the already-built
+`derive_states` rather than inventing a new one). Grounded the item-count/size
+thresholds in real touch-UI conventions: ~5-item cap on Header-Content-Footer's
+footer and ~5-7 tabs before overflow (both from Material Design's bottom-nav/tab
+guidance), Left-Side Menu gated to landscape/larger panels with an explicit
+collapse-to-footer rule instead of letting the rail keep shrinking. Added a new
+**Choosing a Layout** section: a decision order (Residential/Commercial ->
+top-level item count -> panel size/orientation) so the skill can make a first
+recommendation instead of listing all five and asking the user to pick blind.
+All 9 sections of the doc now have content -- still a POLICY document only, no
+generator code changed this turn. Committed.
+
+**New design-system policy doc started: `docs/ConstructUISkill_DesignSystem.md`.**
+User: *"this skill should assist users with building a full user interface that
+follows common industry practices and patterns for touch based user interfaces...
+i want this skill to have the same feature [as the `front-end-design` skill] when
+a user doesn't have a design or color scheme in mind."* This is a POLICY document
+(a draft, user is continuing to write/refine it), not a record of new code --
+covers color roles (primary/secondary/semantic/neutral, beyond the already-built
+`palette.py` keys), a contrast-ratio rule not yet enforced, a type scale,
+a spacing unit + minimum touch-target size (the most commonly-skipped thing that
+makes a touch UI feel unfinished), interaction states (cites the already-built
+`derive_states` pressed/selected policy, flags a not-yet-built `disabled` state),
+elevation/shape, information density limits (touch panels reward fewer, larger
+elements than desktop/mobile), and a cross-resolution-consistency rule tying back
+to this session's reflow/catch-all-plus-primary work. §1 (Layout Patterns --
+header/footer, bento box, card-based, etc.) is left for the user to fill in
+separately. Not yet committed -- user is actively iterating on it.
+
 **Phase 7 (themes), Stage 3 source (online style guide) + page/widget background
 color support.** User: *"i want to test pointing the skill to an online style
 guide... i want the project styled according to this guide:
