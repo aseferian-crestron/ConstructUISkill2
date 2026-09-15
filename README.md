@@ -9,6 +9,31 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System implementation plan written + Phase 1 built.**
+`docs/superpowers/plans/2026-09-15-design-system.md` sequences the design-system
+doc's 9 sections into phases (only Phase 1 detailed to step-by-step code; the rest
+scoped -- real files/functions, confirmed vs. needs-source-check flags -- to be
+detailed just-in-time, matching this project's own `docs/architecture/01-index.md`
+convention). Phase 1 (the two prerequisite-free, pure-policy foundations, no
+`C:\Git\CCIDE` source-grounding needed) is done, 3 commits:
+- `generator/spacing.py` (§4): `SPACING_UNIT`/`MIN_TOUCH_TARGET`/`EDGE_PADDING` +
+  `snap_to_spacing`/`meets_touch_target`/`enforce_touch_target`. TDD caught a real
+  bug before it shipped: the first draft's `round(value / SPACING_UNIT) *
+  SPACING_UNIT` sent `snap_to_spacing(4)` to `0` instead of `8` -- Python's
+  `round()` is round-half-to-even ("banker's rounding"), wrong for a spacing scale.
+  Fixed to a floor-based round-half-up formula; plan updated to match what shipped.
+- `color_words.py::contrast_ratio` (§2): standard WCAG 2.1 relative-luminance +
+  contrast formula, verified against known reference pairs (white/black=21:1,
+  `#767676`/white≈4.54:1 -- the textbook "just barely passes AA" gray).
+- `palette.py::check_contrast` (§2): wraps `contrast_ratio` against a resolved
+  palette's `background_color`/`text_color`, returns `(None, None)` rather than
+  raising when either key is missing. Re-ran `palette_test.py` -- no regression.
+
+Phases 2-8 (color roles, disabled state, typography, shape/elevation, density,
+layout patterns, top-level orchestration) not started -- paused here deliberately
+(user is near their weekly usage cap) rather than continuing into less-scripted,
+more exploration-heavy phases today.
+
 **Cross-referenced the Global Contract hard requirement into the design-system doc.**
 User: *"the header/footer is part of the Design System document"* -- correcting my
 framing of the previous entry, which called header/footer-building orchestration an
