@@ -93,6 +93,29 @@ def adjust_lightness(hex_color: str, delta: float) -> str:
     return _rgb_to_hex(round(r2 * 255), round(g2 * 255), round(b2 * 255))
 
 
+def _relative_luminance(hex_color: str) -> float:
+    """WCAG 2.1 relative luminance -- the exact formula behind the 4.5:1/3:1 contrast
+    thresholds this module's callers check against (see contrast_ratio)."""
+    r, g, b = _hex_to_rgb(hex_color)
+
+    def _channel(c: int) -> float:
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r_lin, g_lin, b_lin = _channel(r), _channel(g), _channel(b)
+    return 0.2126 * r_lin + 0.7152 * g_lin + 0.0722 * b_lin
+
+
+def contrast_ratio(hex_a: str, hex_b: str) -> float:
+    """WCAG 2.1 contrast ratio between two colors (1:1 minimum, 21:1 maximum),
+    order-independent. Design-system §2's contrast rule checks this against 4.5:1
+    (normal text) / 3:1 (large text)."""
+    l1 = _relative_luminance(hex_a)
+    l2 = _relative_luminance(hex_b)
+    lighter, darker = max(l1, l2), min(l1, l2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
 def resolve_color_phrase(phrase: str) -> str | None:
     """A 1-2 word color phrase ("navy", "dark blue") to a real hex value, or None
     if it names no color this table (or a light/dark modifier of one) covers.
