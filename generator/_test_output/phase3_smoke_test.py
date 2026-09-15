@@ -15,6 +15,9 @@ from page import (  # noqa: E402
     make_widget_reference, write_cuig,
 )
 import compare  # noqa: E402
+import sdk as sdk_module  # noqa: E402
+
+ui_sdk = sdk_module.read_sdk("2.18.0")
 
 OUT = Path(__file__).resolve().parent / "Phase3Smoke"
 OUT.mkdir(parents=True, exist_ok=True)
@@ -73,7 +76,7 @@ print(f"empty widget: root Element full scalar field set matches real CreateNewW
       f"payload exactly (Name/Status/Content/Draggable/Copyable included): {gen_el_full_keys}")
 
 # --- 3. add widget to page, structurally compared to the real Widget on Page.cuig --
-html_tag, ref_element = make_widget_reference(widget_id, "EmptyWidget", element_id="itest02")
+html_tag, ref_element = make_widget_reference(ui_sdk, widget_id, "EmptyWidget", element_id="itest02")
 page2_attrs = build_page_attributes(name="PageWithWidget")
 page2_path = OUT / "PageWithWidget.cuig"
 write_cuig(page2_path, page2_attrs, html=html_tag, css="", elements=[ref_element])
@@ -84,12 +87,21 @@ ref_p2 = parse_page_attrs(REF_DIR / "Widget on Page.cuig")
 gen_el2 = gen_p2["Elements"][0]
 ref_el2 = ref_p2["Elements"][0]
 assert gen_el2["Type"] == ref_el2["Type"] == "Ch5 Template"
-assert set(gen_el2["Attributes"].keys()) == set(ref_el2["Attributes"].keys()), (
+# The reference file predates the user's 2026-09-15 standing rule ("every widget
+# added to a page must have its Visibility property set to Contract") -- it was
+# captured with default/unset visibility, so it carries neither of the 2 new
+# signal attributes this project now always adds. Diffed explicitly rather than
+# widened to a loose subset check, so a real unintended drift still fails loudly.
+NEW_VISIBILITY_CONTRACT_KEYS = {"sendeventonshow", "pd-receivestateshow"}
+assert set(gen_el2["Attributes"].keys()) - NEW_VISIBILITY_CONTRACT_KEYS == set(ref_el2["Attributes"].keys()), (
     set(gen_el2["Attributes"].keys()), set(ref_el2["Attributes"].keys())
 )
+assert gen_el2["Attributes"]["sendeventonshow"] == "Contract Enabled"
+assert gen_el2["Attributes"]["pd-receivestateshow"] == "Contract Enabled"
 assert gen_el2["Attributes"]["templateid"].startswith("w") and gen_el2["Attributes"]["templateid"][1:] == widget_id
 print("add-widget-to-page: round-trip OK, Ch5 Template element Type + Attributes key set "
-      "matches real Widget on Page.cuig exactly, templateid = 'w' + widget Id confirmed")
+      "matches real Widget on Page.cuig plus the new Visibility=Contract signals, "
+      "templateid = 'w' + widget Id confirmed")
 
 # --- 4. background color (page + widget), structurally compared to real reference --
 # User-added reference files 2026-09-03: "Page with Bkd Color.cuig" / "Widget with Bkd

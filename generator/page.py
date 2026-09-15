@@ -46,6 +46,7 @@ from uuid import uuid4
 import contracts
 from elements import Element  # noqa: E402
 from project import FileMetadata, _toml_str  # reuse the same FileMetadata/TOML helpers
+from sdk import UiSdk
 from toml_util import override_attr
 
 
@@ -70,7 +71,7 @@ def build_page_attributes(
     is_start_page: bool = False,
     is_preload_page: bool = True,
     cache_page: bool = False,
-    visibility_join: str = "0",
+    visibility_join: str = contracts.CONTRACT_ENABLED,
     display_background_color: bool = False,
     background_color: str | None = None,
     transition_in: str = "",
@@ -78,7 +79,20 @@ def build_page_attributes(
     transition_duration: str = "",
     transition_delay: str = "",
 ) -> list[tuple[str, str]]:
-    """PersistenceHelper.CreatePageSource(UiEditorProject, PageDto) -- exact order."""
+    """PersistenceHelper.CreatePageSource(UiEditorProject, PageDto) -- exact order.
+
+    `visibility_join` defaults to `contracts.CONTRACT_ENABLED` ("Contract
+    Enabled") per the user's standing rule (2026-09-15): every page's Page
+    Visibility Join must be set to Contract. Confirmed real: `VisibilityJoin`
+    is a plain join-bindable page attribute (`PersistenceHelper.cs`:
+    `pageSource.Attributes.Add(PageAttributes.VisibilityJoin,
+    page.VisibilityJoin.ToString())`, a string, not a numeric-only join), and
+    `ContractGenerationHelper.cs` writes the exact same `"Contract Enabled"`
+    sentinel this project's own `contracts.CONTRACT_ENABLED` already models for
+    every other join-bindable attribute -- one generic mechanism, not a
+    page-specific one. Still overridable for a caller that genuinely wants a
+    hard-coded numeric join instead.
+    """
     page_id = page_id or str(uuid4())
     attrs: list[tuple[str, str]] = [
         ("Name", name),
@@ -181,6 +195,7 @@ def default_widget_html_css(
 
 
 def make_widget_reference(
+    sdk: UiSdk,
     widget_id: str,
     widget_name: str,
     *,
@@ -190,7 +205,22 @@ def make_widget_reference(
     transition_delay: str = "0s",
 ) -> tuple[str, Element]:
     """'Add widget to page': the persisted <ch5-template> element -- confirmed
-    attribute set/order against C:\\Solutions\\ClaudeSamples\\Components\\Widget on Page.cuig.
+    attribute set/order against C:\\Solutions\\ClaudeSamples\\Components\\Widget on Page.cuig,
+    PLUS the user's standing rule (2026-09-15): every widget added to a page
+    must have its Visibility property set to Contract. That reference file
+    predates the rule (captured with default/unset visibility) so it does not
+    show these two attributes -- confirmed instead the same way every other
+    contract signal in this project is confirmed, via the real schema:
+    `contracts.contract_signals(sdk, "ch5-template")` resolves exactly
+    `sendeventonshow` (friendly "Visibility") and `pd-receivestateshow`
+    (friendly "Visibility_fb") through component-context.json's `global`
+    attributeProperties fallback (ch5-template defines neither itself) --
+    confirmed in `C:\\Git\\CCIDE`'s own `JoinNameProviderHelper.cs`, which
+    resolves a component's join-bindable attributes from its own
+    `attributeProperties` first, then the shared `global` entry. Enabled the
+    same way (and with the same `"Contract Enabled"` sentinel) as any other
+    signal here: `contracts.enable_contract_signals`.
+
     Returns (html_tag, toml_element) so the caller inserts both into the target page.
     """
     element_id = element_id or generate_element_id()
@@ -205,6 +235,7 @@ def make_widget_reference(
         ("ccid_WidgetName", widget_name),
         ("devicesVisited", devices_visited),
     ]
+    contracts.enable_contract_signals(attrs, sdk, "ch5-template", ("Visibility", "Visibility_fb"))
     html = "<ch5-template " + " ".join(f'{k}="{v}"' for k, v in attrs) + "></ch5-template>"
     element = Element(type="Ch5 Template", attributes=attrs)
     return html, element
@@ -257,10 +288,12 @@ def write_cuig(
         contracts.mark_project_stale_for(path)
 
 
-def add_widget_reference_to_page(page_html: str, page_elements: list[Element], widget_id: str, widget_name: str) -> tuple[str, list[Element]]:
+def add_widget_reference_to_page(
+    sdk: UiSdk, page_html: str, page_elements: list[Element], widget_id: str, widget_name: str,
+) -> tuple[str, list[Element]]:
     """Append a widget reference to an already-loaded page's html/elements (in-memory
     'add widget to page' step -- caller re-writes the page file afterward)."""
-    html_tag, element = make_widget_reference(widget_id, widget_name)
+    html_tag, element = make_widget_reference(sdk, widget_id, widget_name)
     new_html = (page_html + "\n" + html_tag) if page_html else html_tag
     return new_html, [*page_elements, element]
 

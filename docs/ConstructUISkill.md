@@ -97,6 +97,15 @@ Construct projects can support multiple resolutions and orientations per project
 
 **Hard requirement**: Any time a common widget is added to all pages, the Global Contract property for the widget must be set true.
 
+**Hard requirement** (user, 2026-09-15): local page-flip programming is not used
+for navigation. Instead: every page's Page Visibility Join must be set to
+Contract, and every widget added to a page must have its own Visibility
+property set to Contract -- the control system, not the panel itself, decides
+what's shown. See `generator/page.py::build_page_attributes` (`VisibilityJoin`
+defaults to `contracts.CONTRACT_ENABLED`) and `make_widget_reference` (the
+`<ch5-template>` widget-reference element always gets its `Visibility`/
+`Visibility_fb` signals enabled).
+
 ## 6. Communication with Control Systems
 Construct project objects (pages, widgets and individual components) can communicate with control systems using something called a "contract signal". The contract signals use the object name to define the actual signal name. I.E. If there is a button on a cable tv control widget and the button has a text label called "Menu", the object name will be called "Menu".
 
