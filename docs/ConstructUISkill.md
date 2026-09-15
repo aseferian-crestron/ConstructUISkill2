@@ -95,6 +95,8 @@ Construct projects can support multiple resolutions and orientations per project
   image component (an image component conflicts with video). See
   `generator/background.py`.
 
+**Hard requirement**: Any time a common widget is added to all pages, the Global Contract property for the widget must be set true.
+
 ## 6. Communication with Control Systems
 Construct project objects (pages, widgets and individual components) can communicate with control systems using something called a "contract signal". The contract signals use the object name to define the actual signal name. I.E. If there is a button on a cable tv control widget and the button has a text label called "Menu", the object name will be called "Menu".
 

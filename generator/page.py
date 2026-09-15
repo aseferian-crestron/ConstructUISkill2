@@ -125,6 +125,7 @@ def build_widget_attributes(
 
 def default_widget_html_css(
     element_id: str, width: int, height: int, resolution: tuple[int, int] | None = None,
+    *, is_global: bool = False,
 ) -> tuple[str, str, Element]:
     """CreateNewWidgetHandler.cs's default payload for a brand-new, empty widget.
 
@@ -135,16 +136,33 @@ def default_widget_html_css(
     after finding a real widget (Widget.cuiw, which contains a button) uses its project's
     actual TSW-1070 breakpoint here, not the fallback -- see generator/layout.py's
     landscape_media_query, same confirmed formula.
+
+    `is_global`: the widget's "Global Contract" property (PageDesigner property grid,
+    category "Interactions", label "Global Contract") -- ConstructUISkill.md's hard
+    requirement: any widget added to every page (a header/footer/common widget) must
+    have this set true. Confirmed against C:\\Git\\CCIDE's SubpageTemplate.json (the
+    widgetContainer root element's `globalControlContract` DefaultAttribute) and
+    GlobalSubpageConverter.cs, which writes the SAME value ("on" if true) into both the
+    Html section (`SetAttributeValue`) and the PageElementDto's TOML `Attributes`
+    (`.Attributes.Add`) -- never just one or the other. Only emitted when True: there is
+    no confirmed reference file for an ordinary (non-global) widget carrying this
+    attribute at all, so a ordinary single-page widget's shape is left untouched rather
+    than guessing whether Construct's own UI-editor save path (as opposed to the
+    Import-only converter read here) always writes an empty-string form for it too.
     """
     from layout import landscape_media_query
 
-    html = f'<div id="{element_id}"></div>'
+    global_attr = ' globalControlContract="on"' if is_global else ""
+    html = f'<div id="{element_id}"{global_attr}></div>'
     w, h = resolution if resolution else (2560, 1440)
     css = (
         f"@media (max-width: 99999px){{#{element_id}{{width: {width}px;height: {height}px; left: 0; top: 0; position: absolute;}}}}"
         f"@media {landscape_media_query(w, h)}"
         f"{{#{element_id}{{ width: {width}px; height: {height}px; left: 0; top: 0; position: absolute; }}}}"
     )
+    attributes = [("id", element_id), ("devicesVisited", '["4K Monitor"]')]
+    if is_global:
+        attributes.append(("globalControlContract", "on"))
     element = Element(
         # CreateNewWidgetHandler.cs's PageElementDto("", "widgetContainer", "", "", null,
         # false, null, false, ...) -- Name/Status/Content/Draggable/Copyable are
@@ -157,7 +175,7 @@ def default_widget_html_css(
         content="",
         draggable=False,
         copyable=False,
-        attributes=[("id", element_id), ("devicesVisited", '["4K Monitor"]')],
+        attributes=attributes,
     )
     return html, css, element
 

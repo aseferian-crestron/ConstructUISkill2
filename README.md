@@ -9,6 +9,43 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**New hard requirement: common (all-pages) widgets must set "Global Contract" true.**
+User added to `ConstructUISkill.md` §5: *"Any time a common widget is added to all
+pages, the Global Contract property for the widget must be set true."* (Their edit
+again reverted the `.cuib` "Out of scope" note and the whole "Page-based project
+rules" section -- same pair as last time; restored both, kept the new line. Second
+occurrence of the identical pair, worth the user checking whether they're editing
+from a stale local copy of this file.)
+
+Confirmed from `C:\Git\CCIDE` source before implementing (no reference project has
+this attribute set, so source-reading was the only path, per this project's core
+approach): `WidgetDto.cs`'s `IsGlobal` and `components.ts`'s property-grid trait
+(category "Interactions", label "Global Contract", `name: globalControlContract`)
+confirm the property name; `SubpageTemplate.json`'s widgetContainer root element
+declares `globalControlContract` as a `DefaultAttribute`; `GlobalSubpageConverter.cs`
+settles the exact serialization -- the SAME value (`"on"` if true) is written
+unconditionally into both the Html section (`SetAttributeValue`) and the TOML
+`PageElementDto.Attributes` (`.Attributes.Add`), never just one. (The converter's own
+true/false *detection* heuristic is legacy Import-path logic, flagged mid-refactor in
+the source itself with a dangling TODO -- not used here; the generator sets this
+explicitly at build time since the caller already knows a widget is being built as
+common/global, no inference needed.)
+
+Implemented: `page.py::default_widget_html_css` gains `is_global: bool = False`.
+When true, writes `globalControlContract="on"` into the widget root div's Html and
+adds the same key/value to the widgetContainer Element's TOML attributes; when
+false (the default), the attribute is omitted entirely from both -- no reference
+file confirms Construct's own UI-editor save path (as opposed to the Import-only
+converter read here) always writes an empty-string form for ordinary widgets too,
+so left unguessed rather than speculatively applied to every widget. New
+`global_widget_test.py`: round-trips both a global and an ordinary widget
+byte-identical, asserts the attribute's presence/absence in Html AND TOML for each.
+Re-ran `phase3_smoke_test.py` (the only other caller of this function) -- no
+regression, all prior assertions unchanged (new parameter is kwarg-only,
+default-False). No header/footer-building orchestration exists yet to actually call
+this with `is_global=True` (still not built, per §1's own layout-pattern status) --
+this lands the file-format capability so that work can use it once it starts.
+
 **`generator/_test_output` regenerated output is no longer tracked in git.**
 Every test script in that folder wipes and rebuilds its own output on each run
 (one even recopies from the live external project), so the previous partial
