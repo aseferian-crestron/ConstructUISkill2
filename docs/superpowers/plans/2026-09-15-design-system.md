@@ -485,6 +485,54 @@ N-equal-buttons, not guessed at) and the other four layout patterns (Bento Box,
 Card-Based, Tabbed, Left-Side Menu), which follow the same shape `build_footer_
 widget` now proves once each is started.
 
+### `build_header_widget` — detailed just-in-time (2026-09-15)
+
+Design doc §1's header content line: *"Residential — time, weather, area status,
+active source. Commercial — date/time, active source, corporate logo."* Source
+check confirms only two of these are real, distinct CH5 component types —
+`ch5-datetime` (time/date) and `ch5-image` (logo, `component.py::PROFILES` already
+has it, Phase 7's own background-image work) — "weather," "area status," and
+"active source" have no dedicated component; each is just live text content on a
+`ch5-text`, the same way `ch5-button`'s label is just text on a button. Not a gap,
+the same "only what's real" discipline as `palette.NO_STYLABLE_PROPERTIES`.
+
+- **Task:** `layout_patterns.py::build_header_widget(sdk, *, is_commercial: bool,
+  status_items: list[str], header_width: int, header_height: int = 120,
+  widget_name: str = "Header", resolution: tuple[int, int] | None = None,
+  logo_asset_id: str = "0") -> (widget_attrs, html, css, elements)` — same
+  return/assembly shape as `build_footer_widget`. Composition, left to right:
+  logo (`ch5-image`, square, commercial only per the doc's own line — residential
+  doesn't list one) → `ch5-datetime` (fixed real reference size, 200×35px, from
+  `Component-Widgets-DateTime.cuig`'s actual instance, not guessed) → one
+  `ch5-text` per `status_items` entry (weather/area-status/active-source labels,
+  caller's choice per audience — this generator doesn't know what a project's
+  "area status" text should say, same reasoning as `theme_chat.py` leaving color
+  *resolution* to the driving chat AI), each given `overrides={"labelinnerhtml":
+  label}` since the generic (non-button) `build_component_attributes` path only
+  sets `ccid_Label` from a `label=` kwarg, never the visible text (confirmed via
+  `component_flat_types_test.py`'s own `EXPECTED_DELTAS` entry marking
+  `ch5-text`'s `labelinnerhtml` as real per-instance content, not schema-default).
+- **New helper:** `layout_patterns.py::_layout_header_row(item_widths: list[int |
+  None], header_width: int, header_height: int) -> list[tuple[int, int, int,
+  int]]` — deliberately NOT a reuse/generalization of `_layout_row` (that would
+  touch already-tested footer code for no footer-side benefit): header content is
+  heterogeneous in WIDTH (a square logo, a fixed-width datetime, N flexible text
+  fields), where the footer's buttons are all equal-width. `None` in `item_widths`
+  means "divide remaining space evenly among all `None` entries" after fixed
+  widths and gaps/edge-padding are reserved. Item height fills the header minus
+  edge padding, same vertical rule as the footer. Raises `ValueError` if fixed
+  widths alone exceed the available space. Does NOT apply
+  `spacing.MIN_TOUCH_TARGET` to flexible items — header content here is
+  informational, not an interactive control, so §4's touch-target floor (which
+  exists for tappable targets) doesn't apply; a flexible item only needs to stay
+  positive width, checked directly rather than against the touch-target constant.
+- **Global Contract:** same as the footer, `default_widget_html_css(...,
+  is_global=True)` — a header is added to every page, so §5's hard requirement
+  applies identically.
+- **§8 acceptance:** satisfied by construction, same reasoning as the footer —
+  the CSS this emits is the same catch-all-query shape `reflow.py` already
+  handles generically.
+
 ## Phase 8: §9 — How the Skill Applies These Defaults — scoped, not detailed
 
 Capstone; genuinely cannot be detailed until Phases 1–7 exist to call into.
