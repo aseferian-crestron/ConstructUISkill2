@@ -9,6 +9,42 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 7 (§1 layout patterns): Bento Box built end to end.**
+An asymmetric grid of variously-sized cards, placed by a new
+`_pack_bento_grid` helper -- CSS Grid's own default "sparse" row-major
+auto-placement algorithm (a well-known, standard algorithm, not invented for
+this project): for each item, scan rows top-to-bottom then columns
+left-to-right for the first position where its cell-span fits unoccupied.
+Three named size tiers per §1's own example and "2-3 card sizes max" rule:
+`"large"` (2x2 cells), `"wide"` (2x1), `"small"` (1x1) -- cells kept square
+(one `cell_size` derived from page width/column count, reused for height) so
+"grid units" stays one measure, not independent width/height scales.
+
+Each card is an ordinary `ch5-button` -- no extra navigation wiring needed at
+all, since the prior turn's Visibility=Contract work already means the
+control system (not the button) decides what's shown; a card just needs its
+normal default contract signals, which `component.build_component` already
+applies. Styling (background/border/shape) deliberately left to the caller
+(`palette.py`/`shape.py`), matching the footer/header builders. Raises
+`ValueError` for a column count that would push cells below the touch-target
+floor, and for a card count/size needing more height than the page provides
+-- same "raise rather than silently overflow" discipline as the footer's
+`_layout_row`. §7's density ceiling stays a standalone advisory
+(`density.py::check_density`) the caller runs itself, not wired into this
+builder's return shape.
+
+Verified against a real written `.cuig`: round-trips byte-identical, correct
+labels, and -- directly on the actual written geometry, not just the input
+spec -- the size hierarchy holds (`area("Currently Playing", large) >
+area("Living Room", wide) > area("Guest Bathroom Lights", small)`), proving
+§1's own intent ("size communicates importance") survives all the way to the
+file. Full suite re-run clean except the two known pre-existing unrelated
+failures. Plan doc detailed just-in-time before coding, same convention as
+footer/header.
+
+Remaining in Phase 7: Card-Based, Tabbed, Left-Side Menu, then Phase 8
+(top-level orchestration).
+
 **Navigation is contract-driven, not page-flip -- prerequisite for Bento Box's
 "cards open a page/popup" composition, resolved before building it.** While
 scoping Bento Box, found that "each card opens a page or popup" had no real
