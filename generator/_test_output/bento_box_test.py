@@ -113,4 +113,26 @@ except ValueError:
     pass
 print("build_bento_box_page: cards needing more height than the page raises ValueError: OK")
 
+# --- icons + active_font: icon-bearing cards get the icon-above-label layout ---------
+icon_items = [("Currently Playing", "large"), ("Living Room", "wide"), ("Kitchen", "small")]
+icon_page_attrs, icon_html, icon_css, icon_elements = build_bento_box_page(
+    ui_sdk, name="IconGrid", items=icon_items, page_width=960, page_height=960, columns=4,
+    resolution=(1280, 800), active_font="Manrope",
+    icons={"Currently Playing": ("fa-solid fa-play", "FA Classic Solid"),
+           "Kitchen": ("fa-solid fa-utensils", "FA Classic Solid")},
+)
+icon_page_path = OUT / "BentoBoxIcons.cuig"
+write_cuig(icon_page_path, icon_page_attrs, html=icon_html, css=icon_css, elements=icon_elements)
+assert compare.round_trip_check(icon_page_path), "icon bento box page failed round-trip"
+
+assert 'iconclass="fa-solid fa-play"' in icon_html, icon_html
+assert 'ccid_iconlibrary="FA Classic Solid"' in icon_html, icon_html
+assert icon_html.count("orientation=\"vertical\"") == 2  # only the 2 icon-bearing cards
+assert icon_html.count('iconposition="top"') == 2
+assert "ccid_ActiveFont=\"'Manrope'\"" in icon_html
+# exactly 2 cards got the icon-layout attrs (Currently Playing + Kitchen) -- Living
+# Room, with no icons[] entry, keeps the schema default untouched (already proven by
+# the counts above being 2, not 3)
+print("build_bento_box_page: icon-bearing cards get icon+layout attrs, others keep the default, active_font applied: OK")
+
 print("Bento Box: all assertions passed.")

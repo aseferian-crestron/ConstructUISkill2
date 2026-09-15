@@ -410,13 +410,17 @@ def build_component_attributes(
     label: str | None = None,
     contract_signals: tuple[str, ...] | None = None,
     overrides: dict[str, str] | None = None,
+    icon_class: str | None = None,
+    icon_library: str | None = None,
 ) -> list[tuple[str, str]]:
     """The full `[Elements.Attributes]` list for one flat component.
 
     `contract_signals` defaults to the type's entry in `contracts.DEFAULT_SIGNALS`; pass
     `()` for none. `overrides` sets or adds any attribute after the base layer, for the
     per-instance values a caller actually chose (a slider's `value`, a gauge's
-    `numberofsegments`).
+    `numberofsegments`). `icon_class`/`icon_library` are ch5-button-only (see
+    `ch5_button.py::build_default_button_attributes`) -- ignored for every other type,
+    same as `label`/`active_font` are accepted uniformly but not every type renders them.
     """
     if tag_name == "ch5-button":
         # The button already has a builder confirmed attribute-for-attribute against the
@@ -427,6 +431,7 @@ def build_component_attributes(
         return build_default_button_attributes(
             sdk, component_name=component_name, element_id=element_id,
             devices_visited=devices_visited, active_font=active_font, label=label,
+            icon_class=icon_class, icon_library=icon_library,
             **({} if contract_signals is None else {"contract_signals": contract_signals}),
         )
     profile = PROFILES.get(tag_name)

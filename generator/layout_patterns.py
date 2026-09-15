@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import component
 import spacing
+import style
 from elements import Element
 from page import build_page_attributes, build_widget_attributes, default_widget_html_css, generate_element_id
 from sdk import UiSdk
@@ -288,6 +289,7 @@ def _pack_bento_grid(spans: list[tuple[int, int]], columns: int) -> list[tuple[i
 def build_bento_box_page(
     sdk: UiSdk, *, name: str, items: list[tuple[str, str]], page_width: int, page_height: int,
     columns: int, resolution: tuple[int, int] | None = None,
+    icons: dict[str, tuple[str, str]] | None = None, active_font: str = "Roboto",
 ) -> tuple[list[tuple[str, str]], str, str, list[Element]]:
     """One page containing an asymmetric grid of card components -- §1's Bento
     Box pattern. `items` is `(label, size_tier)` pairs, `size_tier` one of
@@ -321,6 +323,22 @@ def build_bento_box_page(
     -- `page.build_page_attributes` rather than `build_widget_attributes`,
     since §1's own composition is explicit: Bento Box lives on ONE PAGE, not a
     common (every-page) widget.
+
+    `icons`: optional `label -> (icon_class, icon_library)` (real Font Awesome
+    values, e.g. `("fa-solid fa-play", "FA Classic Solid")` -- see
+    `ch5_button.py::build_default_button_attributes`). On a touch panel, icons
+    are the primary at-a-glance visual language (every real residential/
+    commercial touch-panel UI leans on them), so a card WITH an icon is laid
+    out icon-above-label rather than the schema's default dead-centered label
+    alone: `orientation="vertical"`, `iconposition="top"`,
+    `halignlabel="left"`, `valignlabel="bottom"` -- all 4 real, confirmed
+    schema enum values (`component._schema_element(sdk, "ch5-button")`), set
+    via `style.set_html_attribute` (the same mechanism `shape.
+    apply_radius_preset` already uses to flip a button attribute post-build).
+    A card with no entry in `icons` keeps the schema's own centered default.
+    `active_font`: forwarded to every card, same as `component.build_component`'s
+    own `active_font` kwarg -- one font choice for the whole grid, not
+    per-card (a Bento Box grid reads as one surface, not mixed type families).
     """
     spans = []
     for label, tier in items:
@@ -338,6 +356,7 @@ def build_bento_box_page(
             f"use fewer columns"
         )
 
+    icons = icons or {}
     max_row = 0
     buttons = []
     for (label, tier), (col, row) in zip(items, grid_positions):
@@ -347,10 +366,21 @@ def build_bento_box_page(
         w = span_w * cell_size + (span_w - 1) * spacing.SPACING_UNIT
         h = span_h * cell_size + (span_h - 1) * spacing.SPACING_UNIT
         max_row = max(max_row, row + span_h)
-        buttons.append(component.build_component(
+        icon = icons.get(label)
+        icon_kwargs = {"icon_class": icon[0], "icon_library": icon[1]} if icon else {}
+        html, css, element = component.build_component(
             sdk, "ch5-button", component_name=label, element_id=generate_element_id(),
             x=x, y=y, width=w, height=h, z_index=1, resolution=resolution, label=label,
-        ))
+            active_font=active_font, **icon_kwargs,
+        )
+        if icon:
+            element_id = dict(element.attributes)["id"]
+            for attr, value in (
+                ("orientation", "vertical"), ("iconposition", "top"),
+                ("halignlabel", "left"), ("valignlabel", "bottom"),
+            ):
+                html = style.set_html_attribute(html, element_id, attr, value)
+        buttons.append((html, css, element))
 
     total_height = 2 * spacing.EDGE_PADDING + max_row * cell_size + (max_row - 1) * spacing.SPACING_UNIT
     if total_height > page_height:
