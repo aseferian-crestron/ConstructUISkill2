@@ -9,6 +9,13 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 6 built (§7 information density).**
+`density.py::DENSITY_CEILINGS` (3 breakpoints by panel diagonal) + `check_density`
+-- advisory-only, never raises, never writes, returns warnings naming the real
+count/ceiling/panel size. Not a file-format writer, no source-grounding needed.
+"One dominant action" + control grouping deliberately not modeled as standalone
+functions -- real shape decided when Phase 7 (Layout Patterns) starts.
+
 **Design System Phase 5 built (§6 elevation/shape).**
 `shape.py::RADIUS_PRESETS` (sharp/subtle/rounded) + `apply_radius_preset`, scoped to
 `ch5-button` only -- corner-radius is also stylable for button-list/datetime/text

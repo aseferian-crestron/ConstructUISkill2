@@ -431,20 +431,18 @@ duplicate but is not a real CSS var; `apply_type_scale` always resolves the real
 
 No regressions in `custom_shape_test.py`.
 
-## Phase 6: Information Density & Hierarchy (§7) — scoped, not detailed
+## Phase 6: Information Density & Hierarchy (§7) — DONE (2026-09-15)
 
-Not a file-format writer — an advisory/validation layer the skill runs and reports to
-the user, no Construct source-grounding needed.
+Not a file-format writer — an advisory/validation layer, no Construct
+source-grounding needed. 1 task, 1 commit: `density.py::DENSITY_CEILINGS` (3
+breakpoints by panel diagonal, ascending diagonal AND ascending ceiling) +
+`check_density(component_count, panel_diagonal_in) -> list[str]` — never raises,
+never writes, empty list means within the ceiling.
 
-- **Task:** `density.py::DENSITY_CEILINGS: dict[str, int]` (panel size class → max
-  component count) + `check_density(component_count: int, panel_diagonal_in: float) ->
-  list[str]` (returns warnings, writes nothing).
-- **Task:** "one dominant action per screen" — likely folds directly into Phase 7's
-  layout-pattern builders (e.g. Bento Box's largest card) rather than a standalone
-  function; decide the real shape when Phase 7 starts rather than guessing a signature
-  now (YAGNI — this project's own precedent, e.g. `palette.py`'s module docstring
-  explicitly rejecting a premature generic mechanism in favor of building one verified
-  case at a time).
+"One dominant action per screen" and control grouping (§7's other two rules)
+deliberately NOT modeled as standalone functions — they're layout-pattern-builder
+decisions, not checkable from a bare count; real shape decided when Phase 7 starts
+(YAGNI, same precedent as `palette.py`'s module docstring).
 
 ## Phase 7: Layout Patterns (§1) — scoped, not detailed
 
