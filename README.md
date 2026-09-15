@@ -9,6 +9,16 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 5 built (§6 elevation/shape).**
+`shape.py::RADIUS_PRESETS` (sharp/subtle/rounded) + `apply_radius_preset`, scoped to
+`ch5-button` only -- corner-radius is also stylable for button-list/datetime/text
+but their `shape="custom"` gate isn't confirmed, not extended without that check
+(same discipline as Phase 3). `shape.py::ELEVATION_LEVELS` -- confirmed zero
+shadow/elevation style properties exist anywhere, so this is the design doc's own
+anticipated border-width-step fallback, needing no new writer at all (plugs
+directly into `palette.apply_palette`'s existing `border_width` key). Both verified
+against a real button, byte-identical round-trips. No regressions.
+
 **Design System Phase 4 built (§3 typography scale).** Source check confirmed
 `font-size` is a real `--ch5-*` targetProperty for every text-bearing type already
 in `palette.PALETTE_MAPPING` -- and caught a real trap: each type's schema also

@@ -410,22 +410,26 @@ duplicate but is not a real CSS var; `apply_type_scale` always resolves the real
   elements untouched, sector-prefixed pseudo-property written alongside the real CSS
   var. No regression in `custom_style_test.py`/`palette_test.py`.
 
-## Phase 5: Elevation & Shape (§6) — scoped, not detailed
+## Phase 5: Elevation & Shape (§6) — DONE (2026-09-15)
 
-Border-radius: LOW risk, reuses the already-confirmed mechanism
-(`generator/_test_output/custom_shape_test.py` — 4 CSS vars via
-`style.set_component_style`, gated by `shape="custom"`). Shadow/elevation: **NEEDS
-SOURCE CHECK** — the design doc itself flags this as uncertain ("a border/
-background-contrast substitute where CH5 doesn't support real shadows"); grep
-`style_property_catalog` across component types for any shadow/elevation-like
-property before assuming one exists.
+2 tasks, 2 commits:
 
-- **Task:** `shape.py::RADIUS_PRESETS = {"sharp": 0, "subtle": 4, "rounded": 12}` (px,
-  applied to all 4 corners via the existing mechanism) — button confirmed; check
-  applicability for other stylable types before extending.
-- **Task:** confirm whether any shadow/elevation-like `targetProperty` exists at all;
-  if not, implement the border/background-contrast substitute via
-  `palette.py::apply_palette`, not a new mechanism.
+- `shape.py::RADIUS_PRESETS` (sharp=0/subtle=4/rounded=12px) + `apply_radius_preset`,
+  reusing the already-confirmed `shape="custom"` + 4-corner mechanism
+  (`custom_shape_test.py`). Scoped to `ch5-button` only — corner-radius stylability
+  is ALSO confirmed for `ch5-button-list`/`ch5-datetime`/`ch5-text`
+  (`style_property_catalog`), but their `shape="custom"` gate isn't confirmed, so not
+  extended to them yet (Phase 3's disabled-state lesson: don't assume a mechanism
+  mirrors another type without checking). Verified against a real button: byte-
+  identical round-trip, sibling untouched.
+- `shape.py::ELEVATION_LEVELS` (flat=0px/raised=2px/raised_more=4px) — source check
+  confirmed ZERO shadow/elevation style properties exist in any mapped type's
+  schema, so the design doc's own anticipated fallback applies: a border/
+  background-contrast substitute. Needs no new writer at all — verified it plugs
+  directly into `palette.py::apply_palette`'s existing `border_width` key against a
+  real button, byte-identical round-trip.
+
+No regressions in `custom_shape_test.py`.
 
 ## Phase 6: Information Density & Hierarchy (§7) — scoped, not detailed
 
