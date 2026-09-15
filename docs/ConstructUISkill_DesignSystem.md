@@ -157,7 +157,16 @@ uncluttered on a wall-mounted panel viewed from a few feet away.
   neutral-colored, or positioned less prominently) so the user's eye has an
   obvious first stop.
 - Related controls grouped visually (shared background, spacing, or a border)
-  rather than scattered at equal visual weight across the canvas.
+  rather than scattered at equal visual weight across the canvas. **Mechanism:**
+  Construct's `html-div` component (a plain HTML5 `<div>`, NOT a `ch5-*` custom
+  element — confirmed absent from `component-context.json`'s own schema) is the
+  real, only way to draw that shared background/border box; every other
+  component here is styled via `--ch5-*` CSS custom properties, but a div's
+  background-color/border-*/border-radius are plain literal CSS declarations.
+  Placed BEHIND the controls it groups (lower z-index) as a flat sibling
+  element, not a parent. See `generator/html_div.py::build_html_div` (initial
+  placement) / `style_html_div` (restyling an existing one), grounded against
+  `C:\Solutions\ClaudeSamples\Components\Component - DIV.cuig`.
 
 ## 8. Cross-Resolution Consistency
 
