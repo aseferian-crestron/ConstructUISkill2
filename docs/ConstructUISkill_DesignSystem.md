@@ -8,7 +8,7 @@ Everything below is a POLICY document: a set of rules and defaults the skill app
 
 If the user does not provide a design, the skill asks the user to select from the patterns below, and separately confirms whether this is a **Commercial** or **Residential** interface — audience changes which header content and footer/menu items are conventional (see each pattern), not the underlying mechanics.
 
-Every pattern is built from the same primitives already established in `ConstructUISkill.md` §5: a page-based structure where each top-level selection opens its own page, with header/footer as widgets added to every page. Each pattern below specifies what varies: its component/widget composition, how it reflows across resolutions and orientations, and which §§2–8 rules constrain it most.
+Every pattern is built from the same primitives already established in `ConstructUISkill.md` §5: a page-based structure where each top-level selection opens its own page, with header/footer as widgets added to every page. §5's hard requirement applies to every pattern below without exception: any widget a pattern adds to every page (header, footer, tab strip, left-side menu rail) must be built with its Global Contract property set true (`page.py::default_widget_html_css(..., is_global=True)`) — it is programmed once, not once per page instance. Each pattern below specifies what varies: its component/widget composition, how it reflows across resolutions and orientations, and which §§2–8 rules constrain it most.
 
 ### Header-Content-Footer
 

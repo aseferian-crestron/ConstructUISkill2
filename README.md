@@ -9,6 +9,16 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Cross-referenced the Global Contract hard requirement into the design-system doc.**
+User: *"the header/footer is part of the Design System document"* -- correcting my
+framing of the previous entry, which called header/footer-building orchestration an
+untracked gap; it's actually already scoped as §1's Layout Patterns (Header-Content-
+Footer, Tabbed, Left-Side Menu all build header/footer/menu widgets). Added one note
+to §1's shared intro (covers all five patterns, not repeated per-pattern): any widget
+a pattern adds to every page must be built with `is_global=True` per §5's hard
+requirement, citing the exact function (`default_widget_html_css`) landed last turn.
+No code change -- doc cross-reference only.
+
 **New hard requirement: common (all-pages) widgets must set "Global Contract" true.**
 User added to `ConstructUISkill.md` §5: *"Any time a common widget is added to all
 pages, the Global Contract property for the widget must be set true."* (Their edit
