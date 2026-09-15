@@ -357,22 +357,23 @@ git commit -m "feat: check text/background contrast against WCAG AA (§2)"
 
 ---
 
-## Phase 2: Color Roles (§2 continued) — scoped, not detailed
+## Phase 2: Color Roles (§2 continued) — DONE (2026-09-15)
 
-Primary/secondary/accent hierarchy, semantic colors (success/warning/error/info),
-neutral/surface scale. Pure policy, same as Phase 1 (no source-grounding needed) —
-these are role NAMES layered on colors the caller already resolved, reusing
-`palette.py::apply_palette`'s existing per-type mapping mechanism, not a new
-file-format fact.
+Primary/secondary/accent hierarchy, semantic colors, neutral scale. 2 tasks, 2 commits:
 
-- **Task:** `palette.py::resolve_color_roles(primary: str, secondary: str | None = None,
-  accent: str | None = None) -> dict[str, str]` — derives secondary/accent from primary
-  via `color_words` (lightness/saturation shift) when not given explicitly. Judgment
-  call, same precedent as `derive_states`.
-- **Task:** `palette.py::SEMANTIC_COLORS: dict[str, str]` (success/warning/error/info) —
-  fixed, well-known convention, not Construct-specific.
-- **Task:** `palette.py::NEUTRAL_SCALE: dict[str, str]` (2–3 grays for background/
-  border/disabled).
+- `color_words.py::adjust_saturation`/`rotate_hue` (same HSL round-trip as
+  `adjust_lightness`) + `palette.py::resolve_color_roles(primary, secondary=None,
+  accent=None) -> dict[str, str]` — secondary = desaturated primary
+  (`SECONDARY_SATURATION_DELTA = -0.45`), accent = a 30° analogous hue shift
+  (`ACCENT_HUE_ROTATION_DEGREES = 30`), both explicit judgment calls (documented as
+  such, same precedent as `derive_states`), never overriding an explicit value.
+- `palette.py::SEMANTIC_COLORS` (success/warning/error/info) + `NEUTRAL_SCALE` (3
+  grays) — fixed conventions, folded into one task since neither has real logic.
+  `NEUTRAL_SCALE`'s light/mid/dark ordering verified via real WCAG relative
+  luminance (`color_words._relative_luminance`), not eyeballed.
+
+No regressions in `palette_test.py`/`contrast_ratio_test.py`/`palette_contrast_test.py`
+across either task.
 
 ## Phase 3: Interaction States — disabled (§5 continued) — scoped, not detailed
 

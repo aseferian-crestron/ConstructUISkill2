@@ -9,6 +9,14 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 2 built (§2 color roles).** 2 commits:
+`color_words.py::adjust_saturation`/`rotate_hue` +
+`palette.py::resolve_color_roles(primary, secondary=None, accent=None)` (secondary =
+desaturated primary, accent = 30° analogous hue shift -- judgment calls, documented
+as such, same precedent as `derive_states`); `palette.py::SEMANTIC_COLORS`
+(success/warning/error/info) + `NEUTRAL_SCALE` (3 grays, ordering verified via real
+WCAG luminance). No regressions. Phases 3-8 not started.
+
 **Design System implementation plan written + Phase 1 built.**
 `docs/superpowers/plans/2026-09-15-design-system.md` sequences the design-system
 doc's 9 sections into phases (only Phase 1 detailed to step-by-step code; the rest
