@@ -64,6 +64,16 @@ for css, quote in (("font-family:'Roboto';", "'"), ('font-family: "Roboto";', '"
     assert out.count(quote) == css.count(quote), (css, out)
 print("font-family matches single or double quotes, preserving whichever is used: OK")
 
+# Unquoted font-family value: a theme-selector rule in the live project's ReflowTest.cuig
+# carries `font-family:Creepster;` with no quotes at all (every other occurrence in the
+# project is quoted) -- set_project_font's regex previously required a leading quote
+# character and silently skipped this one. Must match and replace, staying unquoted.
+for css in ("font-family:Creepster;", "font-family: Creepster;", "#i1{font-family:Creepster}"):
+    out, n = replace_font_in_text(css, "Inter")
+    assert n == 1 and "Inter" in out and "Creepster" not in out, (css, out)
+    assert "'" not in out and '"' not in out, (css, out)
+print("font-family matches an unquoted value too, staying unquoted: OK")
+
 # All four selector shapes from FontSupportConstants, confirmed against the reference
 # project byte-for-byte (see fonts.py's module docstring).
 for shape in (

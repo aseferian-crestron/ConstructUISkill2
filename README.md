@@ -9,6 +9,34 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Fixed the flagged font-regex bug + cleaned up `generator/_test_output` churn.**
+`fonts.py::_FONT_FAMILY_RE` required a leading quote character, so it silently
+skipped an unquoted `font-family:Creepster;` value in the live project's
+`ReflowTest.cuig` (every other occurrence there is quoted) -- `set_project_font`
+would report success while leaving that one rule on the old font. Fixed:
+`_FONT_FAMILY_RE` now has a quoted/unquoted alternative, and a new
+`_font_family_repl` helper picks the right replacement shape (quoted stays
+quoted with the same quote char, unquoted stays unquoted) instead of the old
+fixed replacement string, which couldn't express "no quote." RED/GREEN
+verified: added 3 unquoted cases to `fonts_global_swap_test.py` (bare
+`;`-terminated, spaced, `}`-terminated), confirmed they failed against the old
+regex, then passed after the fix, then re-ran the full file -- all existing
+quoted/case/selector-shape assertions still pass, `set_project_font` against
+the live `FontsGlobalSwap` copy now reports the file as touched.
+
+Separately, noticed `generator/_test_output/{ContractsAutoStale,ContractsE2E,
+ContractsTask3,FontsGlobalSwap}` are tracked in git despite every one of their
+test scripts wiping and rebuilding that directory from scratch on each run
+(`fonts_global_swap_test.py` even re-copies from the live external project at
+`C:\Solutions\ClaudeGenTest\GenTestProject2`) -- so every run produces pure
+diff noise (fresh timestamps/GUIDs) unrelated to any real generator change.
+Discarded that noise back to the last commit rather than committing it (twice
+-- once before this fix, once after re-running the test to verify it). Not a
+code change, just working-tree hygiene; `.gitignore` already excludes this
+exact class of thing for the *Smoke/Reflow* test dirs by name, it just doesn't
+cover these four. Worth adding to `.gitignore` in a future session if this
+keeps recurring.
+
 **Design-system policy doc: §1 Layout Patterns filled in.** User added the five
 patterns directly (Header-Content-Footer, Bento Box, Card-Based, Tabbed,
 Left-Side Menu) plus the rule that the skill asks Commercial-vs-Residential

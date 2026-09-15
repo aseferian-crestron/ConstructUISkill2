@@ -291,7 +291,19 @@ _ACTIVE_FONT_RE = re.compile(r"""(ccid_activefont\s*=\s*")'[^']*'(")""", re.IGNO
 #: (`font-family:'Roboto'`) in 21 places -- both are valid CSS and Construct evidently
 #: accepts either. The replacement re-uses whichever quote character was actually
 #: matched (``) rather than normalizing it, so a file's existing style survives.
-_FONT_FAMILY_RE = re.compile(r"""(font-family\s*:\s*)(['"])[^'"]*\2""")
+#:
+#: The value can also carry NO quotes at all -- a theme-selector rule in the live
+#: project's ReflowTest.cuig has `font-family:Creepster;` unquoted, unlike every other
+#: occurrence in the project. The unquoted alternative matches up to the next quote,
+#: `;`, or `}` and is replaced staying unquoted (see `_font_family_repl`).
+_FONT_FAMILY_RE = re.compile(r"""(font-family\s*:\s*)(?:(['"])[^'"]*\2|[^'";}]+)""")
+
+
+def _font_family_repl(match: "re.Match[str]", new_font: str) -> str:
+    prefix, quote = match.group(1), match.group(2)
+    if quote:
+        return f"{prefix}{quote}{new_font}{quote}"
+    return f"{prefix}{new_font}"
 
 
 def _read_sections(path: Path) -> tuple[str, list[tuple[str, str, str]]]:
@@ -326,7 +338,7 @@ def replace_font_in_text(text: str, new_font: str) -> tuple[str, int]:
     Html/TOML-agreement precedent) updated by the same single pass.
     """
     text, n1 = _ACTIVE_FONT_RE.subn(rf"\g<1>'{new_font}'\g<2>", text)
-    text, n2 = _FONT_FAMILY_RE.subn(rf"\g<1>\g<2>{new_font}\g<2>", text)
+    text, n2 = _FONT_FAMILY_RE.subn(lambda m: _font_family_repl(m, new_font), text)
     return text, n1 + n2
 
 
