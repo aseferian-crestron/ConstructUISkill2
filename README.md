@@ -9,6 +9,20 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 7 (§1 layout patterns) started -- footer built end to end.**
+The first genuinely new widget-building orchestration this project has generated
+(no header/footer code existed before this phase). `layout_patterns.py::
+choose_layout` (item count is the strongest constraint per §1's decision order,
+audience/orientation nudge within that) + `build_footer_widget` (composes widget
+creation + `is_global=True` + N placed buttons via the new `_layout_row` helper,
+which enforces §4's touch-target/spacing rules and raises rather than silently
+overflowing). Verified against a real written `.cuiw`: byte-identical round-trip,
+`globalControlContract="on"` present, every button meets the touch-target floor.
+§8 cross-resolution acceptance criterion satisfied by construction (same CSS shape
+reflow.py already handles generically) rather than a redundant reflow test. No
+regressions. Remaining: `build_header_widget` (different problem --
+time/weather/logo content, not N-equal-buttons) and the other 4 layout patterns.
+
 **Design System Phase 6 built (§7 information density).**
 `density.py::DENSITY_CEILINGS` (3 breakpoints by panel diagonal) + `check_density`
 -- advisory-only, never raises, never writes, returns warnings naming the real

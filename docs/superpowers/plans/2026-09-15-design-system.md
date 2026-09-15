@@ -444,28 +444,46 @@ deliberately NOT modeled as standalone functions — they're layout-pattern-buil
 decisions, not checkable from a bare count; real shape decided when Phase 7 starts
 (YAGNI, same precedent as `palette.py`'s module docstring).
 
-## Phase 7: Layout Patterns (§1) — scoped, not detailed
+## Phase 7: Layout Patterns (§1) — FOOTER DONE (2026-09-15), header/other 4 patterns remain
 
 The one genuinely new orchestration layer — no header/footer/menu-widget-building code
-exists yet. Start with ONE pattern end-to-end (Header-Content-Footer — "the default,
-safest... fallback when no other pattern is a clearly better fit," design doc §1);
-the other four patterns follow the same shape once this one is proven, same
-incremental precedent as `palette.py`'s "one verified type at a time."
+existed before this phase. 2 tasks, 2 commits — the footer half of Header-Content-
+Footer, end to end:
 
-- **Task:** `layout_patterns.py::build_header_widget(...)` /
-  `build_footer_widget(...)` — compose `page.py::build_widget_attributes` +
-  `page.py::default_widget_html_css(..., is_global=True)` (§5's hard requirement,
-  landed 2026-09-15) + `component.py::build_component` calls for child buttons/labels,
-  applying Phase 1's `spacing.enforce_touch_target`/`snap_to_spacing` to every child's
-  placement.
-- **Task:** `layout_patterns.py::choose_layout(item_count: int, is_commercial: bool,
-  panel_is_landscape: bool) -> str` — pure decision function implementing §1's
-  "Choosing a Layout" order (Residential/Commercial → item count → panel size).
-- **Acceptance criterion (§8 Cross-Resolution Consistency):** already-built
-  infrastructure (`reflow.py`, `layout.py::update_element_declarations`'s catch-all +
-  primary rule) must be exercised by whatever this phase builds at every configured
-  resolution, not just the primary one — no new code needed for §8 itself, this is a
-  test requirement on Phase 7's own output.
+- `layout_patterns.py::choose_layout(item_count, *, is_commercial, panel_is_landscape)
+  -> str` — §1's "Choosing a Layout" order: item count is the strongest constraint
+  (≤5 → header-content-footer; 6-7 → tabbed/card-based split by audience; >7 →
+  left-side-menu), orientation forces a card-based fallback when the landscape-only
+  patterns don't fit. A judgment call, documented as such.
+- `layout_patterns.py::build_footer_widget(sdk, *, items, footer_width,
+  footer_height=120, widget_name="Footer", resolution=None) -> (widget_attrs, html,
+  css, elements)` — composes `build_widget_attributes` + `default_widget_html_css(...,
+  is_global=True)` (§5's hard requirement) + one `component.build_component` per item,
+  laid out by the new `_layout_row` helper (§4's spacing unit + touch-target floor +
+  edge padding; raises `ValueError` rather than silently overflowing when an item
+  count doesn't fit even at the floor — exactly what §1's own footer item-count
+  ceiling exists to prevent). Assembly follows the existing multi-component
+  precedent (`contracts_task4_end_to_end_test.py`): html/css concatenated in order,
+  elements concatenated as one flat list. Verified against a real written `.cuiw`:
+  byte-identical round-trip, `globalControlContract="on"` present, every button
+  meets the touch-target floor. No regression in `phase3_smoke_test.py`/
+  `global_widget_test.py`.
+
+**§8 Cross-Resolution Consistency acceptance criterion:** satisfied by construction,
+not by a separate reflow integration test — `build_footer_widget`'s CSS uses the
+exact same catch-all-query shape (`#id{...}` under `(max-width: 99999px)`) every
+other reflow-tested element already uses; `reflow.py`'s mechanism is generic over
+that shape, not per-tag, so nothing here bypasses it or needs new §8-specific code.
+Verified structurally (the test parses the footer's CSS through the same
+`layout.parse_all_position_rules` reflow itself depends on) rather than re-running
+a full multi-resolution reflow on ordinary CSS shape that's already extensively
+covered by the existing `reflow_task*_test.py` suite.
+
+**Remaining, deliberately not attempted this session:** `build_header_widget`
+(heterogeneous content — time/weather/logo — a genuinely different problem from
+N-equal-buttons, not guessed at) and the other four layout patterns (Bento Box,
+Card-Based, Tabbed, Left-Side Menu), which follow the same shape `build_footer_
+widget` now proves once each is started.
 
 ## Phase 8: §9 — How the Skill Applies These Defaults — scoped, not detailed
 
