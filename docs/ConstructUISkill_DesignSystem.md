@@ -121,7 +121,20 @@ between the outermost controls and the screen edge.
 
 Already implemented (`palette.py::derive_states`, Phase 7): a component's pressed state defaults to its background darkened 15% ("pushed in"), selected defaults to lightened 12% ("highlighted"), with border/text/icon carrying over unchanged unless explicitly overridden. This document's job is to pin that down as house POLICY, not just a code default — any future per-project override of these deltas should be a deliberate design decision recorded here, not an accidental one-off.
 
-Not yet covered: a `disabled` state. A control that can't currently be interacted with (e.g. a source button for an offline device) needs its own consistent visual treatment — conventionally reduced opacity or a desaturated variant of the normal state — so "this can't be tapped right now" is communicated visually, not just by the tap silently doing nothing.
+**Confirmed NOT implementable via this skill's Stage-1 styling mechanism (2026-09-15):**
+a `disabled` state. `disabled` is a real, settable attribute (`component.py::NEVER_EMIT`
+already records it as instance state, not a default) — but unlike `pressed`/`selected`,
+which have dozens of `--ch5-*` custom-property entries per type in
+`classToVariableMapping` (confirmed via `style.style_property_catalog`), every checked
+type (`ch5-button`, `ch5-toggle`, `ch5-dpad`, `ch5-signal-level-gauge`, `ch5-slider`) has
+ZERO `disabled`-scoped entries. A raw search of `ch5-button`'s
+`component-context.json` confirms `disabled` appears only as a plain attribute default,
+never inside a stylable mapping. Whatever visual change a disabled component gets is
+baked into the CH5 component library's own internal styling and is not exposed for
+custom-mode override — there is nothing for the generator to write. Not a gap to fill
+later via more curation (the same "genuinely empty, not unmapped" conclusion
+`palette.py`'s `NO_STYLABLE_PROPERTIES` already reached for other properties) — a real
+platform limit, recorded here so a future session doesn't re-attempt it.
 
 ## 6. Elevation & Shape
 

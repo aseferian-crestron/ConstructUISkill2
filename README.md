@@ -9,6 +9,17 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 3 investigated -- confirmed NOT buildable (§5 disabled state).**
+Ran the source check the plan required before writing any code: `style.style_property_
+catalog` for every currently-mapped type (button/toggle/dpad/signal-level-gauge/
+slider) has ZERO `disabled`-scoped entries, vs. dozens for `pressed`/`selected`; a raw
+`component-context.json` search confirms `disabled` is only a plain attribute
+default, never inside `classToVariableMapping`. Real platform limit, not a curation
+gap -- whatever a disabled component looks like is baked into CH5's own component
+styling, not exposed for override. No code to write; updated
+`ConstructUISkill_DesignSystem.md` §5 and the plan to record the finding so a future
+session doesn't re-attempt it.
+
 **Design System Phase 2 built (§2 color roles).** 2 commits:
 `color_words.py::adjust_saturation`/`rotate_hue` +
 `palette.py::resolve_color_roles(primary, secondary=None, accent=None)` (secondary =

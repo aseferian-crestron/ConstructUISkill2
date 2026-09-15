@@ -375,20 +375,19 @@ Primary/secondary/accent hierarchy, semantic colors, neutral scale. 2 tasks, 2 c
 No regressions in `palette_test.py`/`contrast_ratio_test.py`/`palette_contrast_test.py`
 across either task.
 
-## Phase 3: Interaction States — disabled (§5 continued) — scoped, not detailed
+## Phase 3: Interaction States — disabled (§5 continued) — DONE, NOT BUILDABLE (2026-09-15)
 
-**NEEDS SOURCE CHECK first:** `component.py::NEVER_EMIT` (line 163) already confirms
-`disabled` is a real instance-state attribute Construct writes (`[disabled="true"]`,
-same shape as `[pressed="true"]`/`[selected="true"]` that `_BUTTON_PALETTE` already
-maps). Before writing `derive_disabled_state()`, confirm via
-`style.style_property_catalog` whether a `disabled`-state selector variant exists per
-type the same way pressed/selected were confirmed (`palette.py` module docstring,
-2026-09-13 entry) — do not assume it mirrors pressed/selected without checking.
-
-- **Task:** confirm `[disabled="true"]` selector existence per already-mapped type in
-  `palette.py::PALETTE_MAPPING`.
-- **Task:** `palette.py::derive_disabled_state(resolved_palette: dict[str, str]) -> dict[str,
-  str]` — reduced opacity or desaturated variant, once the selector shape is confirmed.
+Source check run as planned, before writing any code: `style.style_property_catalog`
+checked for every currently-mapped type (`ch5-button`, `ch5-toggle`, `ch5-dpad`,
+`ch5-signal-level-gauge`, `ch5-slider`) — ZERO `disabled`-scoped entries across all
+five, versus dozens for `pressed`/`selected`. A raw search of `ch5-button`'s
+`component-context.json` confirms `disabled` appears only as a plain attribute
+default, never inside `classToVariableMapping`. **Conclusion: not a gap to fill later,
+a real platform limit** — whatever visual change a disabled component gets is baked
+into the CH5 component library's own internal styling, not exposed for custom-mode
+override. No `derive_disabled_state()` task exists; there is nothing for the
+generator to write. `docs/ConstructUISkill_DesignSystem.md` §5 updated to record this
+so a future session doesn't re-attempt it.
 
 ## Phase 4: Typography Scale (§3) — scoped, not detailed
 
@@ -475,7 +474,8 @@ Capstone; genuinely cannot be detailed until Phases 1–7 exist to call into.
 ## Self-Review
 
 - **Spec coverage:** §1→Phase 7, §2→Phase 1 (contrast) + Phase 2 (roles), §3→Phase 4,
-  §4→Phase 1, §5→already built (states) + Phase 3 (disabled), §6→Phase 5, §7→Phase 6,
+  §4→Phase 1, §5→already built (states) + Phase 3 (disabled, confirmed not
+  buildable), §6→Phase 5, §7→Phase 6,
   §8→already built, acceptance criterion on Phase 7, §9→Phase 8. Every section has a
   task or an explicit "already built, no task needed."
 - **Placeholder scan:** Phase 1's 3 tasks contain full real code, no TBD/"add
