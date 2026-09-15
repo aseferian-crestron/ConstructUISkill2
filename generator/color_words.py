@@ -93,6 +93,28 @@ def adjust_lightness(hex_color: str, delta: float) -> str:
     return _rgb_to_hex(round(r2 * 255), round(g2 * 255), round(b2 * 255))
 
 
+def adjust_saturation(hex_color: str, delta: float) -> str:
+    """`hex_color` with its HSL saturation shifted by `delta` (-1..1), clamped 0..1.
+    Same HSL round-trip as adjust_lightness -- plain color math, not Construct-specific.
+    -1.0 collapses to a pure gray (hue/lightness preserved, saturation zeroed)."""
+    r, g, b = _hex_to_rgb(hex_color)
+    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    s = max(0.0, min(1.0, s + delta))
+    r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+    return _rgb_to_hex(round(r2 * 255), round(g2 * 255), round(b2 * 255))
+
+
+def rotate_hue(hex_color: str, degrees: float) -> str:
+    """`hex_color` with its HSL hue rotated by `degrees` (wraps mod 360, so 0 and 360
+    are no-ops). Lightness/saturation preserved -- plain color math, not
+    Construct-specific."""
+    r, g, b = _hex_to_rgb(hex_color)
+    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    h = (h + degrees / 360.0) % 1.0
+    r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+    return _rgb_to_hex(round(r2 * 255), round(g2 * 255), round(b2 * 255))
+
+
 def _relative_luminance(hex_color: str) -> float:
     """WCAG 2.1 relative luminance -- the exact formula behind the 4.5:1/3:1 contrast
     thresholds this module's callers check against (see contrast_ratio)."""

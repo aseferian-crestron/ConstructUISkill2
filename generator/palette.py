@@ -373,6 +373,31 @@ def derive_states(resolved_palette: dict[str, str]) -> dict[str, str]:
     return derived
 
 
+#: Judgment calls, not a Construct spec (same precedent as PRESSED_LIGHTNESS_DELTA/
+#: SELECTED_LIGHTNESS_DELTA above) -- design doc §2's "primary vs. secondary vs.
+#: accent" rule names the roles but not their derivation. Secondary: a desaturated
+#: variant of primary -- still obviously brand-related but visually recedes, matching
+#: "everything else uses a secondary/neutral treatment." Accent: a modest 30-degree
+#: hue shift (an "analogous" scheme) rather than a complementary/triadic rotation --
+#: a safe default absent full color-harmony theory, since a large rotation risks an
+#: unpredictable clash for an arbitrary brand color.
+SECONDARY_SATURATION_DELTA = -0.45
+ACCENT_HUE_ROTATION_DEGREES = 30
+
+
+def resolve_color_roles(
+    primary: str, secondary: str | None = None, accent: str | None = None,
+) -> dict[str, str]:
+    """Design-system §2's primary/secondary/accent roles. `secondary`/`accent` are
+    derived from `primary` when not given explicitly -- an explicit value is never
+    overridden, same "fill in what's missing" contract as derive_states."""
+    return {
+        "primary": primary,
+        "secondary": secondary or color_words.adjust_saturation(primary, SECONDARY_SATURATION_DELTA),
+        "accent": accent or color_words.rotate_hue(primary, ACCENT_HUE_ROTATION_DEGREES),
+    }
+
+
 #: WCAG AA normal-text minimum -- design-system §2's contrast rule. (Large-text's 3:1
 #: floor is not checked here yet: this project has no notion of "large text" separate
 #: from §3's type scale, which is a later phase -- see the design-system plan.)
