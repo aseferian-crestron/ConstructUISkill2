@@ -9,6 +9,60 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**New component: `html-div`, the real mechanism behind §7's control-grouping
+rule — blocking requirement, resolved before Bento Box.** User: *"do you have in
+your documents anywhere that the DIV component should be used to
+group/surround components so they look organized?"* No — §7 named the policy
+("Related controls grouped visually -- shared background, spacing, or a
+border") but never a mechanism. User then: *"The DIV component is a pure HTML5
+component inside Construct... You MUST utilize this component and figure out
+how to use it for styling as well. This is a requirement that blocks
+everything until you finish."* User added two real reference instances to the
+sample project (`Component - DIV.cuig`, `Component - HTML - DIV.cuig`).
+
+Traced from those: `html-div` is genuinely NOT a `ch5-*` custom element --
+confirmed absent from `component-context.json`'s own 50-tag schema (checked
+directly via `sdk.read_sdk(...).component_context`) -- so unlike every other
+component this project builds, there is no SDK catalog to read attributes or
+style properties from; grounded entirely against the two real files instead.
+Two confirmed, non-guessable quirks: the Html tag is literally `<div>` while
+the TOML `[[Elements]]` `Type` is the separate literal `"html-div"`;
+`ccid_lteHTMLOnly` is a bare boolean attribute in Html but an ordinary
+`"true"`-valued key in TOML -- a real asymmetry, not a bug. The two reference
+files disagreed on `[[Elements]]` shape (the older one carries extra
+`Name=""`/`Status=""`/`Content=""`); treated the newer (2026-09-15) file as
+authoritative, same precedent this project already applies when two real files
+disagree.
+
+**Styling answer (the "figure out how to use it for styling" half):** unlike
+every `ch5-*` component (styled via `--ch5-*` CSS custom properties because
+that's what the CH5 web component's own property grid reads), a div's
+background-color/border-*/border-radius are PLAIN literal CSS declarations
+written straight into its `#id{}` rule -- confirmed against the reference.
+This is exactly the shape `layout.py::build_position_css`'s existing
+`extra_vars` parameter and `update_element_declarations`'s existing
+merge-by-name logic already handle -- both reused as-is, no new CSS-writing
+mechanism needed. Also confirmed duplicated into the PRIMARY-resolution block,
+matching the already-established catch-all + primary rule.
+
+`generator/html_div.py` (new): `build_html_div` (initial placement, same
+`(html, css, Element)` return shape as `component.py::build_component` so it
+drops into any layout-pattern builder's assembly) + `style_html_div` (restyle
+an EXISTING div, touching only the properties given). `html_div_test.py`
+covers: attribute-for-attribute match against the real reference (name, order,
+bare-vs-valued shape), every real style property present in both the catch-all
+and primary blocks, a written `.cuig` round-trips byte-identical, position/size
+still parses correctly alongside the extra literal declarations (proving it
+coexists with the existing reflow machinery the same way a themed button's
+custom properties already do), and two sequential restyle calls that only ever
+touch the property each one names. Full suite re-run clean except the two
+known pre-existing unrelated failures. Cross-referenced into
+`ConstructUISkill_DesignSystem.md` §7 (mechanism note + function pointer),
+same treatment as the Global Contract hard requirement.
+
+Bento Box (next in Phase 7) can now use `html-div` for its card
+backgrounds/borders -- this was the blocking gap.
+
 **Design System Phase 7 (§1 layout patterns): header widget built end to end.**
 `build_header_widget` composes the Header-Content-Footer pattern's header --
 genuinely heterogeneous content, unlike the footer's N-equal-buttons. Source
