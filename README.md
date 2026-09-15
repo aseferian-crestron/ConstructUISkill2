@@ -9,6 +9,17 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 4 built (§3 typography scale).** Source check confirmed
+`font-size` is a real `--ch5-*` targetProperty for every text-bearing type already
+in `palette.PALETTE_MAPPING` -- and caught a real trap: each type's schema also
+carries an unrelated synthetic `custom-font-size` source property (no `--` prefix,
+not a real CSS var) that could easily have been used by mistake.
+`typography.py::TYPE_SCALE` (5 roles, strictly ascending, body/label matching the
+design doc's own floors) + `apply_type_scale` (reuses the exact same selector
+`PALETTE_MAPPING` already has for each tag's `text_color` -- no duplicate table
+needed). Verified against a real component in a scratch copy of `GenTestProject2`:
+byte-identical round-trip, sibling elements untouched. No regressions.
+
 **Design System Phase 3 investigated -- confirmed NOT buildable (§5 disabled state).**
 Ran the source check the plan required before writing any code: `style.style_property_
 catalog` for every currently-mapped type (button/toggle/dpad/signal-level-gauge/

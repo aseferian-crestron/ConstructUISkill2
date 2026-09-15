@@ -389,19 +389,26 @@ override. No `derive_disabled_state()` task exists; there is nothing for the
 generator to write. `docs/ConstructUISkill_DesignSystem.md` §5 updated to record this
 so a future session doesn't re-attempt it.
 
-## Phase 4: Typography Scale (§3) — scoped, not detailed
+## Phase 4: Typography Scale (§3) — DONE (2026-09-15)
 
-**NEEDS SOURCE CHECK first:** whether `font-size` is a real `targetProperty`-backed
-style for text-bearing types (`ch5-text`, `ch5-button`'s label, etc.) — `style.py`'s
-module docstring already flags that some properties have NO `targetProperty` (the
-precedent: border-radius corners needed special handling, `style.py:29`). Run
-`style.style_property_catalog` per relevant tag before assuming font-size is
-stylable via the existing mechanism at all.
+Source check run first, as planned: `style.style_property_catalog` confirmed
+`font-size` IS a real `--ch5-*` targetProperty for every text-bearing type in
+`palette.PALETTE_MAPPING`. Found a real trap along the way — each of those types'
+schema also carries a SEPARATE synthetic `custom-font-size` source property (target
+e.g. `custom-normal-label-font-size`, no `--` prefix, no sector) that looks like a
+duplicate but is not a real CSS var; `apply_type_scale` always resolves the real
+`font-size` name. 2 tasks, 1 commit:
 
-- **Task:** confirm font-size stylability per tag.
-- **Task:** `typography.py::TYPE_SCALE: dict[str, int]` (title/heading/body/label/
-  caption, body defaulting ~22px per the design doc) once confirmed stylable, or a
-  documented fallback (e.g. a min-readable-size WARNING rather than a write) if not.
+- `typography.py::TYPE_SCALE` (caption/label/body/heading/title, strictly ascending;
+  body=22/label=18 are the design doc's own explicit floors, the rest a documented
+  judgment call).
+- `typography.py::apply_type_scale(css_text, element_id, sdk, tag_name, role, *,
+  primary_query=None) -> str` — reuses the SAME selector `PALETTE_MAPPING` already
+  has for each tag's `text_color` (confirmed identical to the font-size selector for
+  every checked type, no duplicate table needed). Verified against a real component
+  in a scratch copy of `GenTestProject2`: byte-identical round-trip, sibling
+  elements untouched, sector-prefixed pseudo-property written alongside the real CSS
+  var. No regression in `custom_style_test.py`/`palette_test.py`.
 
 ## Phase 5: Elevation & Shape (§6) — scoped, not detailed
 
