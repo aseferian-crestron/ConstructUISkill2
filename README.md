@@ -9,6 +9,32 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Design System Phase 7 (§1 layout patterns): header widget built end to end.**
+`build_header_widget` composes the Header-Content-Footer pattern's header --
+genuinely heterogeneous content, unlike the footer's N-equal-buttons. Source
+check confirmed only 2 of the design doc's 4 header content items (§1: "time,
+weather, area status, active source" / "date/time, active source, corporate
+logo") are real distinct component types -- `ch5-datetime` and `ch5-image`
+(commercial only, per the doc's own line); "weather"/"area status"/"active
+source" have no dedicated component, so they're `ch5-text` with caller-supplied
+`status_items` labels (this generator doesn't invent a project's own status
+text, same reasoning `theme_chat.py` uses for leaving color *resolution* to the
+driving chat AI). New `_layout_header_row` helper (deliberately NOT a reuse of
+the footer's `_layout_row` -- different problem shape, fixed-width items
+(logo/datetime) alongside flexible status-text items dividing remaining space
+evenly, no touch-target floor since this content is informational, not
+interactive). `ch5-datetime`'s fixed width (200x35) transcribed from a real
+instance (`Component-Widgets-DateTime.cuig`), not guessed. Task detailed
+just-in-time in the plan doc before coding, matching this project's own
+convention. Verified against 2 real written `.cuiw` files (commercial: logo +
+datetime + 1 status text; residential: datetime + 3 status texts, no logo):
+both byte-identical round-trips, `globalControlContract="on"` present on both.
+Full suite re-run clean except the two known pre-existing unrelated failures
+(the 74-vs-75 catalog count, and a `page_background_color_test.py` live-project
+drift -- confirmed via `git stash` that both predate this session's changes).
+Remaining: the other 4 layout patterns (Bento Box, Card-Based, Tabbed,
+Left-Side Menu).
+
 **Design System Phase 7 (§1 layout patterns) started -- footer built end to end.**
 The first genuinely new widget-building orchestration this project has generated
 (no header/footer code existed before this phase). `layout_patterns.py::
