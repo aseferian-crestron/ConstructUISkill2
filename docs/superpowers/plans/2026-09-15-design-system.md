@@ -533,6 +533,62 @@ the same "only what's real" discipline as `palette.NO_STYLABLE_PROPERTIES`.
   the CSS this emits is the same catch-all-query shape `reflow.py` already
   handles generically.
 
+### `build_bento_box_page` — detailed just-in-time (2026-09-15)
+
+Two prerequisite gaps closed first (both blocked "cards open a page/popup" and
+"cards grouped/bordered"): `html_div.py` (§7's control-grouping mechanism) and
+Visibility=Contract navigation (`page.py::build_page_attributes`/
+`make_widget_reference`, replacing an ungrounded `pageflip`-attribute
+investigation — user: *"no one uses local page flip programming... enable
+contract support for each component"*). A Bento Box card is therefore just an
+ordinary `ch5-button` with its normal default contract signals (already
+applied by `component.build_component`/`contracts.default_signals_for` — no
+extra navigation wiring needed at all, since the CONTROL SYSTEM decides what's
+shown via the target page's own Visibility=Contract join, not anything local
+to the button).
+
+- **Task:** `layout_patterns.py::build_bento_box_page(sdk, *, name: str,
+  items: list[tuple[str, str]], page_width: int, page_height: int, columns:
+  int, resolution: tuple[int, int] | None = None) -> (page_attrs, html, css,
+  elements)` — same return/assembly shape as `build_footer_widget`, using
+  `page.build_page_attributes` instead of `build_widget_attributes` since §1's
+  own composition line is explicit: Bento Box lives on ONE PAGE (typically the
+  home/landing page), not a common widget. `items` is `(label, size_tier)`
+  pairs; `size_tier` is one of `TIER_SPANS` (`"large"`=2×2, `"wide"`=2×1,
+  `"small"`=1×1 grid cells — the design doc's own example, and its "2–3 card
+  sizes max" sizing rule taken literally as exactly 3 named tiers, not a
+  free-form width/height per card).
+- **New helper:** `layout_patterns.py::_pack_bento_grid(spans: list[tuple[int,
+  int]], columns: int) -> list[tuple[int, int]]` — pure grid-cell placement
+  (col, row per item), CSS Grid's own default "sparse" row-major first-fit
+  algorithm: for each item in order, scan rows top-to-bottom then columns
+  left-to-right for the first position where its full span of cells is
+  unoccupied. A well-known, standard algorithm (not invented), chosen because
+  it's exactly what a browser's own `grid-auto-flow: row` does and is simple
+  enough to verify directly (no overlaps, respects the column count). Raises
+  `ValueError` for a card wider than the grid itself.
+- **Cell sizing:** cells are SQUARE (`page_width` and `columns` derive one
+  `cell_size`, reused for height too) — matches "grid units" being a single
+  measure in both dimensions, not independent width/height scales. Raises
+  `ValueError` if `cell_size` would fall below `spacing.MIN_TOUCH_TARGET`
+  (too many columns for the page width) or if the resulting grid's total
+  height exceeds `page_height` (too many/large cards for the page) — same
+  "raise rather than silently overflow" discipline as the footer's
+  `_layout_row`.
+- **§7 density:** NOT built into this function — `density.py::check_density`
+  already exists as a standalone advisory the caller runs itself
+  (`check_density(len(items), panel_diagonal_in)`), matching its own
+  module contract ("nothing here touches a file", callable independently).
+  Wiring it INTO the builder would force a return-shape change every other
+  layout-pattern builder doesn't have; a caller that wants the warning already
+  has everything it needs (`len(items)`) without that.
+- **§8 acceptance:** satisfied by construction, same reasoning as the footer —
+  ordinary per-resolution component placement, no new CSS shape.
+- **Styling:** deliberately NOT applied by this builder — a card's
+  background/border/shape is `palette.py`/`shape.py`'s job (already built),
+  applied by the caller afterward exactly the way any other themed component
+  is, not duplicated here.
+
 ## Phase 8: §9 — How the Skill Applies These Defaults — scoped, not detailed
 
 Capstone; genuinely cannot be detailed until Phases 1–7 exist to call into.

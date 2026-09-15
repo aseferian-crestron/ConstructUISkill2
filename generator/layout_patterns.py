@@ -14,7 +14,7 @@ from uuid import uuid4
 import component
 import spacing
 from elements import Element
-from page import build_widget_attributes, default_widget_html_css, generate_element_id
+from page import build_page_attributes, build_widget_attributes, default_widget_html_css, generate_element_id
 from sdk import UiSdk
 
 
@@ -240,3 +240,127 @@ def build_footer_widget(
     css = container_css + "".join(css for _, css, _ in buttons)
     elements = [container_element] + [element for _, _, element in buttons]
     return widget_attrs, html, css, elements
+
+
+#: §1's Bento Box sizing rule ("2-3 card sizes max... 2x2, 2x1, 1x1 grid units")
+#: taken literally as exactly these 3 named tiers -- (columns_spanned,
+#: rows_spanned), not a free-form per-card width/height.
+TIER_SPANS: dict[str, tuple[int, int]] = {"large": (2, 2), "wide": (2, 1), "small": (1, 1)}
+
+
+def _pack_bento_grid(spans: list[tuple[int, int]], columns: int) -> list[tuple[int, int]]:
+    """`(col, row)` top-left grid cell for each item in `spans`, in order.
+
+    CSS Grid's own default "sparse" row-major auto-placement algorithm (a
+    well-known, standard algorithm, not invented for this project): for each
+    item, scan rows top-to-bottom then columns left-to-right for the first
+    position where its full `w x h` block of cells is unoccupied; mark those
+    cells occupied and move to the next item. This is what a browser's own
+    `grid-auto-flow: row` does, chosen because Bento Box's own "asymmetric
+    grid" composition is exactly a CSS grid problem, and because it's simple
+    enough to verify directly (no overlaps, every item within the column
+    count) rather than inventing a bespoke packer.
+
+    Raises `ValueError` for an item wider than the grid itself -- can never
+    fit at any row, not something to silently clip.
+    """
+    occupied: set[tuple[int, int]] = set()
+    positions: list[tuple[int, int]] = []
+    for w, h in spans:
+        if w > columns:
+            raise ValueError(f"a {w}x{h} card cannot fit in a {columns}-column grid")
+        row = 0
+        while True:
+            placed = False
+            for col in range(columns - w + 1):
+                cells = {(col + dc, row + dr) for dc in range(w) for dr in range(h)}
+                if occupied.isdisjoint(cells):
+                    occupied |= cells
+                    positions.append((col, row))
+                    placed = True
+                    break
+            if placed:
+                break
+            row += 1
+    return positions
+
+
+def build_bento_box_page(
+    sdk: UiSdk, *, name: str, items: list[tuple[str, str]], page_width: int, page_height: int,
+    columns: int, resolution: tuple[int, int] | None = None,
+) -> tuple[list[tuple[str, str]], str, str, list[Element]]:
+    """One page containing an asymmetric grid of card components -- §1's Bento
+    Box pattern. `items` is `(label, size_tier)` pairs, `size_tier` one of
+    `TIER_SPANS`; a card's SIZE communicates its importance (§1: "size
+    communicates importance without needing a color or label to say so").
+
+    Each card is an ordinary `ch5-button` -- opening a subsystem/area page or
+    popup is the CONTROL SYSTEM's job via that target page's own
+    Visibility=Contract join (see `page.py::build_page_attributes`), not
+    anything local to the button, so a card needs no navigation wiring beyond
+    the default contract signals `component.build_component` already applies
+    to every button. Styling (background/border/shape) is deliberately NOT
+    applied here -- that's `palette.py`/`shape.py`'s job, same as every other
+    layout-pattern builder leaves it to the caller.
+
+    Cells are SQUARE (`page_width`/`columns` derive one `cell_size`, reused for
+    height too) -- "grid units" is one measure in both dimensions, not
+    independent width/height scales. Raises `ValueError` if `cell_size` would
+    fall below `spacing.MIN_TOUCH_TARGET` (too many columns for the page
+    width) or if the resulting grid needs more height than `page_height`
+    provides (too many/large cards) -- same "raise rather than silently
+    overflow" discipline as the footer's `_layout_row`.
+
+    §7's density ceiling is NOT checked here -- `density.py::check_density`
+    already exists as a standalone advisory a caller runs itself
+    (`check_density(len(items), panel_diagonal_in)`); wiring it into this
+    function would force a return-shape change no other layout-pattern builder
+    needs for something the caller can already do with `len(items)` alone.
+
+    Returns `(page_attrs, html, css, elements)`, ready for `page.py::write_cuig`
+    -- `page.build_page_attributes` rather than `build_widget_attributes`,
+    since §1's own composition is explicit: Bento Box lives on ONE PAGE, not a
+    common (every-page) widget.
+    """
+    spans = []
+    for label, tier in items:
+        if tier not in TIER_SPANS:
+            raise ValueError(f"unknown Bento Box size tier {tier!r} for {label!r} -- valid: {sorted(TIER_SPANS)}")
+        spans.append(TIER_SPANS[tier])
+    grid_positions = _pack_bento_grid(spans, columns)
+
+    usable_width = page_width - 2 * spacing.EDGE_PADDING
+    cell_size = (usable_width - (columns - 1) * spacing.SPACING_UNIT) // columns
+    if cell_size < spacing.MIN_TOUCH_TARGET:
+        raise ValueError(
+            f"{columns} columns in a {page_width}px-wide page leaves only {cell_size}px "
+            f"per cell, below the {spacing.MIN_TOUCH_TARGET}px touch-target floor -- "
+            f"use fewer columns"
+        )
+
+    max_row = 0
+    buttons = []
+    for (label, tier), (col, row) in zip(items, grid_positions):
+        span_w, span_h = TIER_SPANS[tier]
+        x = spacing.EDGE_PADDING + col * (cell_size + spacing.SPACING_UNIT)
+        y = spacing.EDGE_PADDING + row * (cell_size + spacing.SPACING_UNIT)
+        w = span_w * cell_size + (span_w - 1) * spacing.SPACING_UNIT
+        h = span_h * cell_size + (span_h - 1) * spacing.SPACING_UNIT
+        max_row = max(max_row, row + span_h)
+        buttons.append(component.build_component(
+            sdk, "ch5-button", component_name=label, element_id=generate_element_id(),
+            x=x, y=y, width=w, height=h, z_index=1, resolution=resolution, label=label,
+        ))
+
+    total_height = 2 * spacing.EDGE_PADDING + max_row * cell_size + (max_row - 1) * spacing.SPACING_UNIT
+    if total_height > page_height:
+        raise ValueError(
+            f"{len(items)} cards at {columns} columns need {total_height}px of height, "
+            f"but the page is only {page_height}px tall -- use more columns or fewer/smaller cards"
+        )
+
+    page_attrs = build_page_attributes(name=name)
+    html = "".join(html for html, _, _ in buttons)
+    css = "".join(css for _, css, _ in buttons)
+    elements = [element for _, _, element in buttons]
+    return page_attrs, html, css, elements
