@@ -9,6 +9,51 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Navigation is contract-driven, not page-flip -- prerequisite for Bento Box's
+"cards open a page/popup" composition, resolved before building it.** While
+scoping Bento Box, found that "each card opens a page or popup" had no real
+mechanism behind it either: every button this generator writes carries
+`pageflip="0"`, but no reference file anywhere shows a real non-zero value, so
+I didn't know how a button tells Construct which page to open. Asked the user;
+their answer: *"no one uses local page flip programming. your job is to
+properly name the components and enable contract support for each
+component... every page in the project should have the Page Visibility Join
+set to Contract. Every widget that is added to a page should have its
+Visibility property set to Contract."* -- the control system decides what's
+shown, not local pageflip logic on a button. This replaces a dead-end
+investigation with the mechanism this project already uses for everything
+else.
+
+- `page.py::build_page_attributes`: `VisibilityJoin` now defaults to
+  `contracts.CONTRACT_ENABLED` ("Contract Enabled") instead of `"0"`.
+  Confirmed real (not guessed) via `C:\Git\CCIDE`'s `PersistenceHelper.cs`
+  (`VisibilityJoin` is a plain STRING, join-bindable page attribute, not a
+  numeric-only join) and `ContractGenerationHelper.cs` (writes the identical
+  `"Contract Enabled"` sentinel this project's own `contracts.CONTRACT_ENABLED`
+  already models for every other signal -- one generic mechanism, confirmed
+  to generalize, not a page-specific fact).
+- `page.py::make_widget_reference`/`add_widget_reference_to_page`: now take
+  `sdk` and always enable the `<ch5-template>` widget-reference element's
+  `Visibility`/`Visibility_fb` signals. Confirmed via
+  `contracts.contract_signals(sdk, "ch5-template")`, which already resolves
+  `sendeventonshow`/`pd-receivestateshow` through `component-context.json`'s
+  `global` attributeProperties fallback (`ch5-template` defines neither
+  itself) -- the exact same global-fallback path `JoinNameProviderHelper.cs`
+  uses on the real C# side, so this needed zero new signal-resolution code,
+  just calling the existing `contracts.enable_contract_signals` with the
+  right tag/names.
+- `phase3_smoke_test.py` updated: the real `Widget on Page.cuig` reference
+  predates this rule (captured with default/unset visibility), so its
+  exact-attribute-set assertion against that file now explicitly accounts for
+  the 2 new signal keys rather than silently widening the check. Full suite
+  re-run clean except the two known pre-existing unrelated failures.
+  Cross-referenced into `ConstructUISkill.md`'s Page-based project rules as a
+  new hard requirement.
+
+Bento Box itself (card grid, sizing tiers, hierarchy) starts next now that
+both blocking gaps (control grouping via `html-div`, navigation via
+Visibility=Contract) are resolved.
+
 **New component: `html-div`, the real mechanism behind §7's control-grouping
 rule — blocking requirement, resolved before Bento Box.** User: *"do you have in
 your documents anywhere that the DIV component should be used to
