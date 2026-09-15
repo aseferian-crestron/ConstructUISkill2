@@ -398,6 +398,26 @@ def resolve_color_roles(
     }
 
 
+#: Fixed, well-known status-color convention (not Construct-specific, not derived from
+#: any brand palette) -- reserved exclusively for status feedback (a receive-signal
+#: indicator, a connection-lost state) so they're never ambiguous with a branded accent
+#: color (design doc §2).
+SEMANTIC_COLORS: dict[str, str] = {
+    "success": "#2e7d32",
+    "warning": "#f9a825",
+    "error": "#c62828",
+    "info": "#1565c0",
+}
+
+#: 2-3 grays for backgrounds/borders/disabled states (design doc §2) -- so "gray" is a
+#: defined set of values, not whatever hex a page happened to get.
+NEUTRAL_SCALE: dict[str, str] = {
+    "neutral_light": "#f5f5f5",
+    "neutral_mid": "#bdbdbd",
+    "neutral_dark": "#424242",
+}
+
+
 #: WCAG AA normal-text minimum -- design-system §2's contrast rule. (Large-text's 3:1
 #: floor is not checked here yet: this project has no notion of "large text" separate
 #: from §3's type scale, which is a later phase -- see the design-system plan.)
