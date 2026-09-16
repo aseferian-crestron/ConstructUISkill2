@@ -9,6 +9,25 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Fixed the actual root cause of the Bento Box quality complaint: labels/icons
+were rendering at CH5's own tiny built-in default, never sized.**
+`build_bento_box_page` never wrote a font-size for a card's label or its icon
+-- confirmed via `style.style_property_catalog` that these are two DISTINCT
+real stylable properties (`.ch5-button--label`'s `--ch5-button--regular-
+font-size` vs. `.ch5-button--icon`'s `--ch5-button--regular-icon-size`), same
+parallel structure across all three button-family types. `typography.py`
+gains `ICON_SCALE` (paired 1:1 with the existing `TYPE_SCALE` roles) +
+`apply_icon_scale`. `layout_patterns.py` gains `TIER_TYPE_ROLE`
+(large->heading, wide->body, small->label) and now ALWAYS applies both scales
+per card by tier -- baked into the builder by default (not a separate caller
+styling pass), matching how touch-target enforcement is already baked in
+everywhere else. New `primary_query` kwarg threads through, matching this
+project's "catch-all + primary resolution only" rule. `bento_box_test.py`
+extended: label/icon size match tier for the right cards, `primary_query`
+duplicates both into that resolution's own block. Full suite re-run clean
+except the two known pre-existing unrelated failures. Cross-referenced into
+`ConstructUISkill_DesignSystem.md` §4.
+
 **New design-system §1: "AI-Based UX Persona" -- reaction to the Bento Box
 quality bar not being met.** User: *"i was not happy with the first run of the
 Bento box design. The icons and fonts were too small and the overall look &
