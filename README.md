@@ -9,6 +9,45 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**New design-system §1: "AI-Based UX Persona" -- reaction to the Bento Box
+quality bar not being met.** User: *"i was not happy with the first run of the
+Bento box design. The icons and fonts were too small and the overall look &
+feel was not very good. I updated the ConstructUISkill_DesignSystem.md file
+with a directive that must be followed any time a skill user has not provided
+a design or color palette."* Added directly by the user: when no design/color
+scheme is given, the skill must act under a stated persona -- a senior
+touch-UI UX designer specializing in luxury residential/yacht and commercial
+conference/event/hospitality spaces. Every other design-system section shifted
+down one (§1 Layout Patterns -> §2, ... §9 How the Skill Should Use -> §10).
+Also added to `ConstructUISkill.md`: a "two purposes" framing (natural-language
+project editing + access to an AI-driven professional UX developer).
+
+**Same local edit reverted several already-confirmed sections -- third
+occurrence of this exact stale-local-copy pattern.** Diffed the user's
+working-tree change before merging (this project's own discipline: never
+silently accept an edit that also deletes settled, source-grounded content).
+Confirmed reverted, unrelated to the new persona work: the `.cuib` "Out of
+scope" note, the whole "Page-based project rules" section (theme color,
+page/widget background, background-image mechanism), the Contract-based
+navigation hard requirement, the §5 Global Contract citation inside the Layout
+Patterns intro, and the `html-div` control-grouping mechanism note under
+Information Density. Also found the confirmed "disabled state has zero
+stylable properties" research finding replaced with new text implying it's
+merely "not yet covered." Surfaced all of this to the user directly (via
+`AskUserQuestion`) rather than assuming intent either way -- got two clear
+answers: restore everything reverted, and the disabled-state rewrite was ALSO
+accidental (not a deliberate reopening toward an opacity/desaturation
+approach) -- restore the confirmed finding there too.
+
+Restored all of it while keeping the user's new content, then fixed every
+internal §-cross-reference in the design-system doc that went stale from the
+new §1 insertion (every old §N reference to Color/Typography/Spacing/
+Interaction/Elevation/Density/Cross-Resolution needed +1) -- these were left
+unrenumbered in the user's own edit and would have pointed at the wrong
+section. Two commits. No code changed -- policy-doc reconciliation only. The
+actual Bento Box quality-bar fix (bigger icons/fonts, applying the new
+persona to real output) is the next real task.
+
 **Bento Box cards now support icons + a chosen font -- real UX bar, not
 defaults.** User ran the first Bento Box output through the
 `frontend-design` skill's own standard and correctly rejected it: flat
