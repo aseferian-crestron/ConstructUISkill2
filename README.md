@@ -9,8 +9,75 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Room Card implementation plan written and committed; paused awaiting the
-user's execution-approach choice (subagent-driven vs. inline).** User: "yes"
+**Room Card v1 abandoned mid-implementation; v2 design spec written, committed,
+approved by the user; paused there (user needs to step away) before writing-plans.**
+Picked up the prior turn's paused state (Room Card v1 plan committed, awaiting an
+execution-approach choice) by running `subagent-driven-development`: created an
+isolated worktree (`.worktrees/room-card` on branch `feat/room-card`, since the repo
+was sitting directly on `master`), ran the pre-flight conflict scan (clean), dispatched
+Task 1 (haiku implementer -- mechanical transcription of the plan's own complete code)
+DONE, task review found one real Important/plan-mandated finding (a rounding-boundary
+gap where `subsystem_icon_px`'s floor could exceed its band height by 1px at specific
+non-tier heights like 156px, silently overlapping instead of raising -- reachable input,
+not just the test fixture's two tier values), fix round 1 dispatched and returned DONE
+(commit f87bd27, boundary case now tested and raises correctly) -- was about to dispatch
+the scoped re-review when the user interrupted with new information.
+
+**Why v1 was abandoned:** user revealed they'd been prototyping a much richer design in
+Claude web and shared a real external spec,
+`docs/ConstructUISkill_Bento-Home-Panel-Spec_Residential.md` (a "Bento Home Panel":
+header+status-dot+subtitle box anatomy, one row per subsystem with icon/label/value/
+progress-bar, a by-room/by-system view toggle, native-CSS-flexbox content-driven
+sizing). Structurally incompatible with v1's fixed-tier icon-row composite. User's
+decision when asked how to reconcile: *"the new bento box design should be used as the
+new room card"* -- full replacement, not augmentation. v1's implementation is parked
+untouched on `.worktrees/room-card`/`feat/room-card` (NOT deleted, NOT merged) --
+mid fix-loop, ledger left at `.superpowers/sdd/2026-09-16-room-card/progress.md`
+documenting exactly where it stopped, in case anything is worth salvaging later (the
+`pointer-events: none` decorative-overlay mechanism does carry over to v2). Old spec
+`docs/superpowers/specs/2026-09-16-room-card-design.md` marked SUPERSEDED at its top,
+kept on disk as a record.
+
+**v2 design** (`docs/superpowers/specs/2026-09-16-bento-room-card-design.md`, ran
+`brainstorming`'s architectural path -- new composite, real trade-offs to resolve):
+confirmed the external doc is a visual/structural reference, not a literal
+implementation spec -- explicitly built from real Construct CH5 components, NOT a
+custom HTML/CSS/JS blob in one `html-div` (user was direct about this: *"just because
+the markdown uses a standard HTML5 DIV doesnt mean you have to... build them for real
+inside Construct without requiring custom DIV work"*). Along the way, confirmed via the
+project's real SDK that `ch5-list` is a genuine live-templated repeating component
+(`size`/`receivestatesize`, `itemheight`/`itemwidth`, `receivestatetemplatevars`+
+`indexid`) -- zero precedent in this project, and ruled out for this pass once the user
+confirmed content here stays STATIC (caller-supplied once at generation time, same as
+every other composite this generator has ever built -- Room Card v1, Bento Box's
+`icons`, `theme_chat`'s resolved colors) rather than wired to live runtime signals,
+which this project has never done anywhere and isn't starting here.
+
+Scope explicitly narrowed to just the by-room box anatomy (the by-system view --
+zones, idle-room pills, aggregate summaries -- and the view-toggle mechanism itself are
+deferred, their own real scope questions) and structure-only (styling stays the §1
+persona's job, not this prototype's hardcoded amber/sky/sage tokens). Sizing translated
+from the reference's native `flex-grow`/`flex-basis` algorithm (which cannot run here --
+confirmed via `layout.py:124-127` that every element in this project gets explicit
+`position: absolute` CSS, no native flexbox anywhere) to a row-count-to-tier mapping
+onto Bento Box's EXISTING discrete tiers/packing code, deliberately over inventing a
+new continuous/masonry algorithm -- this project's own §2 Bento Box rule already argues
+against continuous sizing ("2-3 card sizes max"). User pressure-tested this directly
+("what happens when i need to show 5 rows of status?"); answered with real numbers
+against this project's own `bento_box_test.py` fixture scale (page_width=960/
+columns=4): a 460x460 "large" tile fits ~9 rows at the readability floor, 5 rows
+renders generously (~69px/row); "wide" only fits ~3. Progress bar + status dot both
+resolved to small literal `html-div` shapes (the same already-sanctioned decorative
+mechanism as card backgrounds/borders -- confirmed with the user this is NOT the
+custom-div approach they ruled out).
+
+Design self-reviewed (caught and fixed one stray drafting artifact -- a leftover "sic"
+note in the Sizing section), committed alongside the superseded-marker edit to v1's
+spec and the external reference doc itself (all three now tracked in git). User
+approved the design in chat, then paused: *"yes but i need to work on this later."**
+Next session: resume with `superpowers:writing-plans` against the v2 spec (the
+brainstorming skill's own required next step) -- no implementation plan written yet,
+no code for v2 exists yet.
 (approving the spec) then "implement it" -- ran `superpowers:writing-plans`
 per the spec's own required next step. Plan (`docs/superpowers/plans/
 2026-09-16-room-card.md`, 2 tasks) sequences: Task 1 -- new `generator/
