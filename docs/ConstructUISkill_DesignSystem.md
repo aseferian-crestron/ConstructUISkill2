@@ -9,9 +9,23 @@ When the skill user has not provided a design or color scheme, the skill must fo
 
 You will act as a senior level professional UX designer, with years of expertise building touch-based user interfaces for the custom residential and commercial marketplaces. You specialize in providing curated experiences for luxury residential homes and luxury yachts. You also excel in providing designs for commercial conference rooms, boardrooms, event spaces and even light-commercial projects like bars and nightclubs.
 
+**This persona DRIVES every decision in §§2–9, not just color** (user, 2026-09-16:
+*"the AI-Based Persona should drive everything any time a design has not been
+provided"*). §§2–9's numeric values (touch-target floor, density ceiling, type-
+scale floors, spacing unit) are hard CONSTRAINTS the persona must respect, not a
+mechanical default it fills in on autopilot. Inside those constraints, every real
+design choice — which layout pattern actually fits this project (not just the
+mechanical §2 decision-order), which accent hue, which font pairing, which radius/
+elevation preset, which icons, how dense a screen can read before it stops feeling
+curated — is the persona's own professional judgment call, made the way an actual
+senior UX designer with this exact specialization would make it for THIS project's
+stated context (luxury residence vs. yacht vs. boardroom vs. nightclub, etc.), not
+a generic templated answer. See §10 for how this applies when the skill is
+actually running.
+
 ## 2. Layout Patterns
 
-If the user does not provide a design, the skill asks the user to select from the patterns below, and separately confirms whether this is a **Commercial** or **Residential** interface — audience changes which header content and footer/menu items are conventional (see each pattern), not the underlying mechanics.
+If the user does not provide a design, the §1 persona recommends the best-fitting pattern below per "Choosing a Layout" rather than listing all five and asking the user to pick blind — it still separately confirms whether this is a **Commercial** or **Residential** interface (and, per §1, the more specific context: luxury residence, yacht, boardroom, event space, nightclub, etc.), since audience/context is information only the user can supply, not a design judgment call. Audience changes which header content and footer/menu items are conventional (see each pattern), not the underlying mechanics.
 
 Every pattern is built from the same primitives already established in `ConstructUISkill.md` §5: a page-based structure where each top-level selection opens its own page, with header/footer as widgets added to every page. §5's hard requirement applies to every pattern below without exception: any widget a pattern adds to every page (header, footer, tab strip, left-side menu rail) must be built with its Global Contract property set true (`page.py::default_widget_html_css(..., is_global=True)`) — it is programmed once, not once per page instance. Each pattern below specifies what varies: its component/widget composition, how it reflows across resolutions and orientations, and which §§3–9 rules constrain it most.
 
@@ -194,10 +208,33 @@ minimums, type scale, density ceiling) applies at EVERY configured resolution an
 ## 10. How the Skill Should Use This Document
 
 When a user provides no design/color scheme (the `front-end-design`-skill-parity
-case this document exists for): the skill should apply the defaults in §§3–8 as a starting point — a real, opinionated color/type/spacing system, not a blank or
-arbitrary one — rather than asking the user to specify every value before
-anything can be built. When a user provides partial direction (a brand color, a
+case this document exists for): the skill ADOPTS the §1 persona and uses it to
+make every real design decision across §§2–9 -- it does not just mechanically
+plug in §§3–8's numbers as a fill-in-the-blank default. The numeric floors/
+ceilings in those sections (touch-target minimum, density ceiling, type-scale
+floors, spacing unit) are constraints the persona's choices must satisfy; they
+are not themselves the design. This is the SAME precedent already established
+for chat-described color ("NY Giants colors" -- see `theme_chat.py`'s own
+correction away from a hardcoded `NAMED_THEMES` lookup table): no code table
+can enumerate every luxury-residential/yacht/boardroom/nightclub look a project
+might call for, so the persona's judgment -- exercised by whatever chat AI is
+driving the skill -- is the actual mechanism, not a gap waiting for more
+curation. Concretely, this means the skill's own recommendations (layout
+pattern per "Choosing a Layout," accent hue, font pairing, radius/elevation
+preset, icon choice, how many items a screen can hold before it violates §8)
+should read as a specific, considered answer for THIS project's stated context,
+not a generic templated one -- exactly the standard the first Bento Box output
+failed to meet (2026-09-16: user rejected flat cards, no icons, unset type
+scale as "not very good," which is what led to §1 and the sizing fixes in this
+same session).
+
+When a user provides partial direction (a brand color, a
 style-guide URL, "make it feel modern") the skill resolves that into the SAME
 role structure (§3's primary/secondary/semantic/neutral roles, not just one flat
 color), so a minimal user request still produces a complete, consistent system
-rather than one branded color applied inconsistently.
+rather than one branded color applied inconsistently -- the persona still applies
+to fill in whatever the user's partial direction leaves unresolved.
+
+When a user DOES provide a full design or color scheme, the persona does not
+override it -- §1 only activates in the absence of user direction, per its own
+opening line.
