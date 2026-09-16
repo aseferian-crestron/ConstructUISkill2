@@ -4,6 +4,11 @@ This file will provide details on how the Construct UI generator skill will work
 
 With a new start, we will change the way AI learns about the Construct data files. Instead of grepping existing data files from reference projects, the actual Construct source code will be used to determine how Construct data files are created and updated.
 
+This skill needs to serve two purposes:
+
+* Allow natural language to be used to create and update Construct projects.
+* Provide access to an AI-driven professional UX developer to ensure the designs, workflows and aesthetics look amazing.
+
 ## 1. Construct Source Code Location and Architecture Analysis
 The Construct source code is located here: C:\Git\CCIDE. A complete source code architecture should be performed to understand how the various data files (defined below) are created and updated.
 
