@@ -9,6 +9,31 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Bento Box cards now support icons + a chosen font -- real UX bar, not
+defaults.** User ran the first Bento Box output through the
+`frontend-design` skill's own standard and correctly rejected it: flat
+single-color cards, no icons, no typography pairing, unused elevation
+tooling -- the generic template that skill explicitly warns against, not a
+considered design.
+
+`component.py::build_component_attributes` now forwards `icon_class`/
+`icon_library` to `ch5-button`'s own builder (`ch5_button.py` already
+supported them end-to-end; the generic dispatch just never passed them
+through) -- `ch5-button`-only, ignored for other types, same treatment as
+`label`/`active_font`. `layout_patterns.py::build_bento_box_page` gains
+`icons` (label -> `(icon_class, icon_library)`, real Font Awesome values)
+and `active_font`. A card WITH an icon switches from the schema's
+dead-centered default to icon-above-label (`orientation=vertical`,
+`iconposition=top`, `halignlabel=left`, `valignlabel=bottom` -- all 4
+confirmed real schema enum values), via `style.set_html_attribute`, the same
+post-build attribute-flip shape `apply_radius_preset` already uses. A card
+with no `icons[]` entry is untouched.
+
+`bento_box_test.py` extended: icon/library attributes present, exactly the
+icon-bearing cards get the layout flip (not the rest), `active_font`
+applied, written `.cuig` round-trips. Full suite re-run clean except the two
+known pre-existing unrelated failures.
+
 **Design System Phase 7 (§1 layout patterns): Bento Box built end to end.**
 An asymmetric grid of variously-sized cards, placed by a new
 `_pack_bento_grid` helper -- CSS Grid's own default "sparse" row-major
