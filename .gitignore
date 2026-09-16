@@ -8,3 +8,5 @@ __pycache__/
 # Ignore everything in the directory by default, then re-include the scripts themselves.
 generator/_test_output/*
 !generator/_test_output/*.py
+
+.worktrees/
