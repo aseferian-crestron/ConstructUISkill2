@@ -9,6 +9,60 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Root-caused 3 real Bento Box defects from a live Construct screenshot the
+user shared -- used `systematic-debugging`, not another blind guess.** User:
+*"no font family has been defined. the icon is too close to the card label
+and both the icon and text are still too small... does the UX Persona not
+understand the patterns used in luxury homes?"*
+
+1. **Font:** "Manrope" was never a real selectable font in this Construct
+   instance -- `fonts.available_fonts(sdk)` only ever returns Roboto + 4
+   Crestron-bundled names (webfont import is separately out of scope). A name
+   outside that list writes syntactically valid `ccid_ActiveFont`/`font-family`
+   CSS that Construct has nothing to render, silently falling back to a
+   default serif -- exactly the screenshot. `component.py::build_component`
+   now validates `active_font` against `fonts.available_fonts(sdk)` (or a
+   caller-supplied list) and raises up front -- closes this class of bug for
+   EVERY future component, not just Bento Box.
+2. **Icon/label spacing & stacking:** traced `orientation`/`iconposition`
+   through the real schema and Construct's own editor source
+   (`C:\Git\CCIDE`'s `componentButtonMixins.ts`). `orientation="vertical"`'s
+   own schema doc says it applies a CSS class that "rotates the component -90
+   degrees" -- harmless on a SQUARE card, a real confirmed risk on a
+   non-square "wide" card. Now only applied on square (large/small) tiers,
+   never "wide" -- a deliberate, reversible, evidence-based experiment,
+   explicitly flagged as still needing the user's live confirmation (this
+   project cannot render CH5 itself). Separately confirmed and applied a
+   REAL, unambiguous `.ch5-button--icon` margin-bottom property (independent
+   of the stacking-direction question) for actual breathing room.
+3. **Size:** `typography.TYPE_SCALE`'s roles are calibrated for ordinary UI
+   text -- 28px is a fine heading size, disproportionately tiny on a 492x492
+   dashboard tile. Bento Box sizing is now PROPORTIONAL to each card's own
+   footprint (`sqrt(width*height)`, floored at §3's readability minimums), not
+   a borrowed role. `typography.py` gained `apply_font_size`/`apply_icon_size`
+   explicit-px primitives; the named-role functions are now thin wrappers
+   around them.
+
+`bento_box_test.py` extended: unavailable-font raises, orientation="vertical"
+present on square icon-bearing cards and absent on the non-square "wide" card
+even with an icon, icon-size + icon/label gap present and proportionally
+scaled. Full suite re-run clean except the two known pre-existing unrelated
+failures. Regenerated the live `GenTestProject2/BentoBox.cuig` again with all
+3 fixes; verified on disk (round-trips, correct proportional sizes, gap
+present on all 6 cards, `orientation="vertical"` on exactly the 5 square
+cards). Still explicitly awaiting the user's live Construct confirmation,
+especially for the stacking-direction question, which remains a
+best-evidence experiment, not a settled fact.
+
+Separately, the user's broader question -- "would... more information be
+shown [per card]... does the persona not understand luxury home patterns" --
+is a real, distinct, larger critique: a real luxury dashboard card usually
+shows a status line (e.g. "72°F", a track title), not just icon+label, which
+`ch5-button` alone can't carry. Not addressed in this pass -- flagged back to
+the user as its own architecture question (a composite `html-div`+button+text
+card, not a single button) rather than folded silently into this bug-fix
+turn.
+
 **Regenerated the live Bento Box output end-to-end with actual persona-driven
 design decisions -- the concrete follow-through on §1/§10, not just policy
 text.** User: *"apply this persona-driven approach to actually re-generate the
