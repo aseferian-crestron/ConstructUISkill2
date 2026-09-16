@@ -9,6 +9,44 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Room Card implementation plan written and committed; paused awaiting the
+user's execution-approach choice (subagent-driven vs. inline).** User: "yes"
+(approving the spec) then "implement it" -- ran `superpowers:writing-plans`
+per the spec's own required next step. Plan (`docs/superpowers/plans/
+2026-09-16-room-card.md`, 2 tasks) sequences: Task 1 -- new `generator/
+room_card.py::build_room_card` (base button re-tuned to a small top-left
+icon via `iconposition="first"`/`halignlabel="left"`/`valignlabel="top"` +
+new status `ch5-text` + new non-interactive icon-only subsystem buttons,
+`pointer-events: none` via `layout.update_element_declarations` -- confirmed
+the real mechanism, not `style.set_component_style`, since pointer-events
+isn't a `--ch5-*` schema-catalog property; publicizes `layout_patterns.
+_bento_card_type_sizes` to `bento_card_type_sizes` since it's now a real
+cross-module dependency), with a full TDD test written and self-reviewed
+(caught and fixed two real bugs during the plan's own self-review: a
+redundant/buggy first draft of the `build_bento_box_page` wiring that would
+have silently dropped html/css for every room-card element after the first,
+and a missing `active_font` pass-through on the status text component that
+would have silently rendered it in Roboto regardless of the card's actual
+chosen font -- both fixed before the plan was finalized, not left for
+implementation time to discover). Task 2 -- wires an opt-in `room_cards`
+dict into `build_bento_box_page`, restricted to large/wide tiers, fully
+backward compatible (every existing `bento_box_test.py` assertion unchanged).
+
+Separately, the user broadened §1's persona scope directly in the doc
+(luxury residential now also covers apartments/multi-dwelling units;
+commercial now also covers courtrooms/classrooms) -- a clean, single,
+purely additive edit this time (no accompanying revert of other content,
+unlike the three prior stale-edit incidents this Log has recorded).
+Committed as-is. Noted: a `docs/ConstructUISkill_DesignSystem.md.backup`
+file has appeared alongside the earlier-noticed `~$...` Office lock file --
+worth the user checking whether they're editing this doc through Word or a
+similar autosave/backup-generating editor, which would explain why edits to
+this specific file have repeatedly landed from a stale local copy.
+
+Not yet started: actually executing the 2-task plan. Next turn should either
+pick an execution approach (subagent-driven recommended per the plan's own
+handoff) or the user may redirect first.
+
 **Room Card composite: design spec written and committed, awaiting the
 user's review before an implementation plan.** User shared a real reference
 screenshot (a luxury smart-home app's "Rooms" screen) and asked for richer
