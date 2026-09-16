@@ -9,6 +9,49 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Room Card composite: design spec written and committed, awaiting the
+user's review before an implementation plan.** User shared a real reference
+screenshot (a luxury smart-home app's "Rooms" screen) and asked for richer
+per-room/per-space Bento Box cards -- a status summary line + a per-subsystem
+status icon row, beyond today's plain icon+label card. Ran the
+`superpowers:brainstorming` skill (architectural path, since this is a new
+composite, not a bug fix): scoped down from the reference's 7 elements to
+just the 2 the user actually wants now (status text + subsystem row; photo
+background, floor grouping, notification bell/heart, and list/grid toggle
+all explicitly deferred); confirmed content (status text, active-subsystem
+list) is ALWAYS caller-supplied, never invented by the generator, matching
+the existing chat-driven-color-theme precedent; confirmed icon state is
+color-coded (accent=on, gray=off), not show/hide. User also corrected an
+early framing: this must be GENERIC across residential AND commercial
+projects, not residential-only -- so the subsystem icon row is fully open/
+caller-supplied `(icon_class, icon_library, active)` tuples, no fixed
+vocabulary (a boardroom's AV/occupancy/HVAC row uses the exact same
+mechanism as a home's lighting/climate/lock row).
+
+Key technical unknown resolved before finalizing the design: whether a
+decorative overlay (status text, subsystem icons) can sit on top of the
+card's existing tappable button without stealing its taps. Confirmed real
+and already in use: Construct's own generator writes a literal
+`pointer-events: none` CSS declaration on the wifi-signal-gauge component's
+inner container for exactly this reason (found in
+`Component - Gauge - Wifi.cuig`) -- not a novel mechanism, reused as-is.
+
+Design: base `ch5-button` (unchanged tap-target/navigation mechanism, icon
+re-tuned from centered-hero to a small corner glyph next to the name) +
+new `ch5-text` status line + new row of non-interactive icon-only
+`ch5-button`s for subsystems, stacked in 3 height bands per card. Restricted
+to `large`/`wide` tiers only (a 242x242 "small" card has no real room for 3
+bands) -- `build_bento_box_page` raises rather than silently cramming it in,
+same discipline as its existing touch-target/overflow checks. Fully
+additive: every existing plain-card path/test stays unchanged.
+
+Spec written to `docs/superpowers/specs/2026-09-16-room-card-design.md`,
+self-reviewed (no placeholders beyond explicitly-scoped implementation-time
+details, matching this project's own just-in-time-detail convention),
+committed. Per the brainstorming skill's process, next step is the user
+reviewing this spec, then `writing-plans` for the implementation plan -- no
+code written yet.
+
 **Root-caused 3 real Bento Box defects from a live Construct screenshot the
 user shared -- used `systematic-debugging`, not another blind guess.** User:
 *"no font family has been defined. the icon is too close to the card label
