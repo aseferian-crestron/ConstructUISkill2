@@ -14,6 +14,7 @@ from uuid import uuid4
 import component
 import spacing
 import style
+import typography
 from elements import Element
 from page import build_page_attributes, build_widget_attributes, default_widget_html_css, generate_element_id
 from sdk import UiSdk
@@ -248,6 +249,12 @@ def build_footer_widget(
 #: rows_spanned), not a free-form per-card width/height.
 TIER_SPANS: dict[str, tuple[int, int]] = {"large": (2, 2), "wide": (2, 1), "small": (1, 1)}
 
+#: Ties each size tier to a typography.TYPE_SCALE/ICON_SCALE role so a bigger
+#: card also reads with bigger text/icons, not just more area -- §1's "size
+#: communicates importance" applies to typography too, not only footprint.
+#: Judgment call (not a Construct spec), same precedent as TIER_SPANS itself.
+TIER_TYPE_ROLE: dict[str, str] = {"large": "heading", "wide": "body", "small": "label"}
+
 
 def _pack_bento_grid(spans: list[tuple[int, int]], columns: int) -> list[tuple[int, int]]:
     """`(col, row)` top-left grid cell for each item in `spans`, in order.
@@ -290,6 +297,7 @@ def build_bento_box_page(
     sdk: UiSdk, *, name: str, items: list[tuple[str, str]], page_width: int, page_height: int,
     columns: int, resolution: tuple[int, int] | None = None,
     icons: dict[str, tuple[str, str]] | None = None, active_font: str = "Roboto",
+    primary_query: str | None = None,
 ) -> tuple[list[tuple[str, str]], str, str, list[Element]]:
     """One page containing an asymmetric grid of card components -- §1's Bento
     Box pattern. `items` is `(label, size_tier)` pairs, `size_tier` one of
@@ -339,6 +347,18 @@ def build_bento_box_page(
     `active_font`: forwarded to every card, same as `component.build_component`'s
     own `active_font` kwarg -- one font choice for the whole grid, not
     per-card (a Bento Box grid reads as one surface, not mixed type families).
+
+    Label font-size and icon size are ALWAYS scaled by tier via `TIER_TYPE_ROLE`
+    + `typography.apply_type_scale`/`apply_icon_scale` -- not left to a separate
+    caller styling pass. Without this, every card's label/icon renders at CH5's
+    own small built-in default regardless of card size (the real cause of the
+    first Bento Box run reading as "too small": nothing had ever written these
+    two distinct, confirmed-real `--ch5-button--regular-{font,icon}-size`
+    properties). `primary_query`: forwarded to both, same "catch-all + primary
+    resolution only" rule every other styling call in this project follows
+    (see `layout.py::update_element_declarations`) -- pass the project's own
+    primary resolution query (e.g. via `theme_chat._primary_query_for`) so the
+    property grid and canvas agree; `None` (the default) writes catch-all only.
     """
     spans = []
     for label, tier in items:
@@ -373,13 +393,19 @@ def build_bento_box_page(
             x=x, y=y, width=w, height=h, z_index=1, resolution=resolution, label=label,
             active_font=active_font, **icon_kwargs,
         )
+        element_id = dict(element.attributes)["id"]
         if icon:
-            element_id = dict(element.attributes)["id"]
             for attr, value in (
                 ("orientation", "vertical"), ("iconposition", "top"),
                 ("halignlabel", "left"), ("valignlabel", "bottom"),
             ):
                 html = style.set_html_attribute(html, element_id, attr, value)
+        role = TIER_TYPE_ROLE[tier]
+        css = typography.apply_type_scale(
+            css, element_id, sdk, "ch5-button", role, primary_query=primary_query)
+        if icon:
+            css = typography.apply_icon_scale(
+                css, element_id, sdk, "ch5-button", role, primary_query=primary_query)
         buttons.append((html, css, element))
 
     total_height = 2 * spacing.EDGE_PADDING + max_row * cell_size + (max_row - 1) * spacing.SPACING_UNIT

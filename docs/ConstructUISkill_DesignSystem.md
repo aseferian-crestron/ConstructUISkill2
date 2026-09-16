@@ -111,6 +111,15 @@ A defined hierarchy — title / heading / body / label / caption — each with i
 
 **Minimum readable size:** touch panels are viewed from further away than a phone or even a desktop monitor — a size that reads fine in a design mockup on a laptop may be unreadable on the wall. As a starting default (adjustable per project): body text no smaller than ~22px equivalent at the panel's native resolution, labels no smaller than ~18px, with the type scale increasing from there for headings.
 
+**Icon size:** an icon's size is a DISTINCT, separately-stylable property from its
+label's font-size (confirmed real for the button-family types: `ch5-button`,
+`ch5-button-list`, `ch5-tab-button` — see `typography.py::apply_icon_scale`). An
+icon should read as a bit larger than the label sitting next to it, not the same
+size, and scale with the same hierarchy as the type scale itself — a larger
+component (e.g. a Bento Box "large" card) gets a larger icon, not just a bigger
+label. Implemented: `typography.py::ICON_SCALE`, paired 1:1 with `TYPE_SCALE`'s
+roles.
+
 ## 5. Spacing & Sizing Scale
 
 **Spacing unit:** a single consistent unit (8px is the common industry default)
