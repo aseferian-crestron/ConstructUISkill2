@@ -9,6 +9,61 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Regenerated the live Bento Box output end-to-end with actual persona-driven
+design decisions -- the concrete follow-through on §1/§10, not just policy
+text.** User: *"apply this persona-driven approach to actually re-generate the
+Bento Box output."* Target: `C:\Solutions\ClaudeGenTest\GenTestProject2\
+BentoBox.cuig` (the live file the user had reviewed in Construct and found
+"not very good" -- backed up first to `BentoBox.cuig.bak` before overwriting).
+
+Read the file as it stood: 7 cards (including a redundant "Clock" tile), an
+existing but undocumented warm orange/charcoal palette and 12px rounded
+corners from an earlier ad-hoc pass, and -- confirmed directly -- NONE of the
+new font-size/icon-size fix applied yet (that code didn't exist when this file
+was last written), several cards missing icons entirely.
+
+Acting as §1's persona (senior touch-UI UX designer, luxury-residential
+register -- these labels are a home's rooms/subsystems) for every decision
+§10 now calls for, not a mechanical default:
+- **Composition:** dropped "Clock" -- redundant with header date/time content
+  (design doc's own Header-Content-Footer rule), wastes a dominant-action slot
+  on a Bento grid. Kept "Currently Playing" as the sole "large" card (the
+  single most-reached-for control in a media-forward home is the right
+  dominant action), "Living Room" as the one "wide" card (the one
+  multi-purpose gathering space), Kitchen/Bedroom/Guest Bathroom/Front Door as
+  peer "small" cards.
+- **Icons:** every one of the 6 cards gets a real Font Awesome icon now (play/
+  couch/utensils/bed/lightbulb/door-open) -- §1's own "icons are the primary
+  at-a-glance visual language" applied literally, not left partial like the
+  first pass.
+- **Color:** a considered warm brass/amber (`#C89B5D`) card fill on a deep warm
+  charcoal (`#2A2622`) page background, dark warm-brown text/icon (`#211D17`)
+  -- refined and justified rather than carried over unexplained; contrast
+  verified via `color_words.contrast_ratio` (brass/text = 6.6:1, bg/card =
+  5.9:1, both comfortable AA passes). Chosen specifically AGAINST a generic
+  cold-blue "tech dashboard" look, which doesn't fit a luxury-residential
+  register.
+- **Shape:** "rounded" (12px) radius preset -- softer, warmer register fits
+  residential better than "sharp," which is reserved for a commercial/
+  boardroom project.
+- **Typography/sizing:** kept `Manrope` (already a good, warm geometric-sans
+  choice) as the one project-wide font; applied this session's new
+  `TIER_TYPE_ROLE` scaling for real this time -- 28px label/40px icon on the
+  large card, 22px/32px on wide, 18px/24px on the four small cards.
+
+Rebuilt via the real generator functions end-to-end (`build_bento_box_page` ->
+`shape.apply_radius_preset` per element -> `write_cuig` -> `theme_chat.
+apply_palette_to_page_all_types` with `derive_states=True` -> `page.
+set_page_background_color`), not hand-edited. Verified at every stage:
+byte-identical round-trip after the structural write AND after the
+theming pass, all 6 icons present, all 3 tiers' exact font-size/icon-size
+pairs present, brass background-color present on every card (catch-all +
+primary, per the project's own cascade rule), derived pressed (`#a27537`,
+darker)/selected (`#d8b78b`, lighter) states present, page background
+updated. Full suite re-run clean except the two known pre-existing unrelated
+failures. Awaiting the user's live Construct confirmation that this actually
+reads as "very good" now, not just mechanically correct.
+
 **§1 persona is now the stated driver of every design decision, not a
 preamble.** User: *"yes, the AI-Based Persona should drive everythign any time
 a design has not been provided."* Previously §10 framed the doc's own numbers
