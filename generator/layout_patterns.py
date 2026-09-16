@@ -249,11 +249,39 @@ def build_footer_widget(
 #: rows_spanned), not a free-form per-card width/height.
 TIER_SPANS: dict[str, tuple[int, int]] = {"large": (2, 2), "wide": (2, 1), "small": (1, 1)}
 
-#: Ties each size tier to a typography.TYPE_SCALE/ICON_SCALE role so a bigger
-#: card also reads with bigger text/icons, not just more area -- §1's "size
-#: communicates importance" applies to typography too, not only footprint.
-#: Judgment call (not a Construct spec), same precedent as TIER_SPANS itself.
-TIER_TYPE_ROLE: dict[str, str] = {"large": "heading", "wide": "body", "small": "label"}
+#: Bento Box label/icon sizing is PROPORTIONAL to the card's own footprint, not a
+#: fixed typography.TYPE_SCALE role -- a real user screenshot (2026-09-16) showed
+#: TYPE_SCALE["heading"] (28px) still reading as tiny on a 492x492 "large" card:
+#: 28px is a sensible HEADING size for ordinary page text, but a dashboard tile
+#: spanning half the screen is a fundamentally bigger UI element than a heading
+#: was ever calibrated for. `_bento_card_type_sizes` below computes label/icon
+#: px from the card's own geometric-mean size (`sqrt(width*height)`, not just
+#: height -- "wide" and "small" share the same height but "wide" has double the
+#: footprint, and that size difference should still read in the type, matching
+#: §1's own "size communicates importance"). BENTO_LABEL_FRACTION/
+#: BENTO_ICON_LABEL_RATIO are judgment calls (not a Construct spec), same
+#: precedent as TIER_SPANS itself; TYPE_SCALE["label"]/ICON_SCALE["label"] are
+#: still respected as an absolute floor so a very small card never drops below
+#: the design system's own §3 readability floor.
+BENTO_LABEL_FRACTION = 0.08
+BENTO_ICON_LABEL_RATIO = 1.4
+
+
+def _bento_card_type_sizes(width: int, height: int) -> tuple[int, int]:
+    """`(label_px, icon_px)` proportional to this card's own footprint -- see
+    the module-level comment above `BENTO_LABEL_FRACTION`."""
+    card_metric = (width * height) ** 0.5
+    label_px = max(round(card_metric * BENTO_LABEL_FRACTION), typography.TYPE_SCALE["label"])
+    icon_px = max(round(label_px * BENTO_ICON_LABEL_RATIO), typography.ICON_SCALE["label"])
+    return label_px, icon_px
+
+
+#: Gap between an icon and its label when they're laid out as a block (icon
+#: margin-bottom when the icon sits above the label) -- a real, confirmed
+#: `.ch5-button--icon`-scoped style property (style.style_property_catalog),
+#: not a guess. 2 spacing units, same discipline as every other gap in this
+#: project (spacing.py's own SPACING_UNIT).
+BENTO_ICON_LABEL_GAP = 2 * spacing.SPACING_UNIT
 
 
 def _pack_bento_grid(spans: list[tuple[int, int]], columns: int) -> list[tuple[int, int]]:
@@ -338,27 +366,57 @@ def build_bento_box_page(
     are the primary at-a-glance visual language (every real residential/
     commercial touch-panel UI leans on them), so a card WITH an icon is laid
     out icon-above-label rather than the schema's default dead-centered label
-    alone: `orientation="vertical"`, `iconposition="top"`,
-    `halignlabel="left"`, `valignlabel="bottom"` -- all 4 real, confirmed
-    schema enum values (`component._schema_element(sdk, "ch5-button")`), set
-    via `style.set_html_attribute` (the same mechanism `shape.
-    apply_radius_preset` already uses to flip a button attribute post-build).
-    A card with no entry in `icons` keeps the schema's own centered default.
+    alone: `iconposition="top"`, `halignlabel="left"`, `valignlabel="bottom"`
+    -- all 3 real, confirmed schema enum values (`component._schema_element(sdk,
+    "ch5-button")`), set via `style.set_html_attribute` (the same mechanism
+    `shape.apply_radius_preset` already uses to flip a button attribute
+    post-build). A card with no entry in `icons` keeps the schema's own
+    centered default.
+
+    `orientation="vertical"` is ADDITIONALLY set, but ONLY on SQUARE cards
+    (large/small tiers, where `width == height`) -- a real user screenshot
+    (2026-09-16) showed the intended icon-above-label stacking NOT rendering
+    (icon and label appeared inline instead), and the schema's own
+    documentation for `orientation` states plainly that "vertical" applies a
+    CSS class that "will rotate the component -90 degrees." That rotation is
+    harmless on a SQUARE card (a square rotated 90 degrees has the same
+    bounding box) but would visibly corrupt a non-square "wide" card (492x242
+    rotated is NOT the same shape) -- confirmed real risk, not a guess, so
+    "wide" cards deliberately do NOT get `orientation="vertical"`, leaving
+    them at the schema default ("horizontal") until this is confirmed live.
+    Whether "vertical" is actually what makes `iconposition="top"` stack
+    rather than lay out inline is NOT independently confirmed from source
+    alone (Construct's own editor code ties an icon-position sync workaround
+    to `orientation === "vertical"`, suggesting a real connection, but this
+    project cannot render a CH5 web component to verify) -- this split
+    (square: try vertical; non-square: don't risk it) is deliberately a
+    controlled, revertible experiment pending the user's live confirmation,
+    not a settled fix.
+
     `active_font`: forwarded to every card, same as `component.build_component`'s
     own `active_font` kwarg -- one font choice for the whole grid, not
     per-card (a Bento Box grid reads as one surface, not mixed type families).
+    `component.build_component` validates this against `fonts.available_fonts`
+    and raises if it isn't a real, currently-selectable font -- a real font
+    name is not enough; it must be one Construct can actually resolve and
+    render (see `component.py::build_component`'s docstring for why this
+    validation exists).
 
-    Label font-size and icon size are ALWAYS scaled by tier via `TIER_TYPE_ROLE`
-    + `typography.apply_type_scale`/`apply_icon_scale` -- not left to a separate
-    caller styling pass. Without this, every card's label/icon renders at CH5's
-    own small built-in default regardless of card size (the real cause of the
-    first Bento Box run reading as "too small": nothing had ever written these
-    two distinct, confirmed-real `--ch5-button--regular-{font,icon}-size`
-    properties). `primary_query`: forwarded to both, same "catch-all + primary
-    resolution only" rule every other styling call in this project follows
-    (see `layout.py::update_element_declarations`) -- pass the project's own
-    primary resolution query (e.g. via `theme_chat._primary_query_for`) so the
-    property grid and canvas agree; `None` (the default) writes catch-all only.
+    Label font-size and icon size are ALWAYS scaled PROPORTIONALLY to each
+    card's own footprint (`_bento_card_type_sizes`, see the module-level
+    comment above `BENTO_LABEL_FRACTION`) via `typography.apply_font_size`/
+    `apply_icon_size` -- not left to a separate caller styling pass, and NOT a
+    fixed typography.TYPE_SCALE role (a role calibrated for ordinary UI text
+    still reads as tiny on a dashboard tile spanning half the screen -- see
+    typography.py's own 2026-09-16 correction). An icon-bearing card also gets
+    `BENTO_ICON_LABEL_GAP` of margin between icon and label (a real, confirmed
+    `.ch5-button--icon` margin-bottom property) so the two don't render
+    crowded together. `primary_query`: forwarded to every styling call, same
+    "catch-all + primary resolution only" rule every other styling call in
+    this project follows (see `layout.py::update_element_declarations`) --
+    pass the project's own primary resolution query (e.g. via
+    `theme_chat._primary_query_for`) so the property grid and canvas agree;
+    `None` (the default) writes catch-all only.
     """
     spans = []
     for label, tier in items:
@@ -394,18 +452,21 @@ def build_bento_box_page(
             active_font=active_font, **icon_kwargs,
         )
         element_id = dict(element.attributes)["id"]
+        is_square = span_w == span_h
         if icon:
-            for attr, value in (
-                ("orientation", "vertical"), ("iconposition", "top"),
-                ("halignlabel", "left"), ("valignlabel", "bottom"),
-            ):
+            flip_attrs = [("iconposition", "top"), ("halignlabel", "left"), ("valignlabel", "bottom")]
+            if is_square:
+                flip_attrs.insert(0, ("orientation", "vertical"))
+            for attr, value in flip_attrs:
                 html = style.set_html_attribute(html, element_id, attr, value)
-        role = TIER_TYPE_ROLE[tier]
-        css = typography.apply_type_scale(
-            css, element_id, sdk, "ch5-button", role, primary_query=primary_query)
+        label_px, icon_px = _bento_card_type_sizes(w, h)
+        css = typography.apply_font_size(css, element_id, sdk, "ch5-button", label_px, primary_query=primary_query)
         if icon:
-            css = typography.apply_icon_scale(
-                css, element_id, sdk, "ch5-button", role, primary_query=primary_query)
+            css = typography.apply_icon_size(css, element_id, sdk, "ch5-button", icon_px, primary_query=primary_query)
+            css = style.set_component_style(
+                css, element_id, sdk, "ch5-button",
+                [(".ch5-button--default .ch5-button--icon", "margin-bottom", f"{BENTO_ICON_LABEL_GAP}px")],
+                primary_query=primary_query)
         buttons.append((html, css, element))
 
     total_height = 2 * spacing.EDGE_PADDING + max_row * cell_size + (max_row - 1) * spacing.SPACING_UNIT

@@ -12,8 +12,8 @@ import compare  # noqa: E402
 import layout  # noqa: E402
 import sdk as sdk_module  # noqa: E402
 import spacing  # noqa: E402
-import typography  # noqa: E402
-from layout_patterns import TIER_SPANS, TIER_TYPE_ROLE, _pack_bento_grid, build_bento_box_page  # noqa: E402
+from layout_patterns import (  # noqa: E402
+    BENTO_ICON_LABEL_GAP, TIER_SPANS, _bento_card_type_sizes, _pack_bento_grid, build_bento_box_page)
 from page import write_cuig  # noqa: E402
 
 ui_sdk = sdk_module.read_sdk("2.18.0")
@@ -93,12 +93,13 @@ for rect in rects.values():
     assert spacing.meets_touch_target(rect["width"], rect["height"]), rect
 print("build_bento_box_page: every card meets the touch-target floor: OK")
 
-# label font-size is scaled by tier -- not left at CH5's own small built-in default
+# label font-size is scaled PROPORTIONALLY to each card's own footprint -- not a
+# fixed typography.TYPE_SCALE role, and not left at CH5's own small built-in default
 for label, tier in items:
-    role = TIER_TYPE_ROLE[tier]
-    expected = f"--ch5-button--regular-font-size: {typography.TYPE_SCALE[role]}px"
-    assert expected in css, (label, tier, expected)
-print("build_bento_box_page: label font-size scaled per tier (large > wide > small): OK")
+    rect = rects[label]
+    expected_label_px, _ = _bento_card_type_sizes(rect["width"], rect["height"])
+    assert f"--ch5-button--regular-font-size: {expected_label_px}px" in css, (label, tier, expected_label_px)
+print("build_bento_box_page: label font-size scaled proportionally to card footprint: OK")
 
 # too many columns for the page width -> raises rather than silently shrinking below the floor
 try:
@@ -122,11 +123,17 @@ except ValueError:
 print("build_bento_box_page: cards needing more height than the page raises ValueError: OK")
 
 # --- icons + active_font: icon-bearing cards get the icon-above-label layout ---------
+# "Living Room" (wide, NON-square) now also gets an icon, to prove the new
+# square-only orientation="vertical" gate: Currently Playing (large, square) and
+# Kitchen (small, square) should get it; Living Room (wide, 460x226) must NOT --
+# the schema documents "vertical" as a -90deg rotation, which would visibly
+# corrupt a non-square card.
 icon_items = [("Currently Playing", "large"), ("Living Room", "wide"), ("Kitchen", "small")]
 icon_page_attrs, icon_html, icon_css, icon_elements = build_bento_box_page(
     ui_sdk, name="IconGrid", items=icon_items, page_width=960, page_height=960, columns=4,
-    resolution=(1280, 800), active_font="Manrope",
+    resolution=(1280, 800), active_font="Roboto",
     icons={"Currently Playing": ("fa-solid fa-play", "FA Classic Solid"),
+           "Living Room": ("fa-solid fa-couch", "FA Classic Solid"),
            "Kitchen": ("fa-solid fa-utensils", "FA Classic Solid")},
 )
 icon_page_path = OUT / "BentoBoxIcons.cuig"
@@ -135,20 +142,37 @@ assert compare.round_trip_check(icon_page_path), "icon bento box page failed rou
 
 assert 'iconclass="fa-solid fa-play"' in icon_html, icon_html
 assert 'ccid_iconlibrary="FA Classic Solid"' in icon_html, icon_html
-assert icon_html.count("orientation=\"vertical\"") == 2  # only the 2 icon-bearing cards
-assert icon_html.count('iconposition="top"') == 2
-assert "ccid_ActiveFont=\"'Manrope'\"" in icon_html
-# exactly 2 cards got the icon-layout attrs (Currently Playing + Kitchen) -- Living
-# Room, with no icons[] entry, keeps the schema default untouched (already proven by
-# the counts above being 2, not 3)
-print("build_bento_box_page: icon-bearing cards get icon+layout attrs, others keep the default, active_font applied: OK")
+assert icon_html.count('iconposition="top"') == 3  # all 3 icon-bearing cards
+assert icon_html.count("orientation=\"vertical\"") == 2  # ONLY the 2 SQUARE icon-bearing cards
+assert "ccid_ActiveFont=\"'Roboto'\"" in icon_html
+print("build_bento_box_page: icon-bearing cards get icon+layout attrs; orientation=vertical "
+      "only on square (large/small) cards, never on non-square (wide): OK")
 
-# icon-bearing cards get icon-size scaled by tier too (a distinct property from
-# label font-size); Living Room (no icon) gets none
-assert f"--ch5-button--regular-icon-size: {typography.ICON_SCALE['heading']}px" in icon_css  # Currently Playing (large)
-assert f"--ch5-button--regular-icon-size: {typography.ICON_SCALE['label']}px" in icon_css  # Kitchen (small)
-assert icon_css.count("--ch5-button--regular-icon-size:") == 2, "only the 2 icon-bearing cards should get icon-size"
-print("build_bento_box_page: icon-bearing cards get icon-size scaled per tier, non-icon cards untouched: OK")
+# an active_font Construct can't actually select/render raises up front, rather than
+# silently writing a value with nothing to display it as (root cause of the first
+# Bento Box run's labels rendering in a default serif instead of the requested font)
+try:
+    build_bento_box_page(
+        ui_sdk, name="BadFont", items=[("A", "small")], page_width=960, page_height=960,
+        columns=4, resolution=(1280, 800), active_font="Manrope")
+    raise AssertionError("expected ValueError for an unavailable font")
+except ValueError:
+    pass
+print("build_bento_box_page: an unavailable active_font raises rather than silently rendering wrong: OK")
+
+# icon-bearing cards get icon-size scaled proportionally too (a distinct property
+# from label font-size), plus the icon/label gap; the non-icon card gets neither
+icon_rects = {
+    label: layout.parse_all_position_rules(icon_css, "(max-width: 99999px)")[dict(e.attributes)["id"]]
+    for (label, _tier), e in zip(icon_items, icon_elements)
+}
+for label in ("Currently Playing", "Living Room", "Kitchen"):
+    rect = icon_rects[label]
+    _, expected_icon_px = _bento_card_type_sizes(rect["width"], rect["height"])
+    assert f"--ch5-button--regular-icon-size: {expected_icon_px}px" in icon_css, (label, expected_icon_px)
+assert icon_css.count("--ch5-button--regular-icon-size:") == 3, "only the 3 icon-bearing cards should get icon-size"
+assert icon_css.count(f"margin-bottom: {BENTO_ICON_LABEL_GAP}px") == 3, "icon-label gap missing on all 3 cards"
+print("build_bento_box_page: icon-bearing cards get icon-size scaled proportionally + icon/label gap: OK")
 
 # primary_query threads through to both label and icon sizing
 primary_query = layout.landscape_media_query(1280, 800)
@@ -157,10 +181,13 @@ _, _, primary_css, primary_elements = build_bento_box_page(
     columns=4, resolution=(1280, 800), primary_query=primary_query,
     icons={"Solo": ("fa-solid fa-play", "FA Classic Solid")},
 )
+solo_rect = layout.parse_all_position_rules(primary_css, "(max-width: 99999px)")[
+    dict(primary_elements[0].attributes)["id"]]
+expected_label_px, expected_icon_px = _bento_card_type_sizes(solo_rect["width"], solo_rect["height"])
 primary_block = layout.find_media_block(primary_css, primary_query)
 assert primary_block is not None
-assert "--ch5-button--regular-font-size: 28px" in primary_block
-assert "--ch5-button--regular-icon-size: 40px" in primary_block
+assert f"--ch5-button--regular-font-size: {expected_label_px}px" in primary_block
+assert f"--ch5-button--regular-icon-size: {expected_icon_px}px" in primary_block
 print("build_bento_box_page: primary_query duplicates label+icon size into that resolution's own block: OK")
 
 print("Bento Box: all assertions passed.")

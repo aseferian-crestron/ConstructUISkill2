@@ -41,6 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import contracts
+import fonts
 from ch5_button import build_sync_attributes
 from elements import Element
 from layout import build_position_css
@@ -596,12 +597,33 @@ def build_component(
     height: int,
     z_index: int,
     resolution: tuple[int, int] | None = None,
+    available_fonts: list[str] | None = None,
     **kwargs,
 ) -> tuple[str, str, Element]:
-    """(html, css, Element) for one flat component, ready for page.py::write_cuig."""
+    """(html, css, Element) for one flat component, ready for page.py::write_cuig.
+
+    `available_fonts`: the real font names Construct's Font Family dropdown can show a
+    selection for (see `fonts.py::available_fonts`) -- checked against `active_font`
+    before writing anything. Defaults to the zero-config baseline
+    (`fonts.available_fonts(sdk)`: the SDK's system default + Crestron-bundled names,
+    always present regardless of project) if the caller doesn't know the target
+    project's own imported webfonts. A name outside this list is NOT a webfont import
+    error to fix later -- it silently renders as CH5's own fallback typeface (confirmed
+    2026-09-16: "Manrope", never validated, rendered as a default serif on a real Bento
+    Box card) -- so this raises up front rather than writing a `ccid_ActiveFont`/
+    `font-family` pair Construct has nothing to display or render it as. Pass the
+    project's real list (`fonts.available_fonts(sdk, project_webfonts_path(...))`) when
+    targeting a project with real imported webfonts.
+    """
+    active_font = kwargs.pop("active_font", "Roboto")
+    valid_fonts = fonts.available_fonts(sdk) if available_fonts is None else available_fonts
+    if active_font not in valid_fonts:
+        raise ValueError(
+            f"{active_font!r} is not a real selectable font -- Construct's Font Family "
+            f"dropdown only shows: {valid_fonts}. See fonts.py module docstring.")
     attributes = build_component_attributes(
         sdk, tag_name, component_name=component_name, element_id=element_id,
-        active_font=kwargs.pop("active_font", "Roboto"), **kwargs)
+        active_font=active_font, **kwargs)
 
     # A dpad is aspect-locked at 1:1 -- every real instance is square (118x118, 221x221)
     # and Construct never lets its box go otherwise. Honouring a non-square request would
