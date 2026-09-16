@@ -9,6 +9,31 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**§1 persona is now the stated driver of every design decision, not a
+preamble.** User: *"yes, the AI-Based Persona should drive everythign any time
+a design has not been provided."* Previously §10 framed the doc's own numbers
+(§§3-8) as defaults the skill mechanically plugs in -- exactly the "generic
+templated" failure the user rejected in the first Bento Box run. Rewrote §10:
+when no design is given, the skill ADOPTS the §1 persona for every real
+decision across §§2-9 (layout pattern, accent hue, font pairing, radius/
+elevation preset, icon choice, density trade-offs), with §§3-8's numeric
+floors/ceilings as constraints those decisions must satisfy, not the decision
+itself -- same precedent as `theme_chat.py`'s own move away from a hardcoded
+color-name lookup table (no code table can enumerate every luxury-residential/
+yacht/boardroom/nightclub look a project might need). Also aligned §2's
+opening line, which still said the skill "asks the user to select from the
+patterns below," contradicting both the existing "Choosing a Layout"
+(deliberate recommendation, not blind pick) and this same directive -- now
+recommends per §1, only asking the user for audience/context info only they
+can supply. Policy-doc change only, no code -- persona-driven resolution is
+chat-AI reasoning, not something a generator function encodes.
+
+Separately noted (not acted on): an unrelated OLDER "construct-ui-skill"
+plugin package exists at `~/.claude/plugins/marketplaces/crestron-construct-
+skills/` -- appears to be the paused v1 skill (see `project_construct_skill.md`
+memory), not this project. Flagged to the user in case it's ever the copy that
+actually loads instead of ConstructUISkill2.
+
 **Fixed the actual root cause of the Bento Box quality complaint: labels/icons
 were rendering at CH5's own tiny built-in default, never sized.**
 `build_bento_box_page` never wrote a font-size for a card's label or its icon
