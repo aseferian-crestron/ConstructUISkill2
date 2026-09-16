@@ -1,3 +1,13 @@
+> **SUPERSEDED 2026-09-16.** Abandoned mid-implementation (see
+> `.worktrees/room-card` on branch `feat/room-card`, parked not deleted) after the user
+> shared a more complete external design reference
+> (`docs/ConstructUISkill_Bento-Home-Panel-Spec_Residential.md`) and decided the new
+> design replaces this one, not augments it. See
+> `docs/superpowers/specs/2026-09-16-bento-room-card-design.md` for the real Room Card
+> design going forward. Kept on disk only as a record of what was tried and why it was
+> dropped (the `pointer-events: none` decorative-overlay mechanism confirmed here does
+> carry over).
+
 # Bento Box "Room Card" composite — design spec
 
 Extends `generator/layout_patterns.py::build_bento_box_page` (§1 Layout Patterns,
