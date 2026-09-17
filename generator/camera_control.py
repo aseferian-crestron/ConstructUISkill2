@@ -36,9 +36,8 @@ from page import generate_element_id
 from sdk import UiSdk
 
 #: Fraction of the given box's height given to each band, top to bottom.
-#: Judgment call (not a Construct spec), same precedent as room_card.py's own
-#: band fractions -- verified against this module's own test to fit without
-#: overflow at a real modal card's content-area scale.
+#: Judgment call (not a Construct spec) -- verified against this module's own
+#: test to fit without overflow at a real modal card's content-area scale.
 PRESETS_BAND_FRACTION = 0.20
 POSITION_BAND_FRACTION = 0.55
 POWER_BAND_FRACTION = 0.15
