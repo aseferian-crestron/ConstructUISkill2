@@ -9,6 +9,55 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Tabbed layout (commercial) Phase 1 shell: spec + implementation plan
+written and committed, ready for execution.** Continuing the scope pivot
+below in the same session. Ran `brainstorming` (architectural path) to
+design the shell: source-checked the CH5 SDK's `component-context.json`
+directly for a native tab-content-swap component and a native modal --
+`ch5-modal-dialog`/`ch5-overlay-panel`/`ch5-triggerview` all exist in the
+schema but the user caught that none carry `viewProperties.showOnUI: true`,
+meaning none are actually exposed in Construct's own editor (cross-checked:
+zero real reference files anywhere use any of the three). Redesigned both
+mechanisms around the project's already-proven page/widget
+`Visibility=Contract` instead of a new one. User also corrected the
+composition mid-design: subsystem controls (Lights/Shades/HVAC/Security/
+Camera/Audio) and system-mode content (Presentation/Video Call/Audio Call)
+must be generic, layout-independent composites, not code embedded in "the
+Tabbed layout" -- added a new tier between this project's existing
+primitives and layout patterns for this.
+
+Mid-brainstorming, the user added a "Generic Specifications" section to
+`docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md` directly: a 2-row
+header (room name+date/time stacked left, logo spanning both rows right),
+caller-configurable system-mode tabs ("System Power" always default), and a
+caller-configurable footer subsystem list -- resolved a real conflict
+between that section's "always open a full screen modal dialog" and the
+earlier centered-overlay description by asking the user directly: confirmed
+centered card over a dimmed backdrop, not edge-to-edge.
+
+Spec: `docs/superpowers/specs/2026-09-17-tabbed-layout-commercial-design.md`
+(updated twice for the above). Plan: `docs/superpowers/plans/
+2026-09-17-tabbed-layout-commercial.md` -- 3 tasks (`generator/modal.py`,
+`generator/camera_control.py`, `layout_patterns.py::build_tabbed_shell`).
+Plan self-review caught a real numeric bug before implementation started:
+the existing `_layout_row`'s `snap_to_spacing` step overflows the row width
+for this plan's own splash-tile and footer-subsystem cases (verified
+directly: `_layout_row(3, 1280 // 3, 120)` and `_layout_row(2, 1280, 800)`
+both raise `ValueError` on numbers that clearly ought to fit) -- fixed with
+a new `_layout_tabbed_row` helper (floor division only, no snap-up) rather
+than touching the existing, already-proven `_layout_row`. Also caught and
+fixed: a modal card sized at 60% of panel height left Camera's real content
+9px too short to fit; raised to 85%, verified with margin.
+
+Not yet started: executing the plan. `generator/modal.py`,
+`generator/camera_control.py`, and `layout_patterns.py::build_tabbed_shell`
+do not exist on disk yet.
+
+---
+
+Earlier in this same session (superseded by the pivot below, kept for
+continuity): the Room Card v2 / Bento Box work was paused, not resumed.
+
 **Scope pivot (2026-09-17): Bento Box and Card-Based removed as required layout
 patterns; focus is now Tabbed -- commercial first, then residential.** User:
 *"I want to remove the requirement for Bento Box and Card-based layouts. I want
