@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import camera_control
 import component
+import modal
 import spacing
 import style
 import typography
 from elements import Element
-from page import build_page_attributes, build_widget_attributes, default_widget_html_css, generate_element_id
+from page import (
+    add_widget_reference_to_page, build_page_attributes, build_widget_attributes,
+    default_widget_html_css, generate_element_id, widget_reference_position_css,
+)
 from sdk import UiSdk
 
 
@@ -481,3 +486,321 @@ def build_bento_box_page(
     css = "".join(css for _, css, _ in buttons)
     elements = [element for _, _, element in buttons]
     return page_attrs, html, css, elements
+
+
+def _layout_tabbed_row(
+    item_count: int, row_width: int, row_height: int,
+) -> list[tuple[int, int, int, int]]:
+    """`(x, y, width, height)` for `item_count` items evenly spaced in a
+    single row spanning `row_width`, honoring spacing.EDGE_PADDING at both
+    ends and spacing.SPACING_UNIT gaps between items -- the same shape as
+    `_layout_row`, deliberately NOT reusing it: `_layout_row`'s own
+    `snap_to_spacing` step rounds each item's width up to the nearest
+    spacing-unit multiple, which can push the summed row width a few pixels
+    over `row_width` in cases `_layout_row`'s existing callers never hit
+    (verified directly: both a 2-tile splash row at a full panel size and a
+    3-button footer subsystem zone overflow this way with real Phase 1
+    numbers -- `_layout_row(3, 1280 // 3, 120)` and `_layout_row(2, 1280,
+    800)` both raise `ValueError` on numbers that clearly ought to fit).
+    Floor division only, no snapping -- items come out a few px narrower
+    than `_layout_row` would produce, never wider than the row, so the
+    summed width can never exceed it. Raises ValueError if `item_count`
+    doesn't fit at the touch-target floor.
+    """
+    item_height = max(row_height - 2 * spacing.EDGE_PADDING, spacing.MIN_TOUCH_TARGET)
+    usable_width = row_width - 2 * spacing.EDGE_PADDING
+    gap_total = spacing.SPACING_UNIT * (item_count - 1)
+    item_width = (usable_width - gap_total) // item_count
+    if item_width < spacing.MIN_TOUCH_TARGET:
+        raise ValueError(
+            f"{item_count} items at the {spacing.MIN_TOUCH_TARGET}px touch-target floor "
+            f"need more than the {row_width}px available width -- reduce item_count "
+            f"or use a wider row"
+        )
+    positions = []
+    x = spacing.EDGE_PADDING
+    for _ in range(item_count):
+        positions.append((x, spacing.EDGE_PADDING, item_width, item_height))
+        x += item_width + spacing.SPACING_UNIT
+    return positions
+
+
+def _is_camera_subsystem(label: str) -> bool:
+    """Case/pluralization-insensitive match for the Camera subsystem -- the
+    reference spec's own Generic Specifications example uses "Cameras"
+    (plural), which a bare `label == "Camera"` check would silently miss,
+    producing an empty modal with `camera_presets` discarded and no error.
+    See the Final review fix note in
+    docs/superpowers/plans/2026-09-17-tabbed-layout-commercial.md.
+    """
+    return label.strip().rstrip("s").lower() == "camera"
+
+
+def build_tabbed_shell(
+    sdk: UiSdk, *, room_name: str, splash_tiles: list[tuple[str, str]],
+    additional_system_modes: list[str], subsystems: list[str],
+    camera_presets: list[str], panel_width: int, panel_height: int,
+    header_height: int = 160, footer_height: int = 120,
+    resolution: tuple[int, int] | None = None, active_font: str = "Roboto",
+    logo_asset_id: str = "0",
+) -> dict:
+    """Tabbed layout pattern, commercial, Phase 1 shell (design-system §2's
+    Tabbed pattern) -- Splash page, Main Panel page (2-row header + tab-strip-
+    driven per-mode content widgets + 3-zone footer), and one modal widget per
+    footer subsystem (Camera's is real content, the rest are empty this
+    phase). See docs/superpowers/specs/2026-09-17-tabbed-layout-commercial-design.md.
+
+    "System Power" is always the first system mode -- the reference spec's
+    own "always included by default" rule, baked in here rather than left to
+    caller discipline. `additional_system_modes` are whichever of
+    Presentation/Video Call/Audio Call (or a future project's own set) the
+    caller asked the user for, per ConstructUISkill.md §11.
+
+    Returns a dict: `splash_page`/`main_panel_page` ->
+    `(page_attrs, html, css, elements)`; `header_widget`/`footer_widget` ->
+    `(widget_id, widget_attrs, html, css, elements)`; `tab_content_widgets`/
+    `modal_widgets` -> `{name: (widget_id, widget_attrs, html, css,
+    elements)}`, keyed by system mode / subsystem name respectively. The
+    caller writes each entry with page.py::write_cuig.
+
+    Raises ValueError for a panel too narrow for the header's logo + tab
+    strip, a header too short for the room-name/date-time stack, a footer
+    zone too narrow for its content, or an empty `subsystems` list.
+    """
+    system_modes = ["System Power", *additional_system_modes]
+    if not subsystems:
+        raise ValueError("build_tabbed_shell needs at least one footer subsystem")
+
+    # --- header: 2 rows, logo spans both -------------------------------------------
+    logo_size = header_height
+    left_column_width = panel_width - logo_size - spacing.SPACING_UNIT
+    if left_column_width <= 0:
+        raise ValueError(
+            f"a {panel_width}px wide panel is too narrow for a {logo_size}px "
+            f"square logo spanning the full header height"
+        )
+    top_row_height = round(header_height * 0.6)
+    bottom_row_height = header_height - top_row_height
+    # The room-name/date-time stack starts at y=EDGE_PADDING (not y=0), so that
+    # top inset has to come out of the same top_row_height budget too, or the
+    # stack's real bottom edge lands EDGE_PADDING past top_row_height and
+    # silently overlaps the tab strip below it.
+    room_name_height = top_row_height - spacing.EDGE_PADDING - _DATETIME_HEIGHT - spacing.SPACING_UNIT
+    if room_name_height <= 0:
+        raise ValueError(
+            f"a {header_height}px header is too short for the room-name/date-time "
+            f"stack (needs {spacing.EDGE_PADDING + _DATETIME_HEIGHT + spacing.SPACING_UNIT}px+ "
+            f"in the top row)"
+        )
+
+    header_widget_id = str(uuid4())
+    header_widget_attrs = build_widget_attributes(name="Header", widget_id=header_widget_id)
+    header_container_html, header_container_css, header_container_element = default_widget_html_css(
+        generate_element_id(), panel_width, header_height, resolution, is_global=True)
+    header_parts: list[tuple[str, str, Element]] = []
+
+    room_name_html, room_name_css, room_name_element = component.build_component(
+        sdk, "ch5-text", component_name="Room Name", element_id=generate_element_id(),
+        x=spacing.EDGE_PADDING, y=spacing.EDGE_PADDING,
+        width=left_column_width - 2 * spacing.EDGE_PADDING, height=room_name_height,
+        z_index=1, resolution=resolution, active_font=active_font, label=room_name,
+        overrides={"labelinnerhtml": room_name},
+    )
+    header_parts.append((room_name_html, room_name_css, room_name_element))
+
+    datetime_html, datetime_css, datetime_element = component.build_component(
+        sdk, "ch5-datetime", component_name="Header DateTime", element_id=generate_element_id(),
+        x=spacing.EDGE_PADDING, y=spacing.EDGE_PADDING + room_name_height + spacing.SPACING_UNIT,
+        width=_DATETIME_WIDTH, height=_DATETIME_HEIGHT, z_index=1, resolution=resolution,
+        active_font=active_font,
+    )
+    header_parts.append((datetime_html, datetime_css, datetime_element))
+
+    logo_html, logo_css, logo_element = component.build_component(
+        sdk, "ch5-image", component_name="Logo", element_id=generate_element_id(),
+        x=panel_width - logo_size, y=0, width=logo_size, height=logo_size,
+        z_index=1, resolution=resolution, active_font=active_font,
+        overrides={"assetid": logo_asset_id},
+    )
+    header_parts.append((logo_html, logo_css, logo_element))
+
+    tab_strip_html, tab_strip_css, tab_strip_element = component.build_component(
+        sdk, "ch5-tab-button", component_name="System Mode Tabs", element_id=generate_element_id(),
+        x=0, y=top_row_height, width=left_column_width, height=bottom_row_height,
+        z_index=1, resolution=resolution, active_font=active_font,
+        overrides={"numberofitems": str(len(system_modes))},
+    )
+    tab_child_ids = [dict(child.attributes)["id"] for child in tab_strip_element.components]
+    for child_id, mode_label in zip(tab_child_ids, system_modes):
+        tab_strip_html = style.set_html_attribute(tab_strip_html, child_id, "labelinnerhtml", mode_label)
+    header_parts.append((tab_strip_html, tab_strip_css, tab_strip_element))
+
+    header_html = header_container_html + "".join(h for h, _, _ in header_parts)
+    header_css = header_container_css + "".join(c for _, c, _ in header_parts)
+    header_elements = [header_container_element] + [e for _, _, e in header_parts]
+
+    # --- one tab-content widget per system mode, placeholder text this phase --------
+    content_area_height = panel_height - header_height - footer_height
+    if content_area_height <= 0:
+        raise ValueError(
+            f"a {panel_height}px panel has no room left for tab content after a "
+            f"{header_height}px header and {footer_height}px footer"
+        )
+    tab_content_widgets: dict[str, tuple] = {}
+    for mode in system_modes:
+        widget_id = str(uuid4())
+        widget_attrs = build_widget_attributes(name=f"{mode} Content", widget_id=widget_id)
+        container_html, container_css, container_element = default_widget_html_css(
+            generate_element_id(), panel_width, content_area_height, resolution, is_global=False)
+        placeholder_html, placeholder_css, placeholder_element = component.build_component(
+            sdk, "ch5-text", component_name=f"{mode} Placeholder", element_id=generate_element_id(),
+            x=spacing.EDGE_PADDING, y=spacing.EDGE_PADDING,
+            width=panel_width - 2 * spacing.EDGE_PADDING, height=spacing.MIN_TOUCH_TARGET,
+            z_index=1, resolution=resolution, active_font=active_font, label=mode,
+            overrides={"labelinnerhtml": f"{mode} (placeholder -- follow-on phase)"},
+        )
+        html = container_html + placeholder_html
+        css = container_css + placeholder_css
+        elements = [container_element, placeholder_element]
+        tab_content_widgets[mode] = (widget_id, widget_attrs, html, css, elements)
+
+    # --- footer: N subsystem buttons (left) + Privacy Mute (center) + volume (right) -
+    footer_widget_id = str(uuid4())
+    footer_widget_attrs = build_widget_attributes(name="Footer", widget_id=footer_widget_id)
+    footer_container_html, footer_container_css, footer_container_element = default_widget_html_css(
+        generate_element_id(), panel_width, footer_height, resolution, is_global=True)
+    footer_parts: list[tuple[str, str, Element]] = []
+
+    # Center/right zones are sized to their own real fixed content (a square
+    # toggle, a comfortably-usable slider + a mute button), not an equal
+    # 3-way split -- equal thirds starves the left zone at low subsystem
+    # counts and wastes space at high ones. The left zone gets whatever's
+    # left of the panel width.
+    center_zone_width = max(footer_height, spacing.MIN_TOUCH_TARGET) + 2 * spacing.EDGE_PADDING
+    volume_slider_width = 120  # judgment call: comfortably usable, not just the touch-target floor
+    right_zone_width = (
+        volume_slider_width + spacing.MIN_TOUCH_TARGET + spacing.SPACING_UNIT + 2 * spacing.EDGE_PADDING
+    )
+    left_zone_width = panel_width - center_zone_width - right_zone_width
+    if left_zone_width <= 0:
+        raise ValueError(
+            f"a {panel_width}px panel has no room left for footer subsystem buttons "
+            f"after the center Privacy Mute and right volume/mute zones"
+        )
+
+    left_positions = _layout_tabbed_row(len(subsystems), left_zone_width, footer_height)
+    for label, (x, y, w, h) in zip(subsystems, left_positions):
+        html, css, element = component.build_component(
+            sdk, "ch5-button", component_name=f"Footer {label}", element_id=generate_element_id(),
+            x=x, y=y, width=w, height=h, z_index=1, resolution=resolution,
+            active_font=active_font, label=label,
+        )
+        footer_parts.append((html, css, element))
+
+    center_size = max(min(center_zone_width, footer_height) - 2 * spacing.EDGE_PADDING, spacing.MIN_TOUCH_TARGET)
+    privacy_html, privacy_css, privacy_element = component.build_component(
+        sdk, "ch5-toggle", component_name="Privacy Mute", element_id=generate_element_id(),
+        x=left_zone_width + (center_zone_width - center_size) // 2, y=(footer_height - center_size) // 2,
+        width=center_size, height=center_size, z_index=1, resolution=resolution,
+        active_font=active_font, label="Privacy Mute",
+    )
+    footer_parts.append((privacy_html, privacy_css, privacy_element))
+
+    right_x = left_zone_width + center_zone_width
+    volume_height = max(footer_height - 2 * spacing.EDGE_PADDING, spacing.MIN_TOUCH_TARGET)
+    volume_html, volume_css, volume_element = component.build_component(
+        sdk, "ch5-slider", component_name="Volume", element_id=generate_element_id(),
+        x=right_x + spacing.EDGE_PADDING, y=(footer_height - volume_height) // 2,
+        width=volume_slider_width, height=volume_height, z_index=1, resolution=resolution,
+        active_font=active_font,
+    )
+    footer_parts.append((volume_html, volume_css, volume_element))
+    mute_html, mute_css, mute_element = component.build_component(
+        sdk, "ch5-toggle", component_name="Volume Mute", element_id=generate_element_id(),
+        x=right_x + spacing.EDGE_PADDING + volume_slider_width + spacing.SPACING_UNIT,
+        y=(footer_height - spacing.MIN_TOUCH_TARGET) // 2,
+        width=spacing.MIN_TOUCH_TARGET, height=spacing.MIN_TOUCH_TARGET, z_index=1,
+        resolution=resolution, active_font=active_font, label="Mute",
+    )
+    footer_parts.append((mute_html, mute_css, mute_element))
+
+    footer_html = footer_container_html + "".join(h for h, _, _ in footer_parts)
+    footer_css = footer_container_css + "".join(c for _, c, _ in footer_parts)
+    footer_elements = [footer_container_element] + [e for _, _, e in footer_parts]
+
+    # --- modals: one per subsystem, Camera gets real content, everything else empty -
+    modal_widgets: dict[str, tuple] = {}
+    modal_card_width = round(panel_width * 0.6)
+    # Tall enough that Camera's real content (3 stacked bands, see
+    # camera_control.py) fits its content area with room to spare -- verified
+    # directly: a 0.6 fraction leaves Camera's content area 9px too short at
+    # this plan's own default panel size, a 0.85 fraction leaves 11px margin.
+    modal_card_height = round(panel_height * 0.85)
+    if camera_presets and not any(_is_camera_subsystem(s) for s in subsystems):
+        raise ValueError(
+            f"camera_presets given but no subsystem in {subsystems!r} matches "
+            f"'Camera' (case/pluralization-insensitive) -- rename the subsystem "
+            f"or drop camera_presets"
+        )
+    for label in subsystems:
+        if _is_camera_subsystem(label):
+            def content_builder(x, y, width, height, z_index, _presets=camera_presets):
+                return camera_control.build_camera_control(
+                    sdk, x=x, y=y, width=width, height=height, z_index=z_index,
+                    resolution=resolution, presets=_presets, active_font=active_font)
+        else:
+            def content_builder(x, y, width, height, z_index):
+                return "", "", []
+        widget_id, widget_attrs, html, css, elements = modal.build_modal_widget(
+            sdk, widget_width=panel_width, widget_height=panel_height,
+            widget_name=f"{label} Modal", title=label, card_width=modal_card_width,
+            card_height=modal_card_height, content_builder=content_builder,
+            resolution=resolution, active_font=active_font,
+        )
+        modal_widgets[label] = (widget_id, widget_attrs, html, css, elements)
+
+    # --- splash page: caller-supplied action tiles, may be empty --------------------
+    splash_page_attrs = build_page_attributes(name="Splash", is_start_page=True)
+    splash_parts: list[tuple[str, str, Element]] = []
+    if splash_tiles:
+        tile_positions = _layout_tabbed_row(len(splash_tiles), panel_width, panel_height)
+        for (label, icon_class), (x, y, w, h) in zip(splash_tiles, tile_positions):
+            html, css, element = component.build_component(
+                sdk, "ch5-button", component_name=f"Splash {label}", element_id=generate_element_id(),
+                x=x, y=y, width=w, height=h, z_index=1, resolution=resolution,
+                active_font=active_font, label=label, icon_class=icon_class,
+                icon_library="FA Classic Solid",
+            )
+            splash_parts.append((html, css, element))
+    splash_html = "".join(h for h, _, _ in splash_parts)
+    splash_css = "".join(c for _, c, _ in splash_parts)
+    splash_elements = [e for _, _, e in splash_parts]
+
+    # --- main panel page: header/footer/tab-content/modal widget references ---------
+    main_panel_attrs = build_page_attributes(name="Main Panel")
+    main_panel_html = ""
+    main_panel_css_parts: list[str] = []
+    main_panel_elements: list[Element] = []
+    widget_placements = [
+        (header_widget_id, "Header", 0, 0, 1),
+        (footer_widget_id, "Footer", 0, panel_height - footer_height, 1),
+        *[(wid, f"{mode} Content", 0, header_height, 1) for mode, (wid, *_rest) in tab_content_widgets.items()],
+        *[(wid, f"{label} Modal", 0, 0, 2) for label, (wid, *_rest) in modal_widgets.items()],
+    ]
+    for widget_id, widget_name, wx, wy, wz in widget_placements:
+        main_panel_html, main_panel_elements = add_widget_reference_to_page(
+            sdk, main_panel_html, main_panel_elements, widget_id, widget_name)
+        ref_element = main_panel_elements[-1]
+        ref_id = dict(ref_element.attributes)["id"]
+        main_panel_css_parts.append(
+            widget_reference_position_css(ref_id, x=wx, y=wy, z_index=wz, resolution=resolution))
+    main_panel_css = "".join(main_panel_css_parts)
+
+    return {
+        "splash_page": (splash_page_attrs, splash_html, splash_css, splash_elements),
+        "main_panel_page": (main_panel_attrs, main_panel_html, main_panel_css, main_panel_elements),
+        "header_widget": (header_widget_id, header_widget_attrs, header_html, header_css, header_elements),
+        "footer_widget": (footer_widget_id, footer_widget_attrs, footer_html, footer_css, footer_elements),
+        "tab_content_widgets": tab_content_widgets,
+        "modal_widgets": modal_widgets,
+    }

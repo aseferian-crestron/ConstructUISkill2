@@ -9,9 +9,17 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Tabbed layout (commercial) Phase 1 shell: spec + implementation plan
-written and committed, ready for execution.** Continuing the scope pivot
-below in the same session. Ran `brainstorming` (architectural path) to
+**Tabbed layout (commercial) Phase 1 shell: all 3 plan tasks DONE.**
+`generator/modal.py::build_modal_widget`, `generator/camera_control.py::
+build_camera_control`, and `generator/layout_patterns.py::build_tabbed_shell`
+all exist, are tested, and round-trip byte-identical against real
+`.cuig`/`.cuiw` files. See the 2026-09-17 Log entry below for what's built,
+what's confirmed vs. still a judgment call, and what's explicitly deferred
+to a future phase. Not yet done: regenerating a live Construct project with
+this shell to confirm it renders/behaves correctly in the real editor.
+
+Earlier design work in this same session, kept for continuity: Ran
+`brainstorming` (architectural path) to
 design the shell: source-checked the CH5 SDK's `component-context.json`
 directly for a native tab-content-swap component and a native modal --
 `ch5-modal-dialog`/`ch5-overlay-panel`/`ch5-triggerview` all exist in the
@@ -3059,6 +3067,43 @@ RENDER correctly), never a substitute for the diff.
 
 ## Log
 
+- 2026-09-17: **`layout_patterns.py::build_tabbed_shell` -- Tabbed layout
+  (commercial) Phase 1 shell, DONE, all 3 plan tasks now complete.** TDD per
+  `docs/superpowers/plans/2026-09-17-tabbed-layout-commercial.md`'s Task 3:
+  wrote the failing test first (`generator/_test_output/tabbed_shell_test.py`,
+  confirmed `ImportError` before writing any implementation), then
+  `build_tabbed_shell` plus a new `_layout_tabbed_row` helper (deliberately
+  NOT reusing the existing `_layout_row` -- its `snap_to_spacing` rounding
+  step overflows the row width for this task's own splash-tile and
+  footer-subsystem cases; `_layout_tabbed_row` uses floor division only, no
+  snapping). Assembles: a Splash page (caller-supplied action tiles), a Main
+  Panel page referencing every widget exactly once, a 2-row Header widget
+  (room name + date/time stacked left, logo spanning both rows right,
+  tab-strip carrying every system mode's own label with "System Power"
+  always forced first), one tab-content placeholder widget per system mode,
+  a 3-zone Footer widget (subsystem buttons left, Privacy Mute center,
+  volume slider + mute right), and one modal widget per footer subsystem
+  (Camera's calls `camera_control.build_camera_control` for real content --
+  presets/dpad/zoom/power -- everything else stays empty this phase, per the
+  plan's own scope). Every assertion in the test passed on the first real
+  run, including all 11 files' byte-identical round-trip checks -- no
+  transcription or math errors found. Full existing suite: 79 test files,
+  77 pass, exactly the 2 known pre-existing unrelated failures
+  (`page_background_color_test.py`, `phase5_smoke_test.py`), no new
+  regressions. Confirmed by direct execution during planning, not guessed:
+  the header's 60/40 top/bottom row split, the footer's non-equal zone
+  sizing (center/right sized to their own fixed content, left gets the
+  remainder -- deliberately not equal thirds), and the modal card's 85%
+  panel-height fraction (60% left Camera's real content 9px too short).
+  Still judgment calls, not a Construct spec: all of the above fractions,
+  the 120px volume-slider width, and the placeholder tab-body text --
+  none of these are verified live in Construct's own editor yet. Available
+  now for a live-project regeneration if the user wants to see the shell
+  rendered next. Also not built (explicitly deferred, see the plan's "After
+  this plan" section): real tab-body content for Power/Presentation/Video
+  Call/Audio Call, real modal content for Environment/Audio/other
+  subsystems, the residential Tabbed pass, an HVAC composite, and how a
+  tab/footer button press actually wires to a contract signal.
 - 2026-09-10: **Reflow: column-aware row fitting + compaction-aware wrap decisions --
   DONE, verified against real TSW-570.** User asked why Up/Down buttons still moved to
   a second row when "there's certainly room." Found `detect_rows` correctly groups a
