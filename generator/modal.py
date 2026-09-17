@@ -128,9 +128,23 @@ def build_modal_widget(
             height=widget_height, z_index=2, resolution=resolution, label="",
             active_font=active_font, overrides={"labelinnerhtml": ""},
         )
+        # Pre-set pressed_/selected_ background explicitly to "transparent" --
+        # derive_states only DERIVES background_color via HSL lightness math
+        # (color_words.adjust_lightness), which can't parse the literal string
+        # "transparent" as a hex color; presetting these two keys makes
+        # derive_states skip deriving them (it never overwrites a key already
+        # present) and just carry "transparent" through, same end state a real
+        # color would reach automatically. Still covers all 3 states, per the
+        # standing rule (user, 2026-09-13) -- not skipped just because this
+        # button happens to be invisible.
+        dismiss_palette = palette.applicable_subset("ch5-button", palette.derive_states({
+            "background_color": "transparent",
+            "pressed_background_color": "transparent",
+            "selected_background_color": "transparent",
+            "border_width": "0px",
+        }))
         dismiss_css = palette.apply_palette(
-            dismiss_css, dict(dismiss_element.attributes)["id"], sdk, "ch5-button",
-            {"background_color": "transparent", "border_width": "0px"},
+            dismiss_css, dict(dismiss_element.attributes)["id"], sdk, "ch5-button", dismiss_palette,
         )
         parts.append((dismiss_html, dismiss_css, dismiss_element))
 
@@ -150,9 +164,10 @@ def build_modal_widget(
         resolution=resolution, active_font=active_font, label=title,
         overrides={"labelinnerhtml": title},
     )
+    title_palette = palette.applicable_subset(
+        "ch5-text", palette.derive_states({"text_color": CARD_TEXT_COLOR}))
     title_css = palette.apply_palette(
-        title_css, dict(title_element.attributes)["id"], sdk, "ch5-text",
-        {"text_color": CARD_TEXT_COLOR},
+        title_css, dict(title_element.attributes)["id"], sdk, "ch5-text", title_palette,
     )
     parts.append((title_html, title_css, title_element))
 

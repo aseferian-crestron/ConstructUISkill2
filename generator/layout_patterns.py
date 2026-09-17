@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import camera_control
 import component
+import layout
 import modal
 import palette
 import shape
@@ -538,19 +539,20 @@ def _is_camera_subsystem(label: str) -> bool:
     return label.strip().rstrip("s").lower() == "camera"
 
 
-#: Splash page visual treatment -- default styling taken directly from the
-#: stakeholder-reviewed reference mockup (docs/construct-tabbed-ui-screens-
-#: commercial.pdf, "Tabbed Panel -- Splash" page), per the user's direction
-#: (2026-09-17): when the caller hasn't supplied their own design/color
-#: scheme, the default IS that reviewed mockup, not a separately-invented
-#: persona palette. Light neutral page background, white bordered cards,
-#: warm amber accent on the icon/label.
+#: Shared visual token set across Splash/Header/Footer -- default styling
+#: taken directly from the stakeholder-reviewed reference mockups
+#: (docs/construct-tabbed-ui-screens-commercial.pdf), per the user's
+#: direction (2026-09-17): when the caller hasn't supplied their own design/
+#: color scheme, the default IS that reviewed mockup, not a separately-
+#: invented persona palette. Matches the design spec's own §7 role names
+#: (amber=on/active, coral=live/urgent/call-related).
 SPLASH_BACKGROUND_COLOR = "#EEF1F5"
-SPLASH_TEXT_COLOR = "#1A1D23"
-SPLASH_MUTED_TEXT_COLOR = "#6B7280"
-SPLASH_TILE_BACKGROUND_COLOR = "#FFFFFF"
-SPLASH_TILE_BORDER_COLOR = "#E2E5EA"
-SPLASH_ACCENT_COLOR = "#C9822E"
+PANEL_TEXT_COLOR = "#1A1D23"
+PANEL_MUTED_TEXT_COLOR = "#6B7280"
+PANEL_SURFACE_COLOR = "#FFFFFF"
+PANEL_BORDER_COLOR = "#E2E5EA"
+PANEL_ACCENT_COLOR = "#C9822E"  # amber -- on/active
+PANEL_CORAL_COLOR = "#E8735A"  # coral -- live/urgent/call-related, active mute state
 SPLASH_HEADLINE_TOP = 200
 SPLASH_ROOM_NAME_HEIGHT = 24
 SPLASH_HEADLINE_HEIGHT = 48
@@ -560,7 +562,7 @@ SPLASH_TILE_HEIGHT = 260
 
 
 def build_tabbed_shell(
-    sdk: UiSdk, *, room_name: str, splash_tiles: list[tuple[str, str]],
+    sdk: UiSdk, *, room_name: str, splash_tiles: list[tuple[str, str] | tuple[str, str, str]],
     additional_system_modes: list[str], subsystems: list[str],
     camera_presets: list[str], panel_width: int, panel_height: int,
     header_height: int = 160, footer_height: int = 120,
@@ -621,6 +623,12 @@ def build_tabbed_shell(
     header_widget_attrs = build_widget_attributes(name="Header", widget_id=header_widget_id)
     header_container_html, header_container_css, header_container_element = default_widget_html_css(
         generate_element_id(), panel_width, header_height, resolution, is_global=True)
+    # The widget's own root container is a plain <div> (default_widget_html_css),
+    # same mechanism html_div.py uses -- a literal CSS declaration, not a
+    # --ch5-* schema var.
+    header_container_css, _ = layout.update_element_declarations(
+        header_container_css, dict(header_container_element.attributes)["id"],
+        {"background-color": PANEL_SURFACE_COLOR})
     header_parts: list[tuple[str, str, Element]] = []
 
     room_name_html, room_name_css, room_name_element = component.build_component(
@@ -630,6 +638,11 @@ def build_tabbed_shell(
         z_index=1, resolution=resolution, active_font=active_font, label=room_name,
         overrides={"labelinnerhtml": room_name},
     )
+    room_name_id = dict(room_name_element.attributes)["id"]
+    room_name_css = typography.apply_font_size(room_name_css, room_name_id, sdk, "ch5-text", typography.TYPE_SCALE["label"])
+    room_name_css = palette.apply_palette(
+        room_name_css, room_name_id, sdk, "ch5-text",
+        palette.applicable_subset("ch5-text", palette.derive_states({"text_color": PANEL_TEXT_COLOR})))
     header_parts.append((room_name_html, room_name_css, room_name_element))
 
     datetime_html, datetime_css, datetime_element = component.build_component(
@@ -654,6 +667,27 @@ def build_tabbed_shell(
         z_index=1, resolution=resolution, active_font=active_font,
         overrides={"numberofitems": str(len(system_modes))},
     )
+    tab_strip_id = dict(tab_strip_element.attributes)["id"]
+    # Unselected tabs blend into the header bar (same surface, muted text);
+    # the active tab gets the amber "on/active" accent (design spec §7) as
+    # both its text color and an underline (selected_border_color/width),
+    # matching the reviewed PDF's active-tab treatment.
+    tab_strip_css = palette.apply_palette(
+        tab_strip_css, tab_strip_id, sdk, "ch5-tab-button",
+        palette.applicable_subset("ch5-tab-button", palette.derive_states({
+            "background_color": PANEL_SURFACE_COLOR,
+            "border_color": PANEL_SURFACE_COLOR,
+            "border_width": "0px",
+            "text_color": PANEL_MUTED_TEXT_COLOR,
+            "icon_color": PANEL_MUTED_TEXT_COLOR,
+            "selected_background_color": PANEL_SURFACE_COLOR,
+            "selected_text_color": PANEL_ACCENT_COLOR,
+            "selected_icon_color": PANEL_ACCENT_COLOR,
+            "selected_border_color": PANEL_ACCENT_COLOR,
+            "selected_border_width": "2px",
+        })),
+    )
+    tab_strip_css = typography.apply_font_size(tab_strip_css, tab_strip_id, sdk, "ch5-tab-button", typography.TYPE_SCALE["label"])
     tab_child_ids = [dict(child.attributes)["id"] for child in tab_strip_element.components]
     for child_id, mode_label in zip(tab_child_ids, system_modes):
         tab_strip_html = style.set_html_attribute(tab_strip_html, child_id, "labelinnerhtml", mode_label)
@@ -693,7 +727,35 @@ def build_tabbed_shell(
     footer_widget_attrs = build_widget_attributes(name="Footer", widget_id=footer_widget_id)
     footer_container_html, footer_container_css, footer_container_element = default_widget_html_css(
         generate_element_id(), panel_width, footer_height, resolution, is_global=True)
+    footer_container_css, _ = layout.update_element_declarations(
+        footer_container_css, dict(footer_container_element.attributes)["id"],
+        {"background-color": PANEL_SURFACE_COLOR})
     footer_parts: list[tuple[str, str, Element]] = []
+
+    #: Pill-button treatment shared by every real footer button (subsystem
+    #: launchers, Privacy Mute, Volume Mute) -- surface/border/text/icon
+    #: normal state, all 3 states covered (user, 2026-09-13's standing rule).
+    #: `emphasis` (Privacy/Volume Mute only) swaps the SELECTED state to a
+    #: coral tint -- design spec §7's "coral = live/urgent" role -- rather
+    #: than the generic derived lighten, since these represent an active
+    #: privacy/mute state, not just a pressed-button highlight.
+    def _footer_button_palette(*, emphasis: bool = False) -> dict[str, str]:
+        base = {
+            "background_color": PANEL_SURFACE_COLOR,
+            "border_color": PANEL_BORDER_COLOR,
+            "border_width": "1px",
+            "border_style": "solid",
+            "text_color": PANEL_TEXT_COLOR,
+            "icon_color": PANEL_ACCENT_COLOR,
+        }
+        if emphasis:
+            base.update({
+                "selected_background_color": "#FDEEEA",
+                "selected_border_color": PANEL_CORAL_COLOR,
+                "selected_text_color": PANEL_CORAL_COLOR,
+                "selected_icon_color": PANEL_CORAL_COLOR,
+            })
+        return palette.applicable_subset("ch5-button", palette.derive_states(base))
 
     # Center/right zones are sized to their own real fixed content (a square
     # toggle, a comfortably-usable slider + a mute button), not an equal
@@ -719,15 +781,28 @@ def build_tabbed_shell(
             x=x, y=y, width=w, height=h, z_index=1, resolution=resolution,
             active_font=active_font, label=label,
         )
+        sub_id = dict(element.attributes)["id"]
+        html, css = shape.apply_radius_preset(html, css, sub_id, sdk, "ch5-button", "rounded")
+        css = palette.apply_palette(css, sub_id, sdk, "ch5-button", _footer_button_palette())
         footer_parts.append((html, css, element))
 
+    # Privacy Mute: a real button (matches the footer's other pill buttons),
+    # not a toggle switch -- the reviewed PDF shows it as an icon+label pill
+    # that highlights coral when active, using ch5-button's own "Selected"
+    # state/signal (already one of its DEFAULT_SIGNALS) for that persistent
+    # on/off look, the same mechanism a toggle would use, just styled as a
+    # button to match its siblings.
     center_size = max(min(center_zone_width, footer_height) - 2 * spacing.EDGE_PADDING, spacing.MIN_TOUCH_TARGET)
     privacy_html, privacy_css, privacy_element = component.build_component(
-        sdk, "ch5-toggle", component_name="Privacy Mute", element_id=generate_element_id(),
+        sdk, "ch5-button", component_name="Privacy Mute", element_id=generate_element_id(),
         x=left_zone_width + (center_zone_width - center_size) // 2, y=(footer_height - center_size) // 2,
         width=center_size, height=center_size, z_index=1, resolution=resolution,
-        active_font=active_font, label="Privacy Mute",
+        active_font=active_font, label="Privacy Mute", icon_class="fa-solid fa-video-slash",
+        icon_library="FA Classic Solid",
     )
+    privacy_id = dict(privacy_element.attributes)["id"]
+    privacy_html, privacy_css = shape.apply_radius_preset(privacy_html, privacy_css, privacy_id, sdk, "ch5-button", "rounded")
+    privacy_css = palette.apply_palette(privacy_css, privacy_id, sdk, "ch5-button", _footer_button_palette(emphasis=True))
     footer_parts.append((privacy_html, privacy_css, privacy_element))
 
     right_x = left_zone_width + center_zone_width
@@ -738,14 +813,31 @@ def build_tabbed_shell(
         width=volume_slider_width, height=volume_height, z_index=1, resolution=resolution,
         active_font=active_font,
     )
+    volume_id = dict(volume_element.attributes)["id"]
+    volume_css = palette.apply_palette(
+        volume_css, volume_id, sdk, "ch5-slider",
+        palette.applicable_subset("ch5-slider", palette.derive_states({
+            "background_color": PANEL_ACCENT_COLOR,
+            "border_color": PANEL_BORDER_COLOR,
+            "border_width": "1px",
+            "border_style": "solid",
+            "text_color": PANEL_TEXT_COLOR,
+        })),
+    )
     footer_parts.append((volume_html, volume_css, volume_element))
+
+    # Volume Mute: same button-not-toggle correction as Privacy Mute.
     mute_html, mute_css, mute_element = component.build_component(
-        sdk, "ch5-toggle", component_name="Volume Mute", element_id=generate_element_id(),
+        sdk, "ch5-button", component_name="Volume Mute", element_id=generate_element_id(),
         x=right_x + spacing.EDGE_PADDING + volume_slider_width + spacing.SPACING_UNIT,
         y=(footer_height - spacing.MIN_TOUCH_TARGET) // 2,
         width=spacing.MIN_TOUCH_TARGET, height=spacing.MIN_TOUCH_TARGET, z_index=1,
-        resolution=resolution, active_font=active_font, label="Mute",
+        resolution=resolution, active_font=active_font, label="", icon_class="fa-solid fa-volume-xmark",
+        icon_library="FA Classic Solid", overrides={"labelinnerhtml": ""},
     )
+    mute_id = dict(mute_element.attributes)["id"]
+    mute_html, mute_css = shape.apply_radius_preset(mute_html, mute_css, mute_id, sdk, "ch5-button", "rounded")
+    mute_css = palette.apply_palette(mute_css, mute_id, sdk, "ch5-button", _footer_button_palette(emphasis=True))
     footer_parts.append((mute_html, mute_css, mute_element))
 
     footer_html = footer_container_html + "".join(h for h, _, _ in footer_parts)
@@ -798,7 +890,9 @@ def build_tabbed_shell(
         )
         room_id = dict(room_element.attributes)["id"]
         room_css = typography.apply_font_size(room_css, room_id, sdk, "ch5-text", typography.TYPE_SCALE["caption"])
-        room_css = palette.apply_palette(room_css, room_id, sdk, "ch5-text", {"text_color": SPLASH_MUTED_TEXT_COLOR})
+        room_palette = palette.applicable_subset(
+            "ch5-text", palette.derive_states({"text_color": PANEL_MUTED_TEXT_COLOR}))
+        room_css = palette.apply_palette(room_css, room_id, sdk, "ch5-text", room_palette)
         splash_parts.append((room_html, room_css, room_element))
 
         headline_y = SPLASH_HEADLINE_TOP + SPLASH_ROOM_NAME_HEIGHT + spacing.SPACING_UNIT
@@ -811,8 +905,9 @@ def build_tabbed_shell(
         headline_id = dict(headline_element.attributes)["id"]
         headline_css = typography.apply_font_size(
             headline_css, headline_id, sdk, "ch5-text", typography.TYPE_SCALE["heading"])
-        headline_css = palette.apply_palette(
-            headline_css, headline_id, sdk, "ch5-text", {"text_color": SPLASH_TEXT_COLOR})
+        headline_palette = palette.applicable_subset(
+            "ch5-text", palette.derive_states({"text_color": PANEL_TEXT_COLOR}))
+        headline_css = palette.apply_palette(headline_css, headline_id, sdk, "ch5-text", headline_palette)
         splash_parts.append((headline_html, headline_css, headline_element))
 
         tiles_y = headline_y + SPLASH_HEADLINE_HEIGHT + SPLASH_TILES_GAP_ABOVE
@@ -823,7 +918,8 @@ def build_tabbed_shell(
                 f"fit within a {panel_width}px panel -- fewer tiles or a narrower tile"
             )
         tiles_x = (panel_width - tiles_total_width) // 2
-        for i, (label, icon_class) in enumerate(splash_tiles):
+        for i, tile in enumerate(splash_tiles):
+            label, icon_class, subtitle = tile if len(tile) == 3 else (*tile, None)
             x = tiles_x + i * (SPLASH_TILE_WIDTH + spacing.SPACING_UNIT)
             html, css, element = component.build_component(
                 sdk, "ch5-button", component_name=f"Splash {label}", element_id=generate_element_id(),
@@ -832,21 +928,54 @@ def build_tabbed_shell(
                 icon_class=icon_class, icon_library="FA Classic Solid",
             )
             tile_id = dict(element.attributes)["id"]
+            # Icon stacked ABOVE the label, both centered -- matches the reviewed
+            # PDF's card layout (icon badge over bold label), not the schema's
+            # default icon-left-of-label row (which was also truncating the
+            # label on a narrow tile). Confirmed real enum values (already used
+            # for this exact stacked look elsewhere in this project's Bento Box
+            # work): orientation="vertical" + iconposition="top".
+            html = style.set_html_attribute(html, tile_id, "orientation", "vertical")
+            html = style.set_html_attribute(html, tile_id, "iconposition", "top")
+            html = style.set_html_attribute(html, tile_id, "halignlabel", "center")
             html, css = shape.apply_radius_preset(html, css, tile_id, sdk, "ch5-button", "rounded")
+            # Every styled button gets its pressed/selected states too, not just
+            # normal (user, 2026-09-13, palette.py::derive_states' own standing
+            # rule) -- background darkens/lightens per standard UI convention,
+            # border/text/icon carry over unchanged.
+            tile_palette = palette.applicable_subset("ch5-button", palette.derive_states({
+                "background_color": PANEL_SURFACE_COLOR,
+                "border_color": PANEL_BORDER_COLOR,
+                "border_width": "1px",
+                "border_style": "solid",
+                "text_color": PANEL_TEXT_COLOR,
+                "icon_color": PANEL_ACCENT_COLOR,
+            }))
             css = palette.apply_palette(
-                css, tile_id, sdk, "ch5-button",
-                {
-                    "background_color": SPLASH_TILE_BACKGROUND_COLOR,
-                    "border_color": SPLASH_TILE_BORDER_COLOR,
-                    "border_width": "1px",
-                    "border_style": "solid",
-                    "text_color": SPLASH_TEXT_COLOR,
-                    "icon_color": SPLASH_ACCENT_COLOR,
-                },
+                css, tile_id, sdk, "ch5-button", tile_palette,
             )
-            css = typography.apply_font_size(css, tile_id, sdk, "ch5-button", typography.TYPE_SCALE["body"])
-            css = typography.apply_icon_size(css, tile_id, sdk, "ch5-button", typography.ICON_SCALE["body"])
+            css = typography.apply_font_size(css, tile_id, sdk, "ch5-button", typography.TYPE_SCALE["label"])
+            css = typography.apply_icon_size(css, tile_id, sdk, "ch5-button", typography.ICON_SCALE["title"])
             splash_parts.append((html, css, element))
+
+            if subtitle:
+                # Non-interactive overlay (pointer-events:none, same mechanism
+                # Room Card uses -- Construct's own wifi-gauge component does
+                # this for exactly this reason) so the tap still reaches the
+                # button underneath, not a separate control.
+                sub_html, sub_css, sub_element = component.build_component(
+                    sdk, "ch5-text", component_name=f"Splash {label} Subtitle",
+                    element_id=generate_element_id(), x=x, y=tiles_y + SPLASH_TILE_HEIGHT - 40,
+                    width=SPLASH_TILE_WIDTH, height=24, z_index=2, resolution=resolution,
+                    active_font=active_font, label=subtitle,
+                    overrides={"labelinnerhtml": subtitle, "horizontalalignment": "center"},
+                )
+                sub_id = dict(sub_element.attributes)["id"]
+                sub_css = typography.apply_font_size(sub_css, sub_id, sdk, "ch5-text", typography.TYPE_SCALE["caption"])
+                sub_css = palette.apply_palette(
+                    sub_css, sub_id, sdk, "ch5-text",
+                    palette.applicable_subset("ch5-text", palette.derive_states({"text_color": PANEL_MUTED_TEXT_COLOR})))
+                sub_css, _ = layout.update_element_declarations(sub_css, sub_id, {"pointer-events": "none"})
+                splash_parts.append((sub_html, sub_css, sub_element))
     splash_html = "".join(h for h, _, _ in splash_parts)
     splash_css = "".join(c for _, c, _ in splash_parts)
     splash_elements = [e for _, _, e in splash_parts]

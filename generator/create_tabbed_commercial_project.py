@@ -58,9 +58,9 @@ result = build_tabbed_shell(
     ui_sdk,
     room_name="Boardroom A",
     splash_tiles=[
-        ("Start Presentation", "fa-solid fa-desktop"),
-        ("Join Video Call", "fa-solid fa-video"),
-        ("Join Audio Call", "fa-solid fa-microphone"),
+        ("Start Presentation", "fa-solid fa-desktop", "Display + lights dimmed"),
+        ("Join Video Call", "fa-solid fa-video", "Call gear only"),
+        ("Join Audio Call", "fa-solid fa-microphone", "Dial in, no video"),
     ],
     additional_system_modes=["Video Call", "Audio Call"],
     subsystems=["Environment", "Audio", "Camera"],
