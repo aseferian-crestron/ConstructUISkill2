@@ -14,6 +14,8 @@ from uuid import uuid4
 import camera_control
 import component
 import modal
+import palette
+import shape
 import spacing
 import style
 import typography
@@ -536,11 +538,33 @@ def _is_camera_subsystem(label: str) -> bool:
     return label.strip().rstrip("s").lower() == "camera"
 
 
+#: Splash page visual treatment -- default styling taken directly from the
+#: stakeholder-reviewed reference mockup (docs/construct-tabbed-ui-screens-
+#: commercial.pdf, "Tabbed Panel -- Splash" page), per the user's direction
+#: (2026-09-17): when the caller hasn't supplied their own design/color
+#: scheme, the default IS that reviewed mockup, not a separately-invented
+#: persona palette. Light neutral page background, white bordered cards,
+#: warm amber accent on the icon/label.
+SPLASH_BACKGROUND_COLOR = "#EEF1F5"
+SPLASH_TEXT_COLOR = "#1A1D23"
+SPLASH_MUTED_TEXT_COLOR = "#6B7280"
+SPLASH_TILE_BACKGROUND_COLOR = "#FFFFFF"
+SPLASH_TILE_BORDER_COLOR = "#E2E5EA"
+SPLASH_ACCENT_COLOR = "#C9822E"
+SPLASH_HEADLINE_TOP = 200
+SPLASH_ROOM_NAME_HEIGHT = 24
+SPLASH_HEADLINE_HEIGHT = 48
+SPLASH_TILES_GAP_ABOVE = 40
+SPLASH_TILE_WIDTH = 220
+SPLASH_TILE_HEIGHT = 260
+
+
 def build_tabbed_shell(
     sdk: UiSdk, *, room_name: str, splash_tiles: list[tuple[str, str]],
     additional_system_modes: list[str], subsystems: list[str],
     camera_presets: list[str], panel_width: int, panel_height: int,
     header_height: int = 160, footer_height: int = 120,
+    splash_headline: str = "What would you like to do?",
     resolution: tuple[int, int] | None = None, active_font: str = "Roboto",
     logo_asset_id: str = "0",
 ) -> dict:
@@ -759,18 +783,69 @@ def build_tabbed_shell(
         )
         modal_widgets[label] = (widget_id, widget_attrs, html, css, elements)
 
-    # --- splash page: caller-supplied action tiles, may be empty --------------------
-    splash_page_attrs = build_page_attributes(name="Splash", is_start_page=True)
+    # --- splash page: room name + headline + caller-supplied action tiles -----------
+    splash_page_attrs = build_page_attributes(
+        name="Splash", is_start_page=True,
+        display_background_color=True, background_color=SPLASH_BACKGROUND_COLOR,
+    )
     splash_parts: list[tuple[str, str, Element]] = []
     if splash_tiles:
-        tile_positions = _layout_tabbed_row(len(splash_tiles), panel_width, panel_height)
-        for (label, icon_class), (x, y, w, h) in zip(splash_tiles, tile_positions):
+        room_html, room_css, room_element = component.build_component(
+            sdk, "ch5-text", component_name="Splash Room Name", element_id=generate_element_id(),
+            x=0, y=SPLASH_HEADLINE_TOP, width=panel_width, height=SPLASH_ROOM_NAME_HEIGHT,
+            z_index=1, resolution=resolution, active_font=active_font, label=room_name,
+            overrides={"labelinnerhtml": room_name, "horizontalalignment": "center"},
+        )
+        room_id = dict(room_element.attributes)["id"]
+        room_css = typography.apply_font_size(room_css, room_id, sdk, "ch5-text", typography.TYPE_SCALE["caption"])
+        room_css = palette.apply_palette(room_css, room_id, sdk, "ch5-text", {"text_color": SPLASH_MUTED_TEXT_COLOR})
+        splash_parts.append((room_html, room_css, room_element))
+
+        headline_y = SPLASH_HEADLINE_TOP + SPLASH_ROOM_NAME_HEIGHT + spacing.SPACING_UNIT
+        headline_html, headline_css, headline_element = component.build_component(
+            sdk, "ch5-text", component_name="Splash Headline", element_id=generate_element_id(),
+            x=0, y=headline_y, width=panel_width, height=SPLASH_HEADLINE_HEIGHT,
+            z_index=1, resolution=resolution, active_font=active_font, label=splash_headline,
+            overrides={"labelinnerhtml": splash_headline, "horizontalalignment": "center"},
+        )
+        headline_id = dict(headline_element.attributes)["id"]
+        headline_css = typography.apply_font_size(
+            headline_css, headline_id, sdk, "ch5-text", typography.TYPE_SCALE["heading"])
+        headline_css = palette.apply_palette(
+            headline_css, headline_id, sdk, "ch5-text", {"text_color": SPLASH_TEXT_COLOR})
+        splash_parts.append((headline_html, headline_css, headline_element))
+
+        tiles_y = headline_y + SPLASH_HEADLINE_HEIGHT + SPLASH_TILES_GAP_ABOVE
+        tiles_total_width = len(splash_tiles) * SPLASH_TILE_WIDTH + (len(splash_tiles) - 1) * spacing.SPACING_UNIT
+        if tiles_total_width > panel_width:
+            raise ValueError(
+                f"{len(splash_tiles)} splash tiles at {SPLASH_TILE_WIDTH}px each don't "
+                f"fit within a {panel_width}px panel -- fewer tiles or a narrower tile"
+            )
+        tiles_x = (panel_width - tiles_total_width) // 2
+        for i, (label, icon_class) in enumerate(splash_tiles):
+            x = tiles_x + i * (SPLASH_TILE_WIDTH + spacing.SPACING_UNIT)
             html, css, element = component.build_component(
                 sdk, "ch5-button", component_name=f"Splash {label}", element_id=generate_element_id(),
-                x=x, y=y, width=w, height=h, z_index=1, resolution=resolution,
-                active_font=active_font, label=label, icon_class=icon_class,
-                icon_library="FA Classic Solid",
+                x=x, y=tiles_y, width=SPLASH_TILE_WIDTH, height=SPLASH_TILE_HEIGHT,
+                z_index=1, resolution=resolution, active_font=active_font, label=label,
+                icon_class=icon_class, icon_library="FA Classic Solid",
             )
+            tile_id = dict(element.attributes)["id"]
+            html, css = shape.apply_radius_preset(html, css, tile_id, sdk, "ch5-button", "rounded")
+            css = palette.apply_palette(
+                css, tile_id, sdk, "ch5-button",
+                {
+                    "background_color": SPLASH_TILE_BACKGROUND_COLOR,
+                    "border_color": SPLASH_TILE_BORDER_COLOR,
+                    "border_width": "1px",
+                    "border_style": "solid",
+                    "text_color": SPLASH_TEXT_COLOR,
+                    "icon_color": SPLASH_ACCENT_COLOR,
+                },
+            )
+            css = typography.apply_font_size(css, tile_id, sdk, "ch5-button", typography.TYPE_SCALE["body"])
+            css = typography.apply_icon_size(css, tile_id, sdk, "ch5-button", typography.ICON_SCALE["body"])
             splash_parts.append((html, css, element))
     splash_html = "".join(h for h, _, _ in splash_parts)
     splash_css = "".join(c for _, c, _ in splash_parts)

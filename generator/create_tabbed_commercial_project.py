@@ -79,9 +79,9 @@ def write_and_check(path: Path, attrs, html, css, elements):
     print(f"  {'OK' if ok else 'ROUND-TRIP FAILED'}: {path.name}")
 
 
-print("\nwriting pages/widgets:")
-write_and_check(PROJECT_DIR / "Splash.cuig", *result["splash_page"])
-write_and_check(PROJECT_DIR / "MainPanel.cuig", *result["main_panel_page"])
+print("\nwriting widgets first (pages reference them -- if Construct's live file")
+print("watcher sees a page before the widgets it points at exist on disk, it can")
+print("resolve the reference as empty and never retry until a manual reload):")
 
 _, header_attrs, header_html, header_css, header_elements = result["header_widget"]
 write_and_check(PROJECT_DIR / "Header.cuiw", header_attrs, header_html, header_css, header_elements)
@@ -95,6 +95,10 @@ for mode, (wid, w_attrs, w_html, w_css, w_elements) in result["tab_content_widge
 
 for label, (wid, w_attrs, w_html, w_css, w_elements) in result["modal_widgets"].items():
     write_and_check(PROJECT_DIR / f"{label} Modal.cuiw", w_attrs, w_html, w_css, w_elements)
+
+print("\nwriting pages (now that every widget they reference already exists):")
+write_and_check(PROJECT_DIR / "Splash.cuig", *result["splash_page"])
+write_and_check(PROJECT_DIR / "MainPanel.cuig", *result["main_panel_page"])
 
 failed = [p for p, ok in files_written if not ok]
 print(f"\n{len(files_written)} files written, {len(failed)} round-trip failures.")
