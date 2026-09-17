@@ -1164,6 +1164,66 @@ git commit -m "feat: add build_tabbed_shell (splash, 2-row header/tab-strip, foo
 
 ---
 
+## Final review fix (2026-09-17, after all 3 tasks merged)
+
+The final whole-branch review caught a real, confirmed Critical defect in
+this plan's own Task 3 code: `main_panel_page`'s CSS was hardcoded `""` --
+none of its 9 widget references (`<ch5-template>`) ever got position CSS.
+Verified directly against the real reference file
+(`C:\Solutions\ClaudeSamples\Components\Widget on Page.cuig`): a real
+positioned widget reference DOES carry CSS (`display: block; left; top;
+position: absolute; z-index` in the catch-all block, the same minus
+`z-index` in the landscape block, no width/height). This traces to an
+earlier misreading of `phase3_smoke_test.py`'s `css=""` call as "widget
+references need no position CSS" -- that test only proves round-trip
+byte-identity of whatever CSS is given, not that empty CSS matches what a
+real file needs.
+
+Fix: a new, purely additive `page.py::widget_reference_position_css(element_id,
+*, x, y, z_index, resolution=None) -> str` (does NOT change
+`make_widget_reference`'s or `add_widget_reference_to_page`'s existing
+signatures/return shape, so every other caller is unaffected) building the
+exact two-block shape above. `build_tabbed_shell`'s Main Panel assembly now
+calls this once per widget reference and accumulates real `main_panel_css`
+instead of `""`: header at `(0, 0, z=1)`, footer at
+`(0, panel_height - footer_height, z=1)`, every tab-content widget at
+`(0, header_height, z=1)` (stacked at the same position -- only one is ever
+visible at a time via `Visibility=Contract`), every modal at `(0, 0, z=2)`
+(a full-panel overlay, above the content layer, matching the reviewed PDF
+mockups where header/footer are visibly dimmed under an open modal, not
+hidden by it).
+
+Also fixed in the same wave (both Important, both cheap, both real
+silent-degradation risks this project's own discipline rejects):
+- `layout_patterns.py`'s Camera-modal dispatch was a bare
+  `if label == "Camera":` -- the spec's own Generic Specifications example
+  uses "Cameras" (plural), which would have silently produced an empty
+  modal with `camera_presets` discarded, no error. Normalized via a
+  case/pluralization-insensitive match, and raises if `camera_presets` is
+  given but no subsystem resolves to Camera.
+- `modal.py`'s title `ch5-text` never got a color -- on a hardcoded white
+  card with theme-driven text, this is white-on-white in a dark-theme
+  project. Wired the already-declared-but-unused `CARD_TEXT_COLOR` via
+  `palette.apply_palette`, same pattern the dismiss button already used.
+- This plan's spec (`docs/superpowers/specs/2026-09-17-tabbed-layout-commercial-design.md`)
+  had a factually wrong grounding claim about `ch5-tab-button`'s
+  `receivestateselectedbutton` being the real contract-capable tab-selection
+  signal -- corrected: the real mechanism (confirmed via
+  `contracts.contract_signals`) is the per-tab `_Press`/`_Selected` pair,
+  which `DEFAULT_SIGNALS` already correctly uses; the code was right, only
+  the spec's stated reasoning was wrong.
+
+Deferred (real but not accidental breaks of Phase 1's stated scope, same
+"structure first, styling later" precedent as Bento Box): `primary_query`
+threading through `modal.py`/`build_tabbed_shell` (Construct's property
+grid may show a stale value for the primary resolution until a later
+styling pass adds this); splash tiles filling the full panel height rather
+than a shorter row (matches the plan's own `_layout_tabbed_row` call, a
+real sizing question for whoever does the visual pass); the tab strip
+sitting flush at `x=0` while the rest of the header is inset by
+`EDGE_PADDING`; no type scale applied anywhere in this shell yet;
+`_layout_tabbed_row`'s ~90% duplication of `_layout_row`'s shape.
+
 ## After this plan
 
 Not built here (explicitly deferred in the spec): real content for the Power/
