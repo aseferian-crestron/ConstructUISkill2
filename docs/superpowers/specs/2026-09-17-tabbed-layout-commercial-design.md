@@ -7,6 +7,25 @@ Reference: `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md` (the user's
 framework-agnostic commercial "Boardroom Panel" spec) and
 `layout_ideas/commercial_splash_page.png`.
 
+**Updated 2026-09-17** after the user added a "Generic Specifications" section
+to the reference spec, generalizing 3 things this design now reflects:
+- **Header is 2 rows**, not 1: top row is room name (upper) with date/time
+  directly underneath it (lower) on the left, bottom row is the system-mode
+  tab strip, and the company logo spans the FULL header height (both rows),
+  anchored right.
+- **System modes are caller-configurable**, not a fixed 3-tab set: "System
+  Power" is always included by default; Presentation/Video Call/Audio Call
+  are included only if the caller asks for them.
+- **Footer subsystem buttons are caller-configurable**, not fixed to exactly
+  Environment/Audio/Camera: an open list (Environment/Security/Cameras/Audio/
+  etc.), each opening the same centered-card modal.
+- **Modal geometry confirmed**: asked the user directly since the new
+  "always open a full screen modal dialog" footer language conflicted with
+  §5's "centered, modal overlay... not a full navigation away" description —
+  confirmed centered card over a dimmed backdrop (not truly edge-to-edge);
+  "full screen" describes how much visual attention it commands, not its
+  literal geometry. `modal.py`'s design (below) is unaffected.
+
 ## Problem
 
 The Tabbed layout is structurally new to this generator: a splash landing
@@ -105,34 +124,54 @@ already done before Bento Box.
 
 ## Module plan
 
-- **`generator/modal.py`** (new): `build_modal_widget(sdk, title, content, *,
-  closable=True, dismissable=True, active_font=None) -> (html, css, elements)`
-  wrapped as a widget-buildable unit (same shape as `build_html_div` returns,
-  so it composes with `page.py`'s existing widget-creation path). `closable`
-  controls whether the close-icon button is added; `dismissable` controls
-  whether the transparent backdrop-tap button is added. Layout-agnostic —
-  nothing here knows about Tabbed, Camera, or Construct pages.
-- **`generator/camera_control.py`** (new): `build_camera_control(sdk, presets,
-  *, active_font=None) -> (html, css, elements)`. Composition: `ch5-dpad`
-  (native center/home button via `hidecenterbutton`/`disablecenterbutton`) +
-  separate Zoom In/Zoom Out `ch5-button`s + a `ch5-button-list` single-select
-  tile group for `presets` (caller-supplied list, per `ConstructUISkill.md`
-  §11 — no hardcoded preset names) + a power `ch5-toggle`. Standalone; no
-  knowledge of modals or pages.
+- **`generator/modal.py`** (new): `build_modal_widget(sdk, *, widget_width,
+  widget_height, widget_name, title, card_width, card_height,
+  content_builder, closable=True, dismissable=True, active_font="Roboto") ->
+  (widget_id, widget_attrs, html, css, elements)`. `widget_width`/
+  `widget_height` are the full panel the backdrop covers; `card_width`/
+  `card_height` the visible centered dialog box. `content_builder(x, y,
+  width, height, z_index) -> (html, css, elements)` is called once, with the
+  content area already computed inside the card below its title bar — this
+  keeps `modal.py` a one-call primitive (matching `build_footer_widget`/
+  `build_header_widget`'s own ergonomics) while staying fully layout- and
+  content-agnostic (nothing here knows about Tabbed, Camera, or pages).
+  `closable` adds a close-icon `ch5-button`; `dismissable` adds the
+  transparent backdrop-tap `ch5-button`. Returns the widget's own id (unlike
+  `build_footer_widget`/`build_header_widget`) since a modal may be
+  referenced from more than one page (e.g. Environment from both Splash and
+  the Main Panel).
+- **`generator/camera_control.py`** (new): `build_camera_control(sdk, *,
+  x, y, width, height, z_index, resolution, presets, active_font="Roboto")
+  -> (html, css, elements)`. Composition: `ch5-dpad` (native center/home
+  button via `hidecenterbutton`/`disablecenterbutton`) + separate Zoom
+  In/Zoom Out `ch5-button`s + a `ch5-button-list` single-select tile group
+  for `presets` (caller-supplied list, per `ConstructUISkill.md` §11 — no
+  hardcoded preset names) + a power `ch5-toggle`, laid out within the given
+  box. Standalone; no knowledge of modals or pages — matches
+  `content_builder`'s expected signature directly.
 - **`layout_patterns.py::build_tabbed_shell`** (new): composes —
-  - **Splash page**: 3 action tiles (`ch5-button`s), `Visibility=Contract`
-    per `ConstructUISkill.md` §5.
-  - **Main Panel page**: header row (room-identity + status `ch5-text`,
-    reusing `_layout_header_row`'s fixed/flexible-item split where it fits) +
-    `ch5-tab-button` strip (3 tabs, selected-state via the already-built
-    `derive_states`) + 3 tab-content widget references (Power/Video
-    Call/Audio Call — placeholder `ch5-text` content this phase) + the
-    3-zone footer widget (left: 3 modal-launcher `ch5-button`s; center:
-    Privacy Mute `ch5-toggle`; right: volume `ch5-slider` + mute
-    `ch5-toggle` — a new shape, not a reuse of the equal-N-button
-    `_layout_row` footer) + 3 modal widget references via `modal.py`
-    (Camera's content is `camera_control.build_camera_control`'s real
-    output; Environment/Audio modals built via `modal.py` with empty
+  - **Splash page**: caller-supplied action tiles (`ch5-button`s;
+    `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`'s new Generic
+    Specifications section: the skill must ask whether the project wants
+    anything on Splash at all — an empty/omitted tile list is valid),
+    `Visibility=Contract` per `ConstructUISkill.md` §5.
+  - **Main Panel page, 2-row header**: top row = room-name `ch5-text` (upper)
+    + `ch5-datetime` directly underneath it (lower, using its own real fixed
+    35px reference height), left-aligned; bottom row = `ch5-tab-button`
+    strip over the caller-supplied `system_modes` list ("System Power"
+    always included by default, Presentation/Video Call/Audio Call only if
+    asked for — not a fixed 3-tab set); company logo (`ch5-image`, square,
+    spanning the FULL header height) anchored right. + one tab-content
+    widget reference per system mode (placeholder `ch5-text` content this
+    phase, each its own `Visibility=Contract`) + the 3-zone footer widget
+    (left: one modal-launcher `ch5-button` per caller-supplied subsystem
+    name — Environment/Security/Cameras/Audio/etc., an open list per the
+    spec's Generic Specifications, not fixed to exactly 3; center: Privacy
+    Mute `ch5-toggle`; right: volume `ch5-slider` + mute `ch5-toggle` — a
+    new shape, not a reuse of the equal-N-button `_layout_row` footer) +
+    one modal widget reference per subsystem via `modal.py` (Camera's
+    content is `camera_control.build_camera_control`; every other
+    subsystem's modal is built via `modal.py` with empty
     placeholder content this phase).
 
 ## Testing approach
