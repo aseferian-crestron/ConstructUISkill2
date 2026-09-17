@@ -4,8 +4,14 @@ Implements the **Tabbed** layout pattern (`ConstructUISkill_DesignSystem.md` §2
 now the project's active layout pattern per the 2026-09-17 scope pivot —
 `docs/superpowers/specs/2026-09-16-bento-room-card-design.md`'s pause note).
 Reference: `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md` (the user's
-framework-agnostic commercial "Boardroom Panel" spec) and
-`layout_ideas/commercial_splash_page.png`.
+framework-agnostic commercial "Boardroom Panel" spec),
+`layout_ideas/commercial_splash_page.png`, and
+`docs/construct-tabbed-ui-screens-commercial.pdf` (stakeholder-reviewed visual
+mockups of all 7 screens/modals — confirms the modal/header/footer structure
+below matches; the plan's Camera-modal Position section was adjusted to match
+it: dpad centered on top, Zoom Out/Zoom In side by side below, not beside the
+dpad — the §1 persona's judgment is to follow an already-reviewed mockup
+closely rather than invent a different arrangement).
 
 **Updated 2026-09-17** after the user added a "Generic Specifications" section
 to the reference spec, generalizing 3 things this design now reflects:

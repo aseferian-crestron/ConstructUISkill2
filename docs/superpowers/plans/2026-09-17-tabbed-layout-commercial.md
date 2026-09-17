@@ -460,16 +460,16 @@ except ValueError:
     pass
 print("build_camera_control: a box too short for the 3 bands raises ValueError: OK")
 
-# --- too narrow for a square dpad + zoom buttons raises -------------------------------
+# --- too narrow for the Zoom Out/In row (below the dpad) raises -----------------------
 try:
     build_camera_control(
-        ui_sdk, x=0, y=0, width=140, height=500, z_index=5, resolution=(1280, 800),
+        ui_sdk, x=0, y=0, width=90, height=500, z_index=5, resolution=(1280, 800),
         presets=presets,
     )
-    raise AssertionError("expected ValueError for a box too narrow for dpad + zoom buttons")
+    raise AssertionError("expected ValueError for a box too narrow for the zoom button row")
 except ValueError:
     pass
-print("build_camera_control: a box too narrow for dpad + zoom buttons raises ValueError: OK")
+print("build_camera_control: a box too narrow for the zoom button row raises ValueError: OK")
 
 print("Camera Control: all assertions passed.")
 ```
@@ -494,12 +494,14 @@ signature: (x, y, width, height, z_index) -> (html, css, list[Element])).
 
 Three bands, top to bottom, per the reference spec's Camera modal section:
 Presets (ch5-button-list, single-select tile group) / Position (ch5-dpad,
-whose native center/home button covers the "home/reset" requirement, plus
-separate Zoom In/Zoom Out ch5-buttons beside it -- zoom is not part of any
-dpad in the real SDK schema) / Power (ch5-toggle). All 5 component types
-(ch5-button-list, ch5-dpad, ch5-button, ch5-toggle) are confirmed real and
-exposed in Construct (viewProperties.showOnUI: true) with real reference
-files already in this project's sample solution.
+whose native center/home button covers the "home/reset" requirement, centered
+on top of a Zoom Out/Zoom In ch5-button row below it -- zoom is not part of
+any dpad in the real SDK schema, and this arrangement matches the
+stakeholder-reviewed reference, docs/construct-tabbed-ui-screens-commercial.pdf)
+/ Power (ch5-toggle). All 5 component types (ch5-button-list, ch5-dpad,
+ch5-button, ch5-toggle) are confirmed real and exposed in Construct
+(viewProperties.showOnUI: true) with real reference files already in this
+project's sample solution.
 
 Preset labels: component.build_children's ch5-button-list path (confirmed
 real, already used by this project) auto-generates `numberofitems` generic
@@ -571,37 +573,44 @@ def build_camera_control(
     css_parts.append(presets_css)
     y_cursor += presets_h + gap
 
-    # --- Position: square dpad + Zoom In/Out stacked beside it --------------------
-    dpad_size = position_h
-    zoom_width = inner_width - dpad_size - gap
-    if zoom_width < spacing.MIN_TOUCH_TARGET:
+    # --- Position: square dpad centered on top, Zoom Out/In side by side below ----
+    # Layout (dpad above, zoom row below -- not beside it) matches the stakeholder-
+    # reviewed reference (docs/construct-tabbed-ui-screens-commercial.pdf, "Camera
+    # Modal" page): the §1 UX persona's judgment here is to follow an already-
+    # reviewed/approved mockup closely rather than invent a different arrangement,
+    # same as it would for any other reference a client has already signed off on.
+    zoom_row_height = spacing.MIN_TOUCH_TARGET
+    dpad_size = min(position_h - gap - zoom_row_height, inner_width)
+    if dpad_size < spacing.MIN_TOUCH_TARGET:
         raise ValueError(
-            f"a {inner_width}px wide box leaves only {zoom_width}px for zoom buttons "
-            f"after a {dpad_size}px square dpad -- build_camera_control needs a wider box"
+            f"the {position_h}px position band at {inner_width}px wide is too small "
+            f"for a dpad plus a Zoom Out/In row below it -- build_camera_control "
+            f"needs a bigger box"
         )
+    dpad_x = inner_x + (inner_width - dpad_size) // 2
     dpad_html, dpad_css, dpad_element = component.build_component(
         sdk, "ch5-dpad", component_name="Camera Position", element_id=generate_element_id(),
-        x=inner_x, y=y_cursor, width=dpad_size, height=dpad_size, z_index=z_index,
+        x=dpad_x, y=y_cursor, width=dpad_size, height=dpad_size, z_index=z_index,
         resolution=resolution, active_font=active_font,
     )
     elements.append(dpad_element)
     html_parts.append(dpad_html)
     css_parts.append(dpad_css)
 
-    zoom_x = inner_x + dpad_size + gap
-    zoom_h = max((position_h - gap) // 2, spacing.MIN_TOUCH_TARGET)
-    if 2 * zoom_h + gap > position_h:
+    zoom_y = y_cursor + dpad_size + gap
+    zoom_width = (inner_width - gap) // 2
+    if zoom_width < spacing.MIN_TOUCH_TARGET:
         raise ValueError(
-            f"the {position_h}px position band is too short for two "
-            f"{spacing.MIN_TOUCH_TARGET}px-floor zoom buttons"
+            f"a {inner_width}px wide box leaves only {zoom_width}px per zoom button "
+            f"side by side -- build_camera_control needs a wider box"
         )
-    for label, icon, dy in (
-        ("Zoom In", "fa-solid fa-magnifying-glass-plus", 0),
-        ("Zoom Out", "fa-solid fa-magnifying-glass-minus", zoom_h + gap),
+    for label, icon, dx in (
+        ("Zoom Out", "fa-solid fa-magnifying-glass-minus", 0),
+        ("Zoom In", "fa-solid fa-magnifying-glass-plus", zoom_width + gap),
     ):
         zoom_html, zoom_css, zoom_element = component.build_component(
             sdk, "ch5-button", component_name=label, element_id=generate_element_id(),
-            x=zoom_x, y=y_cursor + dy, width=zoom_width, height=zoom_h, z_index=z_index,
+            x=inner_x + dx, y=zoom_y, width=zoom_width, height=zoom_row_height, z_index=z_index,
             resolution=resolution, active_font=active_font, label=label,
             icon_class=icon, icon_library="FA Classic Solid",
         )

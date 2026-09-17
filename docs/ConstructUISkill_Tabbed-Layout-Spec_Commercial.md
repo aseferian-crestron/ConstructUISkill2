@@ -9,6 +9,9 @@ This panel shares its visual design system (colors, type, the coral "live/urgent
 ## Generic Specifications
 While the below specification defines actual controls and dialogs, the tabbed layout is generic that should follow this pattern:
 
+### Splash Page
+This layout will always have a splash page that can support "What do you want to do" with selections like "Presentation", "Enter Video Call", "Enter Audio Call", "Audio-Only" .. the user should be asked if they want anything on the Splash page.
+
 ### Header
 Header should support two rows. The top row is the room name on the left with the date/time directly underneath the room name.
 
