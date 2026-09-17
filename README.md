@@ -9,8 +9,38 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Room Card v1 abandoned mid-implementation; v2 design spec written, committed,
-approved by the user; paused there (user needs to step away) before writing-plans.**
+**Paused mid-research while gathering grounding for the v2 Room Card implementation
+plan -- user needs to step away, no plan file written yet.** Started
+`superpowers:writing-plans` against the approved v2 spec
+(`docs/superpowers/specs/2026-09-16-bento-room-card-design.md`); read the spec plus
+the real building blocks it composes -- `layout_patterns.py` (`build_bento_box_page`,
+`TIER_SPANS`, `_pack_bento_grid`, `_layout_header_row`, `_bento_card_type_sizes`),
+the parked v1 `room_card.py` on `.worktrees/room-card`/`feat/room-card` (for the
+proven `pointer-events:none` overlay + icon-only-button pattern, even though v1's own
+band-based composition is superseded), `html_div.py` (`build_html_div`/
+`style_html_div` -- confirmed the mechanism for the status dot + progress-bar track/
+fill), `component.py::build_component`, and `typography.py`
+(`apply_font_size`/`apply_icon_size`, TYPE_SCALE/ICON_SCALE floors) -- was reading
+`layout.py::build_position_css`/`update_element_declarations` next (for the
+`pointer-events:none` overlay mechanism and the resolution/media-query shape) when
+interrupted. Still need to check `style.py::set_html_attribute`/
+`set_component_style`, `page.py` (`generate_element_id`, widget/page attrs,
+`write_cuig`), `elements.py::Element`, `palette.py::PALETTE_MAPPING`/`NEUTRAL_SCALE`,
+and a test file (`bento_box_test.py` or similar) for this project's house testing
+style, before drafting `generator/room_card.py::build_room_card` (v2 shape: base
+button + header band (title/status-dot/subtitle) + row band (icon/label/value/
+optional progress bar), per the spec) as a task list.
+
+Next session: resume `superpowers:writing-plans` on
+`docs/superpowers/specs/2026-09-16-bento-room-card-design.md` -- pick up the file
+survey above, then write `docs/superpowers/plans/YYYY-MM-DD-bento-room-card.md`
+following this project's usual plan structure (TDD steps, self-review, execution
+handoff). No plan file exists yet; nothing in `generator/` has been created or
+modified for v2.
+
+Earlier in this same session (superseded context, kept for continuity): Room Card v1
+abandoned mid-implementation; v2 design spec written, committed, approved by the
+user; paused there (user needs to step away) before writing-plans.
 Picked up the prior turn's paused state (Room Card v1 plan committed, awaiting an
 execution-approach choice) by running `subagent-driven-development`: created an
 isolated worktree (`.worktrees/room-card` on branch `feat/room-card`, since the repo
