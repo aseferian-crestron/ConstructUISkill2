@@ -694,6 +694,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
 
 import compare  # noqa: E402
+import layout  # noqa: E402
 import sdk as sdk_module  # noqa: E402
 from layout_patterns import build_tabbed_shell  # noqa: E402
 from page import write_cuig  # noqa: E402
@@ -725,6 +726,21 @@ for mode in tab_content_widgets:
 assert "<ch5-datetime " in header_html
 assert "<ch5-image " in header_html
 print("build_tabbed_shell: header carries room name, date/time, logo, and every mode's tab label: OK")
+
+# --- header: the room-name/date-time stack must not overlap the tab strip below it -
+# (real geometry check, not just string presence -- this is the class of bug that
+# slipped through review once already: the stack's height budget must account for
+# the top EDGE_PADDING inset it's actually drawn at, not just its own content)
+header_rects = layout.parse_all_position_rules(header_css, "(max-width: 99999px)")
+datetime_id = dict(header_elements[2].attributes)["id"]
+tab_strip_id = dict(header_elements[4].attributes)["id"]
+datetime_rect = header_rects[datetime_id]
+tab_strip_rect = header_rects[tab_strip_id]
+assert datetime_rect["top"] + datetime_rect["height"] <= tab_strip_rect["top"], (
+    f"date/time (bottom={datetime_rect['top'] + datetime_rect['height']}) must not "
+    f"overlap the tab strip (top={tab_strip_rect['top']}) below it"
+)
+print("build_tabbed_shell: date/time stack doesn't overlap the tab strip below it: OK")
 
 # --- footer: one button per subsystem + Privacy Mute + volume + mute ---------------
 footer_widget_id, footer_attrs, footer_html, footer_css, footer_elements = result["footer_widget"]
@@ -902,11 +918,18 @@ def build_tabbed_shell(
         )
     top_row_height = round(header_height * 0.6)
     bottom_row_height = header_height - top_row_height
-    room_name_height = top_row_height - _DATETIME_HEIGHT - spacing.SPACING_UNIT
+    # The room-name/date-time stack starts at y=EDGE_PADDING (not y=0), so that
+    # top inset has to come out of the same top_row_height budget too, or the
+    # stack's real bottom edge lands EDGE_PADDING past top_row_height and
+    # silently overlaps the tab strip below it -- caught by task review via a
+    # real generated-CSS check (16px overlap at the 160px default header),
+    # confirmed by hand for every header_height, not just the default.
+    room_name_height = top_row_height - spacing.EDGE_PADDING - _DATETIME_HEIGHT - spacing.SPACING_UNIT
     if room_name_height <= 0:
         raise ValueError(
             f"a {header_height}px header is too short for the room-name/date-time "
-            f"stack (needs {_DATETIME_HEIGHT + spacing.SPACING_UNIT}px+ in the top row)"
+            f"stack (needs {spacing.EDGE_PADDING + _DATETIME_HEIGHT + spacing.SPACING_UNIT}px+ "
+            f"in the top row)"
         )
 
     header_widget_id = str(uuid4())
