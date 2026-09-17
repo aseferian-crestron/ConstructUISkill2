@@ -9,8 +9,50 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Paused mid-research while gathering grounding for the v2 Room Card implementation
-plan -- user needs to step away, no plan file written yet.** Started
+**Scope pivot (2026-09-17): Bento Box and Card-Based removed as required layout
+patterns; focus is now Tabbed -- commercial first, then residential.** User:
+*"I want to remove the requirement for Bento Box and Card-based layouts. I want
+to focus on the Tabbed layout for commercial first and then residential."* This
+supersedes the Room Card v2 plan-writing work below (which was Bento-Box-only) --
+that work is paused, not resumed unless Bento Box comes back into scope (spec
+file marked PAUSED, not deleted).
+
+User separately added `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`
+(untracked on disk, now committed) -- a framework-agnostic implementation
+handoff for a commercial "Boardroom Panel" tabbed shell: splash landing screen,
+persistent header (room identity + tab bar: Power/Video Call/Audio Call),
+per-tab center content, persistent 3-part footer (modal launchers left, Privacy
+Mute center, volume+mute right), and 3 modals (Environment merging lights+shades,
+per-mic Audio, PTZ Camera). Also added `layout_ideas/commercial_splash_page.png`
+(reference screenshot). The spec's own §8 lists open questions (real device/zone/
+mic/preset counts, idle-state signal wiring, etc.) -- explicitly caller-supplied
+specifics, not the skill's to invent.
+
+Per the user's clarification, documented this generically rather than leaving it
+implicit: added `ConstructUISkill.md` §11 "Layout Content Requirements" -- any
+layout pattern (starting with Tabbed) defines structure only; system modes/tabs,
+sub-system control specifics (device/zone/mic/preset counts and names), and the
+source list are always user-supplied content the skill must ask for, never
+invent -- same "ask, don't invent" rule §2 already states for project-creation
+info, now stated explicitly for layout-pattern content too. `ConstructUISkill_
+DesignSystem.md` §2 updated: Bento Box/Card-Based subsections replaced with a
+short "removed from scope" note (existing Bento Box generator code untouched,
+just no longer an active/required pattern); "Choosing a Layout" decision list
+and its intro no longer reference either pattern; new "Current focus" line names
+Tabbed commercial-first.
+
+Not yet started: brainstorming/planning the actual Tabbed layout generator
+implementation (tab strip, modal/overlay mechanism, splash screen, footer) --
+these are real new composites needing source-grounding the same way Bento Box's
+`html-div`/contract-navigation prerequisites did. No generator code for Tabbed
+exists yet.
+
+---
+
+Earlier in this same session (superseded by the pivot above, kept for
+continuity): was mid-research gathering grounding for the v2 Room Card
+implementation plan (Bento Box only) -- user needed to step away, no plan file
+written yet. Started
 `superpowers:writing-plans` against the approved v2 spec
 (`docs/superpowers/specs/2026-09-16-bento-room-card-design.md`); read the spec plus
 the real building blocks it composes -- `layout_patterns.py` (`build_bento_box_page`,

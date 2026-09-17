@@ -161,6 +161,41 @@ A Construct sample solution and project are located here: C:\Solutions\ClaudeSam
 
 Since the goal of this skill is to create & edit Construct data files, AI is responsible for developing a testing harness that compares skill-generated data files against known-valid Construct data files. AI must automatically iterate, compare and fix issues as the skill progresses before any manual testing is to be performed in Construct.
 
+## 11. Layout Content Requirements (user, 2026-09-17)
+
+A layout pattern from `ConstructUISkill_DesignSystem.md` §2 (e.g. Tabbed) defines
+generic STRUCTURE only — which chrome exists (header/tab strip, footer, modals),
+how it's composed, and how it reflows. It is never enough by itself to build a
+real project. The actual CONTENT that fills that structure is project-specific
+and must always come from the user; the skill does not invent it. This is the
+same rule already applied to every generated composite that carries real-world
+content (Bento Box card icons/labels, Room Card status text and active-subsystem
+lists) — extended here explicitly to layout patterns as a whole so it isn't
+re-litigated per pattern.
+
+For the commercial Tabbed layout (`ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`
+is the current reference spec — a generic structural plan, not a finished
+implementation target), content the user must supply before the skill can build
+the project includes, at minimum:
+
+* The system modes / top-level tabs actually present in this room (the spec's
+  Power/Video Call/Audio Call are one example, not a fixed set).
+* The sub-system controls reachable from the footer/modals and their real
+  device/zone counts and names — e.g. how many microphones and what each is
+  called, how many lighting zones and shade zones and their names, which camera
+  presets exist.
+* The source list / call platforms actually available in this room.
+* Any room-specific behavior that changes what's shown (e.g. whether a splash
+  screen's action tiles are a fixed set or vary by room capability).
+
+If this information is missing, the skill must ask for it rather than assume
+placeholder values (same "ask, don't invent" rule already stated in §2 for
+project-creation info) — a generated Tabbed project with made-up mic counts or
+zone names is not usable as-is. The spec document's own "Open questions" section
+is exactly this list of user-supplied specifics for that spec's example room; a
+different project's Tabbed layout will have its own answers to the same
+questions.
+
 
 
 

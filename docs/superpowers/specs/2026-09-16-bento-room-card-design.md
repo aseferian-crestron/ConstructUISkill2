@@ -1,5 +1,12 @@
 # Bento Box "Room Card" composite (v2) — design spec
 
+**PAUSED (user, 2026-09-17):** Bento Box is no longer a required layout pattern —
+see `ConstructUISkill_DesignSystem.md` §2 ("removed from scope" note). This spec is
+kept on disk as a record; no implementation plan was ever written against it. Not
+resumed unless Bento Box comes back into scope. Current focus is the Tabbed layout
+(commercial first, then residential) — see
+`docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`.
+
 Supersedes `docs/superpowers/specs/2026-09-16-room-card-design.md` (see that file's
 header note). Extends `generator/layout_patterns.py::build_bento_box_page` (§1 Layout
 Patterns, `ConstructUISkill_DesignSystem.md`) with a richer per-room card type. Does

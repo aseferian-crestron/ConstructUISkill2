@@ -25,7 +25,12 @@ actually running.
 
 ## 2. Layout Patterns
 
-If the user does not provide a design, the §1 persona recommends the best-fitting pattern below per "Choosing a Layout" rather than listing all five and asking the user to pick blind — it still separately confirms whether this is a **Commercial** or **Residential** interface (and, per §1, the more specific context: luxury residence, yacht, boardroom, event space, nightclub, etc.), since audience/context is information only the user can supply, not a design judgment call. Audience changes which header content and footer/menu items are conventional (see each pattern), not the underlying mechanics.
+If the user does not provide a design, the §1 persona recommends the best-fitting pattern below per "Choosing a Layout" rather than listing every option and asking the user to pick blind — it still separately confirms whether this is a **Commercial** or **Residential** interface (and, per §1, the more specific context: luxury residence, yacht, boardroom, event space, nightclub, etc.), since audience/context is information only the user can supply, not a design judgment call. Audience changes which header content and footer/menu items are conventional (see each pattern), not the underlying mechanics.
+
+**Current focus (2026-09-17):** Tabbed is the active pattern under development —
+commercial first (see `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`),
+then residential. Header-Content-Footer and Left-Side Menu remain in scope as
+already-built/available patterns; Bento Box and Card-Based do not (see below).
 
 Every pattern is built from the same primitives already established in `ConstructUISkill.md` §5: a page-based structure where each top-level selection opens its own page, with header/footer as widgets added to every page. §5's hard requirement applies to every pattern below without exception: any widget a pattern adds to every page (header, footer, tab strip, left-side menu rail) must be built with its Global Contract property set true (`page.py::default_widget_html_css(..., is_global=True)`) — it is programmed once, not once per page instance. Each pattern below specifies what varies: its component/widget composition, how it reflows across resolutions and orientations, and which §§3–9 rules constrain it most.
 
@@ -39,24 +44,18 @@ The default, safest pattern for control-panel UIs — closest to how nearly ever
 - **When to use:** the default choice; works at every panel size, so it's the fallback when no other pattern is a clearly better fit. The footer's item count is the real limiter — Material Design's own bottom-nav guidance caps at 5 destinations before requiring overflow, and the same ceiling holds here once §5's touch-target minimum and edge padding are respected at the panel's smallest configured resolution.
 - **Reflow:** header/footer stay pinned at their configured height across every device resolution; the content page reflows independently underneath. At a narrow/portrait secondary resolution, footer items shrink in width before ever wrapping to a second row — shrinking is preferred over wrapping, down to §5's touch-target floor.
 
-### Bento Box
+### Bento Box and Card-Based — **removed from scope** (user, 2026-09-17)
 
-An asymmetric grid of variously-sized cards, each representing an area (residential) or subsystem (commercial). This is the "dashboard" pattern used by smart-home apps and OS home screens (widget grids, tile layouts): size communicates importance without needing a color or label to say so.
-
-- **Composition:** one page (typically the home/landing page) containing a grid of card components; each card opens either a subsystem/area page or a popup widget.
-- **When to use:** when top-level items genuinely differ in importance or frequency of use (e.g., "Currently Playing" deserves a bigger card than "Guest Bathroom Lights"). This is §8's "one dominant action per screen" rule made literal — the largest card IS the dominant action.
-- **Sizing rule:** 2–3 card sizes max (e.g., 2x2, 2x1, 1x1 grid units). More than that stops reading as intentional hierarchy and starts reading as random. Every size is still built from the §5 spacing unit so gaps and card padding stay consistent.
-- **Reflow:** column count changes per resolution, but a card's size relative to the others is preserved. This is where §9's cross-resolution-consistency rule matters most for this pattern — a hierarchy that only reads correctly at the primary resolution has failed.
-- **Density:** governed directly by §8's density ceiling. This is the pattern most likely to accidentally violate it, since it's always tempting to add one more card.
-
-### Card-Based
-
-The same idea as Bento Box with the asymmetry removed: every card is the same size. Simpler and more predictable, at the cost of no visual hierarchy — the standard "grid of equal choices" pattern (a room list, a source list) rather than a dashboard.
-
-- **Composition:** one page with a uniform grid of same-sized card components, each opening a subsystem page, an area page, or a popup widget.
-- **When to use:** when top-level items are genuinely peers with no inherent priority order (a list of rooms, a list of sources). Switch to Bento Box the moment one item is legitimately more important than the others.
-- **Reflow:** predictable row/column count change per resolution (e.g., 2 columns on a small panel, 4 on a large tabletop panel) — with no hierarchy to preserve, this is the simplest of the five patterns to keep §9-consistent.
-- **Density:** §8's density ceiling sets the max card count directly. If the item count exceeds what fits at the minimum touch-target size (§5) even at 1 column, that's a signal to use a scrollable list instead, or split across Tabbed/Left-Side-Menu.
+Both patterns are no longer part of the skill's required layout-pattern set. Focus
+has narrowed to **Tabbed** (commercial first, then residential) — see
+`docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md` for the current
+commercial reference spec. This does not undo the Bento Box generator code
+already built (`layout_patterns.py::build_bento_box_page` and friends, plus the
+Room Card composite work) — that code stays on disk and in git history — it is
+simply no longer an active or required pattern going forward. The prior
+subsections describing Bento Box and Card-Based composition/sizing/reflow/density
+rules were removed from this doc for the same reason; see git history if that
+detail is needed again.
 
 ### Tabbed
 
@@ -77,11 +76,11 @@ A vertical, persistent menu rail (Power, Shades, Lights, Volume, etc.) with cont
 
 ## Choosing a Layout
 
-When the user gives no design direction, the skill should make a deliberate first recommendation rather than just listing all five and asking the user to pick blind:
+When the user gives no design direction, the skill should make a deliberate first recommendation rather than just listing every option and asking the user to pick blind:
 
-1. **Residential vs. Commercial** narrows header/footer content (per each pattern above) and nudges the choice itself — Bento Box (area-based, personality-driven) skews residential; Tabbed and Card-Based (subsystem-based, utilitarian) skew commercial, though neither is exclusive.
-2. **Top-level item count** is the strongest structural constraint: ≤5 items fits Header-Content-Footer cleanly; 5–7 still fits Tabbed; beyond that, prefer Left-Side Menu (large panel) or Card-Based as a browsable grid (any panel) over cramming a footer/tab strip past §5's touch-target floor.
-3. **Panel size and orientation** rules Left-Side Menu in or out first (needs landscape width to spare), then affects Bento Box's practicality — a dashboard with size hierarchy needs enough total area to read as intentional, not cramped.
+1. **Residential vs. Commercial** narrows header/footer content (per each pattern above) and nudges the choice itself — Tabbed (subsystem-based, utilitarian) skews commercial, though it is not exclusive to it (see current-focus note above: commercial ships first, residential follows).
+2. **Top-level item count** is the strongest structural constraint: ≤5 items fits Header-Content-Footer cleanly; 5–7 still fits Tabbed; beyond that, prefer Left-Side Menu (large panel) over cramming a footer/tab strip past §5's touch-target floor.
+3. **Panel size and orientation** rules Left-Side Menu in or out first (needs landscape width to spare).
 4. Whatever is chosen still inherits every rule in §§3–9 (color roles, type scale, spacing/touch-target minimums, interaction states, elevation, density, cross-resolution consistency) — the layout pattern decides structure, not an exemption from the rest of this document.
 
 
