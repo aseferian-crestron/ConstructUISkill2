@@ -106,11 +106,21 @@ shapes rather than inventing anything new:
 - **Tab content swap**: each tab's body is an ordinary **widget** added as a
   widget reference to the Main Panel page (exactly like header/footer, just 3
   of them on one page instead of 1), each with its own `Visibility=Contract`
-  boolean. `ch5-tab-button`'s `receivestateselectedbutton` (a real, confirmed
-  numeric-join attribute) is exposed so the control system can drive which
-  tab is selected and which widget is shown — the generator wires the named
-  signals, the control system decides the mapping (same division of
-  responsibility as footer navigation already has).
+  boolean. CORRECTED (2026-09-17 final review): an earlier version of this
+  section claimed `ch5-tab-button`'s `receivestateselectedbutton` was "a
+  real, confirmed numeric-join attribute" exposed for the control system to
+  drive tab selection — that is factually wrong. `receivestateselectedbutton`
+  has no contract metadata in the installed SDK's `component-context.json`
+  (confirmed: `contracts.contract_signals(sdk, "ch5-tab-button")` doesn't
+  resolve it at all). The REAL, actually contract-capable mechanism — which
+  the code already correctly uses — is a per-tab `_Press`/`_Selected` signal
+  pair on each individual tab button (`contracts.DEFAULT_SIGNALS["ch5-tab-button"]
+  = ("_Press", "_Selected")`), not a single numeric join naming the selected
+  index: the generator names each tab's own Press/Selected signals, and the
+  control system presses the tab for the mode it wants shown and reads back
+  which one is selected, driving the matching content widget's
+  `Visibility=Contract` boolean (same division of responsibility as footer
+  navigation already has).
 - **Modal**: a composite **widget** built entirely from already-proven
   primitives — a full-panel `html-div` backdrop (semi-transparent, high
   z-order — reusing the Room Card overlay's stacking precedent) + a centered

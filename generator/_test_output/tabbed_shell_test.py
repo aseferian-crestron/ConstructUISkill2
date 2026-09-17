@@ -84,6 +84,38 @@ expected_widgets = 2 + len(tab_content_widgets) + len(modal_widgets)  # header +
 assert widget_ref_count == expected_widgets, (widget_ref_count, expected_widgets)
 print(f"build_tabbed_shell: Main Panel page references all {expected_widgets} widgets exactly once: OK")
 
+# --- Main Panel page: real per-widget-reference position CSS (Fix 1 regression) -----
+# main_elements' order matches widget_placements' own build order: header, footer,
+# then each tab-content widget in dict order, then each modal in dict order.
+main_rects = layout.parse_all_position_rules(main_css, "(max-width: 99999px)")
+header_ref_id = dict(main_elements[0].attributes)["id"]
+footer_ref_id = dict(main_elements[1].attributes)["id"]
+n_tabs = len(tab_content_widgets)
+tab_ref_ids = [dict(main_elements[2 + i].attributes)["id"] for i in range(n_tabs)]
+modal_ref_ids = [dict(main_elements[2 + n_tabs + i].attributes)["id"] for i in range(len(modal_widgets))]
+
+assert main_rects[header_ref_id]["top"] == 0
+print("build_tabbed_shell: Main Panel's header widget reference is positioned at top=0: OK")
+
+DEFAULT_FOOTER_HEIGHT = 120
+DEFAULT_PANEL_HEIGHT = 800
+assert main_rects[footer_ref_id]["top"] == DEFAULT_PANEL_HEIGHT - DEFAULT_FOOTER_HEIGHT
+print("build_tabbed_shell: Main Panel's footer widget reference is positioned at "
+      "top=panel_height-footer_height: OK")
+
+DEFAULT_HEADER_HEIGHT = 160
+for tab_ref_id in tab_ref_ids:
+    assert main_rects[tab_ref_id]["top"] == DEFAULT_HEADER_HEIGHT
+print("build_tabbed_shell: every tab-content widget reference is positioned at "
+      "top=header_height: OK")
+
+content_z = max(main_rects[header_ref_id]["z_index"], main_rects[footer_ref_id]["z_index"],
+                 *(main_rects[tab_ref_id]["z_index"] for tab_ref_id in tab_ref_ids))
+for modal_ref_id in modal_ref_ids:
+    assert main_rects[modal_ref_id]["z_index"] > content_z
+print("build_tabbed_shell: every modal widget reference has a higher z-index than "
+      "the content layer (header/footer/tabs): OK")
+
 # --- every page/widget round-trips byte-identical -----------------------------------
 write_cuig(OUT / "Splash.cuig", splash_attrs, html=splash_html, css=splash_css, elements=splash_elements)
 assert compare.round_trip_check(OUT / "Splash.cuig")
@@ -113,5 +145,30 @@ try:
 except ValueError:
     pass
 print("build_tabbed_shell: an empty subsystems list raises ValueError: OK")
+
+# --- "Cameras" (plural, matching the spec's own example) still gets real content ---
+plural_result = build_tabbed_shell(
+    ui_sdk, room_name="Boardroom B", splash_tiles=[], additional_system_modes=[],
+    subsystems=["Environment", "Cameras"], camera_presets=["Wide", "Speaker Track"],
+    panel_width=1280, panel_height=800,
+)
+plural_modal_widgets = plural_result["modal_widgets"]
+_, _, plural_camera_modal_html, _, _ = plural_modal_widgets["Cameras"]
+assert "<ch5-dpad " in plural_camera_modal_html
+print("build_tabbed_shell: a plural 'Cameras' subsystem still gets real Camera content "
+      "(case/pluralization-insensitive match): OK")
+
+# --- camera_presets given with no Camera-like subsystem raises rather than silently -
+# discarding them ---------------------------------------------------------------------
+try:
+    build_tabbed_shell(
+        ui_sdk, room_name="No Camera", splash_tiles=[], additional_system_modes=[],
+        subsystems=["Environment"], camera_presets=["Wide"], panel_width=1280, panel_height=800,
+    )
+    raise AssertionError("expected ValueError for camera_presets with no Camera-like subsystem")
+except ValueError:
+    pass
+print("build_tabbed_shell: camera_presets given with no Camera-like subsystem raises "
+      "ValueError instead of silently discarding them: OK")
 
 print("Tabbed Shell: all assertions passed.")

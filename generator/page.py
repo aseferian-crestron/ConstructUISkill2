@@ -241,6 +241,30 @@ def make_widget_reference(
     return html, element
 
 
+def widget_reference_position_css(
+    element_id: str, *, x: int, y: int, z_index: int, resolution: tuple[int, int] | None = None,
+) -> str:
+    """Position CSS for a widget reference (<ch5-template>) placed on a page --
+    confirmed real shape via C:\\Solutions\\ClaudeSamples\\Components\\Widget on
+    Page.cuig: `display: block` + `left`/`top`/`position: absolute` (+ `z-index`
+    in the catch-all block only, not the landscape block) -- no width/height
+    (the reference renders whatever the referenced widget's own content is).
+    A pure addition alongside make_widget_reference/add_widget_reference_to_page
+    (which stay position-agnostic, unchanged) rather than a breaking signature
+    change to either -- this project's first caller to ever place multiple
+    positioned widget references on one page (build_tabbed_shell) computes this
+    separately and concatenates it into the page's own {Css}.
+    """
+    from layout import landscape_media_query
+    w, h = resolution if resolution else (2560, 1440)
+    return (
+        f"@media (max-width: 99999px){{#{element_id}{{display: block; left: {x}px; "
+        f"top: {y}px; position: absolute; z-index: {z_index};}}}}"
+        f"@media {landscape_media_query(w, h)}"
+        f"{{#{element_id}{{display: block; left: {x}px; top: {y}px; position: absolute;}}}}"
+    )
+
+
 # --- .cuig / .cuiw writer (shared format) ----------------------------------------------
 
 def write_cuig(

@@ -150,6 +150,10 @@ def build_modal_widget(
         resolution=resolution, active_font=active_font, label=title,
         overrides={"labelinnerhtml": title},
     )
+    title_css = palette.apply_palette(
+        title_css, dict(title_element.attributes)["id"], sdk, "ch5-text",
+        {"text_color": CARD_TEXT_COLOR},
+    )
     parts.append((title_html, title_css, title_element))
 
     if closable:

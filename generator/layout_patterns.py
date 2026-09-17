@@ -20,7 +20,7 @@ import typography
 from elements import Element
 from page import (
     add_widget_reference_to_page, build_page_attributes, build_widget_attributes,
-    default_widget_html_css, generate_element_id,
+    default_widget_html_css, generate_element_id, widget_reference_position_css,
 )
 from sdk import UiSdk
 
@@ -525,6 +525,17 @@ def _layout_tabbed_row(
     return positions
 
 
+def _is_camera_subsystem(label: str) -> bool:
+    """Case/pluralization-insensitive match for the Camera subsystem -- the
+    reference spec's own Generic Specifications example uses "Cameras"
+    (plural), which a bare `label == "Camera"` check would silently miss,
+    producing an empty modal with `camera_presets` discarded and no error.
+    See the Final review fix note in
+    docs/superpowers/plans/2026-09-17-tabbed-layout-commercial.md.
+    """
+    return label.strip().rstrip("s").lower() == "camera"
+
+
 def build_tabbed_shell(
     sdk: UiSdk, *, room_name: str, splash_tiles: list[tuple[str, str]],
     additional_system_modes: list[str], subsystems: list[str],
@@ -725,8 +736,14 @@ def build_tabbed_shell(
     # directly: a 0.6 fraction leaves Camera's content area 9px too short at
     # this plan's own default panel size, a 0.85 fraction leaves 11px margin.
     modal_card_height = round(panel_height * 0.85)
+    if camera_presets and not any(_is_camera_subsystem(s) for s in subsystems):
+        raise ValueError(
+            f"camera_presets given but no subsystem in {subsystems!r} matches "
+            f"'Camera' (case/pluralization-insensitive) -- rename the subsystem "
+            f"or drop camera_presets"
+        )
     for label in subsystems:
-        if label == "Camera":
+        if _is_camera_subsystem(label):
             def content_builder(x, y, width, height, z_index, _presets=camera_presets):
                 return camera_control.build_camera_control(
                     sdk, x=x, y=y, width=width, height=height, z_index=z_index,
@@ -762,20 +779,26 @@ def build_tabbed_shell(
     # --- main panel page: header/footer/tab-content/modal widget references ---------
     main_panel_attrs = build_page_attributes(name="Main Panel")
     main_panel_html = ""
+    main_panel_css_parts: list[str] = []
     main_panel_elements: list[Element] = []
-    widget_refs = [
-        (header_widget_id, "Header"),
-        (footer_widget_id, "Footer"),
-        *[(wid, f"{mode} Content") for mode, (wid, *_rest) in tab_content_widgets.items()],
-        *[(wid, f"{label} Modal") for label, (wid, *_rest) in modal_widgets.items()],
+    widget_placements = [
+        (header_widget_id, "Header", 0, 0, 1),
+        (footer_widget_id, "Footer", 0, panel_height - footer_height, 1),
+        *[(wid, f"{mode} Content", 0, header_height, 1) for mode, (wid, *_rest) in tab_content_widgets.items()],
+        *[(wid, f"{label} Modal", 0, 0, 2) for label, (wid, *_rest) in modal_widgets.items()],
     ]
-    for widget_id, widget_name in widget_refs:
+    for widget_id, widget_name, wx, wy, wz in widget_placements:
         main_panel_html, main_panel_elements = add_widget_reference_to_page(
             sdk, main_panel_html, main_panel_elements, widget_id, widget_name)
+        ref_element = main_panel_elements[-1]
+        ref_id = dict(ref_element.attributes)["id"]
+        main_panel_css_parts.append(
+            widget_reference_position_css(ref_id, x=wx, y=wy, z_index=wz, resolution=resolution))
+    main_panel_css = "".join(main_panel_css_parts)
 
     return {
         "splash_page": (splash_page_attrs, splash_html, splash_css, splash_elements),
-        "main_panel_page": (main_panel_attrs, main_panel_html, "", main_panel_elements),
+        "main_panel_page": (main_panel_attrs, main_panel_html, main_panel_css, main_panel_elements),
         "header_widget": (header_widget_id, header_widget_attrs, header_html, header_css, header_elements),
         "footer_widget": (footer_widget_id, footer_widget_attrs, footer_html, footer_css, footer_elements),
         "tab_content_widgets": tab_content_widgets,
