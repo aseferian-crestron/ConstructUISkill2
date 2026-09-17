@@ -570,11 +570,16 @@ def build_tabbed_shell(
         )
     top_row_height = round(header_height * 0.6)
     bottom_row_height = header_height - top_row_height
-    room_name_height = top_row_height - _DATETIME_HEIGHT - spacing.SPACING_UNIT
+    # The room-name/date-time stack starts at y=EDGE_PADDING (not y=0), so that
+    # top inset has to come out of the same top_row_height budget too, or the
+    # stack's real bottom edge lands EDGE_PADDING past top_row_height and
+    # silently overlaps the tab strip below it.
+    room_name_height = top_row_height - spacing.EDGE_PADDING - _DATETIME_HEIGHT - spacing.SPACING_UNIT
     if room_name_height <= 0:
         raise ValueError(
             f"a {header_height}px header is too short for the room-name/date-time "
-            f"stack (needs {_DATETIME_HEIGHT + spacing.SPACING_UNIT}px+ in the top row)"
+            f"stack (needs {spacing.EDGE_PADDING + _DATETIME_HEIGHT + spacing.SPACING_UNIT}px+ "
+            f"in the top row)"
         )
 
     header_widget_id = str(uuid4())
