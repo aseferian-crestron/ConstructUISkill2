@@ -9,14 +9,81 @@ built on (see **Approach** below).
 
 ## Current phase
 
-**Tabbed layout (commercial) Phase 1 shell: all 3 plan tasks DONE.**
-`generator/modal.py::build_modal_widget`, `generator/camera_control.py::
+**Tabbed shell wired into a real Construct project and live-tested for the
+first time -- several real bugs found and fixed.** After the Phase 1 shell
+(modal.py/camera_control.py/build_tabbed_shell) merged to master, built
+`generator/create_tabbed_commercial_project.py` to actually create a
+project (`TabbedCommercial`, added to the existing `C:\Solutions\
+ClaudeGenTest` solution) from `build_tabbed_shell`'s output -- the first
+time any of this shell has been written to a real project rather than test
+scratch files. Live-testing in Construct itself (not just file round-trip
+comparison) surfaced defects nothing in this project's test suite could
+have caught:
+
+- **Main Panel rendered 100% empty** (no Body tag in the Layer Manager at
+  all) until the user closed and reopened the solution. Root cause: the
+  project-creation script wrote `MainPanel.cuig` (which references 9
+  widgets via `<ch5-template>`) BEFORE the widget files it points at
+  existed on disk -- if Construct's live file watcher was already running
+  against the folder, it could resolve the page's widget references as
+  permanently empty the instant the page file appeared, never retrying.
+  Fixed: script now writes every widget file before any page that
+  references it.
+- **Splash page was unstyled and badly laid out**: 3 buttons stretched to
+  the full panel height (a row-layout helper meant for a slim footer bar
+  was reused for whole-page tiles), default Crestron blue with no card
+  styling, no room-name/headline text at all (never built), icon beside
+  the label instead of above it (also truncating the label), and no
+  subtitle line (the PDF has one, this generator never built it). Fixed:
+  compact 220x260 cards, icon-above-label (`orientation=vertical`+
+  `iconposition=top`, the same mechanism already used in the earlier Bento
+  Box work), added headline+room-name text and the subtitle line
+  (pointer-events:none overlay, Room Card's precedent), styled directly
+  from the user's own reviewed PDF (`docs/construct-tabbed-ui-screens-
+  commercial.pdf`) rather than an invented persona palette -- the user's
+  explicit direction: default styling follows the reviewed PDF when
+  nothing else is given.
+- **Header and footer were completely unstyled** (raw default look) --
+  added real background/text/border/icon colors throughout, active-tab
+  amber accent+underline on the tab strip, styled volume slider.
+- **Wrong component for Privacy Mute / Volume Mute**: both were built as
+  `ch5-toggle` (an on/off switch); the PDF shows them as `ch5-button`
+  pills matching their footer siblings, coral-highlighted when active via
+  the button's own Selected state. Swapped.
+- **Missing pressed/selected states**: every `palette.apply_palette` call
+  added this session (splash tiles, modal dismiss/title, header, footer)
+  only set the normal state, skipping this project's own standing rule
+  (user, 2026-09-13: derive pressed/selected via `palette.derive_states`)
+  -- caught when the user asked directly "aren't there already rules about
+  this?". Fixed across every call site.
+
+**Known open item, not yet root-caused**: the splash headline renders in a
+serif font in the user's live Construct instance despite `active_font=
+"Roboto"` being set correctly in the generated file -- either a font-
+loading issue specific to that Construct install or a real generator bug,
+not yet isolated.
+
+All fixes verified against the full `generator/_test_output/` suite (only
+the 2 known pre-existing unrelated failures) and against the real
+generated project files directly (not just self-consistency), not just
+taken on faith. Project regenerated and awaiting the user's next live
+check in Construct.
+
+Also as of this session: the user asked to stop using the `superpowers`
+skill process (brainstorm/plan/subagent-driven-development) for further
+work on this project going forward -- editing and testing happens directly
+in-session from here on.
+
+---
+
+Earlier in this same session (superseded by the above, kept for
+continuity): Tabbed layout (commercial) Phase 1 shell: all 3 plan tasks
+DONE. `generator/modal.py::build_modal_widget`, `generator/camera_control.py::
 build_camera_control`, and `generator/layout_patterns.py::build_tabbed_shell`
 all exist, are tested, and round-trip byte-identical against real
 `.cuig`/`.cuiw` files. See the 2026-09-17 Log entry below for what's built,
 what's confirmed vs. still a judgment call, and what's explicitly deferred
-to a future phase. Not yet done: regenerating a live Construct project with
-this shell to confirm it renders/behaves correctly in the real editor.
+to a future phase.
 
 Earlier design work in this same session, kept for continuity: Ran
 `brainstorming` (architectural path) to
