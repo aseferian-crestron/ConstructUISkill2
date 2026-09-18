@@ -1186,6 +1186,28 @@ def _split_top_components(page_attrs_text: str) -> list[tuple[int, int, str]]:
     return spans
 
 
+_TOP_PAGE_ELEMENT_MARKER_RE = re.compile(r"^\[\[Elements\]\]\r?$", re.MULTILINE)
+
+
+def _split_top_page_elements(page_attrs_text: str) -> list[tuple[int, int, str]]:
+    """(start, end, block_text) for each top-level `[[Elements]]` block in a real
+    PAGE's own PageAttributes -- the sibling of `_split_top_components`, for the
+    OTHER real TOML shape this project writes: a page's own top-level elements each
+    get their OWN `[[Elements]]` block directly (`page.py::write_cuig` calls
+    `el.to_toml_lines("Elements")` for each), unlike a WIDGET's single `[[Elements]]`
+    (the widgetContainer) with children nested as `[[Elements.Components]]`.
+    Confirmed live, 2026-09-18: the real `Presentation.cuig` has 12 top-level
+    `[[Elements]]` blocks, not one -- `_split_top_components` (built for widgets)
+    found only 1 "component" in it, a real parsing bug found before it could write
+    anything wrong."""
+    starts = [m.start() for m in _TOP_PAGE_ELEMENT_MARKER_RE.finditer(page_attrs_text)]
+    spans = []
+    for i, start in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(page_attrs_text)
+        spans.append((start, end, page_attrs_text[start:end]))
+    return spans
+
+
 def _component_name_and_id(block_text: str) -> tuple[str | None, str | None]:
     name_m = re.search(r'^componentName\s*=\s*"([^"]*)"', block_text, re.MULTILINE)
     id_m = re.search(r'^id\s*=\s*"([^"]*)"', block_text, re.MULTILINE)
@@ -1643,3 +1665,531 @@ def design_ideas_write_footer_groups(
         "added": added, "removed": removed, "removed_pages": removed_pages,
         "repositioned": repositioned, "overflow": overflow,
     }
+
+
+# --- Presentation source-selection buttons -- editing a real ------------------------
+# Sources - Center.cuiw. DesignIdeasTemplate.md §3: "When adding new source selection
+# buttons, new buttons should be cloned from an existing source button. This is due
+# to the fact that a source button uses all custom styling and includes two stacked
+# DIVs that are used for sync/no-sync detection." This module does NOT clone (see the
+# module docstring's "template-independent mechanics" rule) -- it reproduces the same
+# 3-element-per-source shape from scratch via this project's own schema-grounded
+# primitives, grounded directly against the real `Sources - Center.cuiw`
+# (C:\Solutions\CrestronDesignIdeas\BasicTemplate_v1_0_2, 2026-09-18), the same
+# read-the-real-file-first discipline used everywhere else in this module. User,
+# 2026-09-18: "presentation sources in Design Ideas are composed of 3 elements: Button
+# with text/icon, a horizontal line for video sync detected (green) and a horizontal
+# line for video sync not detected (red). When users add/remove presentation sources,
+# you need to account for 3 objects per source for removal and also addition/
+# re-centering/reflow" -- exactly the footer's own "remove/add must recompute every
+# FOLLOWING element's position" discipline, applied here to a CENTERED grid instead of
+# a left-anchored row of groups.
+#
+# Real measured geometry (every value below is a DIRECT measurement, not a guess):
+# button 186x177, shape="custom", CUSTOM mode (NOT theme -- unlike ordinary subsystem
+# group buttons, matching DesignIdeasTemplate.md §3's own "uses all custom styling"
+# note), `iconposition="top"` (icon above label, not beside it). Landscape: single row,
+# centered in the widget's own 1048px canvas (5 real buttons span 1018px, 15px margin
+# each side). Portrait: 2 columns, centered in the widget's own 650px canvas, same
+# 22px item gap and 208px column step as landscape (confirmed identical), 201px row
+# step, a trailing PARTIAL row's items centered as their own smaller row (same
+# centering formula, fewer items) -- confirmed real: Source_5 alone in portrait sits
+# at left=233, matching a 1-item row's own centered offset almost exactly.
+#
+# Element ORDER: same real, confirmed-live rule as everywhere else in this module
+# (Layer Manager / real click hit-testing keys off component-list order, FIRST =
+# FRONTMOST -- see design_ideas_build_subsystem_page's own note) -- confirmed
+# directly against the real file's own order: Sync bars, then NoSync bars, then
+# Instructions, then the buttons THEMSELVES dead last. Counterintuitive (the buttons
+# are the interactive element) but harmless here: the Sync/NoSync bars are a tiny
+# 3px-tall strip near the button's own bottom edge, not themselves interactive, so
+# sitting in front of just that thin strip doesn't block the button's own real
+# clickable area. Reproduced exactly rather than "corrected" -- this project's own
+# rule is to match the real file's structure, not to improve on it from a guess.
+SOURCE_BUTTON_WIDTH = 186
+SOURCE_BUTTON_HEIGHT = 177
+SOURCE_GAP = 22  # confirmed: column step (208) - button width (186), same both orientations
+SOURCE_COLUMN_STEP = SOURCE_BUTTON_WIDTH + SOURCE_GAP  # 208
+SOURCE_LANDSCAPE_TOP = 160
+SOURCE_LANDSCAPE_PANEL_WIDTH = 1048  # real Sources - Center.cuiw canvas width
+
+SOURCE_SYNC_WIDTH = 122
+SOURCE_SYNC_HEIGHT = 3
+SOURCE_SYNC_OFFSET_X = 32  # landscape: from the button's own left (47 - 15)
+SOURCE_SYNC_OFFSET_Y = 165  # from the button's own top (325 - 160), both orientations
+SOURCE_SYNC_COLOR = "#52a911cc"
+SOURCE_NOSYNC_COLOR = "#ed1919b3"
+
+SOURCE_PORTRAIT_COLUMNS = 2
+SOURCE_PORTRAIT_PANEL_WIDTH = 650  # real Sources - Center.cuiw portrait canvas width
+SOURCE_PORTRAIT_START_Y = 169
+SOURCE_PORTRAIT_ROW_STEP = 201
+#: A trailing PARTIAL row (fewer than SOURCE_PORTRAIT_COLUMNS items) sits an extra
+#: 8px below where the uniform row step alone would predict -- confirmed real (the
+#: template's own 5th item, alone in its own row, sits at top=579 vs the 571 a plain
+#: `SOURCE_PORTRAIT_START_Y + 2*SOURCE_PORTRAIT_ROW_STEP` would compute) but from only
+#: ONE real example, the same "confirmed once, not fully general" caveat this
+#: project already applies to the footer's own first-gap quirk.
+SOURCE_PORTRAIT_TRAILING_ROW_EXTRA_GAP = 8
+SOURCE_PORTRAIT_SYNC_OFFSET_X = 31  # portrait: from the button's own left (157 - 126)
+
+#: Custom-mode palette (NOT theme) -- pressed and selected share the SAME look in the
+#: real file (no distinct selected state), text/icon states copied via derive_states'
+#: own default "copy unchanged" rule for keys not set explicitly below.
+SOURCE_BUTTON_PALETTE: dict[str, str] = {
+    "background_color": "rgba(137, 137, 137, 0.55)",
+    "border_width": "0px",
+    "text_color": "rgba(255, 255, 255, 0.95)",
+    "icon_color": "rgba(255, 255, 255, 0.95)",
+    "pressed_background_color": "rgba(255, 255, 255, 0.7)",
+    "selected_background_color": "rgba(255, 255, 255, 0.7)",
+    "pressed_text_color": "rgba(82, 82, 82, 0.9)",
+    "selected_text_color": "rgba(82, 82, 82, 0.9)",
+    "pressed_icon_color": "rgba(82, 82, 82, 0.9)",
+    "selected_icon_color": "rgba(82, 82, 82, 0.9)",
+}
+SOURCE_ICON_FONT_SIZE = 60
+
+
+def design_ideas_source_layout_landscape(sources: list[str]) -> list[tuple[str, int, int]]:
+    """`(name, x, y)` for each source button, single row, centered in the real
+    1048px canvas -- reproduces the real template's own 5-source positions
+    (15, 223, 431, 639, 847) exactly. Raises ValueError if `sources` don't
+    fit in one row -- landscape MULTI-row wrapping has no real example to
+    ground yet (unlike portrait, which has 2 confirmed real rows), so this
+    refuses rather than guessing at an unconfirmed wrap rule."""
+    n = len(sources)
+    if n == 0:
+        return []
+    total_width = n * SOURCE_BUTTON_WIDTH + (n - 1) * SOURCE_GAP
+    if total_width > SOURCE_LANDSCAPE_PANEL_WIDTH:
+        raise ValueError(
+            f"{n} sources ({total_width}px) don't fit in one landscape row "
+            f"({SOURCE_LANDSCAPE_PANEL_WIDTH}px) -- landscape multi-row wrapping "
+            f"is not yet grounded against a real file, fewer sources needed"
+        )
+    start_x = (SOURCE_LANDSCAPE_PANEL_WIDTH - total_width) // 2
+    return [
+        (name, start_x + i * SOURCE_COLUMN_STEP, SOURCE_LANDSCAPE_TOP)
+        for i, name in enumerate(sources)
+    ]
+
+
+def design_ideas_source_layout_portrait(sources: list[str]) -> list[tuple[str, int, int]]:
+    """`(name, x, y)` for each source button, wrapped 2 columns per row,
+    each row independently centered in the real 650px canvas -- reproduces
+    the real template's own 5-source positions exactly (row0 y=169, row1
+    y=370, trailing partial row2 y=579 via SOURCE_PORTRAIT_TRAILING_ROW_
+    EXTRA_GAP). A row with fewer than SOURCE_PORTRAIT_COLUMNS items (the
+    last one, if `sources` isn't a multiple of 2) is centered as its own
+    smaller row, not left-aligned under the first column."""
+    rows = [
+        sources[i:i + SOURCE_PORTRAIT_COLUMNS]
+        for i in range(0, len(sources), SOURCE_PORTRAIT_COLUMNS)
+    ]
+    layout: list[tuple[str, int, int]] = []
+    y = SOURCE_PORTRAIT_START_Y
+    for ri, row in enumerate(rows):
+        if ri > 0:
+            y += SOURCE_PORTRAIT_ROW_STEP
+            if len(row) < SOURCE_PORTRAIT_COLUMNS:
+                y += SOURCE_PORTRAIT_TRAILING_ROW_EXTRA_GAP
+        row_width = len(row) * SOURCE_BUTTON_WIDTH + (len(row) - 1) * SOURCE_GAP
+        row_x = (SOURCE_PORTRAIT_PANEL_WIDTH - row_width) // 2
+        for ci, name in enumerate(row):
+            layout.append((name, row_x + ci * SOURCE_COLUMN_STEP, y))
+    return layout
+
+
+def _source_content(
+    sdk: UiSdk, *, name: str, x: int, y: int, sync_offset_x: int, icon_class: str,
+    icon_library: str, active_font: str, z_index: int, resolution: tuple[int, int] | None,
+) -> list[tuple[str, str, Element]]:
+    """The 3 real elements for one source: `Source_{name}` button (icon+label,
+    custom mode) + `Source_{name}_Sync` (green) + `Source_{name}_NoSync`
+    (red) -- both bars identically positioned/sized, toggled by the
+    project's own runtime contract (never both visible at once), matching
+    the real file exactly. Returned SYNC BARS FIRST (frontmost) then the
+    BUTTON LAST (backmost) -- see this section's own module note on why."""
+    btn_html, btn_css, btn_element = component.build_component(
+        sdk, "ch5-button", component_name=f"Source_{name}", element_id=generate_element_id(),
+        x=x, y=y, width=SOURCE_BUTTON_WIDTH, height=SOURCE_BUTTON_HEIGHT, z_index=z_index,
+        resolution=resolution, active_font=active_font, label=name,
+        icon_class=icon_class, icon_library=icon_library,
+        overrides={"labelinnerhtml": name, "iconposition": "top", "customvstheme": "custom"},
+    )
+    btn_id = dict(btn_element.attributes)["id"]
+    btn_css = typography.apply_icon_size(btn_css, btn_id, sdk, "ch5-button", SOURCE_ICON_FONT_SIZE)
+    btn_css = palette.apply_palette(
+        btn_css, btn_id, sdk, "ch5-button",
+        palette.applicable_subset("ch5-button", palette.derive_states(dict(SOURCE_BUTTON_PALETTE))))
+
+    sync_x, sync_y = x + sync_offset_x, y + SOURCE_SYNC_OFFSET_Y
+    sync_html, sync_css, sync_element = build_html_div(
+        component_name=f"Source_{name}_Sync", element_id=generate_element_id(),
+        x=sync_x, y=sync_y, width=SOURCE_SYNC_WIDTH, height=SOURCE_SYNC_HEIGHT,
+        z_index=z_index + 10, resolution=resolution, background_color=SOURCE_SYNC_COLOR,
+    )
+    nosync_html, nosync_css, nosync_element = build_html_div(
+        component_name=f"Source_{name}_NoSync", element_id=generate_element_id(),
+        x=sync_x, y=sync_y, width=SOURCE_SYNC_WIDTH, height=SOURCE_SYNC_HEIGHT,
+        z_index=z_index + 5, resolution=resolution, background_color=SOURCE_NOSYNC_COLOR,
+    )
+    return [
+        (sync_html, sync_css, sync_element),
+        (nosync_html, nosync_css, nosync_element),
+        (btn_html, btn_css, btn_element),
+    ]
+
+
+def design_ideas_read_sources(sources_path: Path) -> list[str]:
+    """Current source display names, in real left-to-right (landscape)
+    order, read from a real `Sources - Center.cuiw`'s own catch-all CSS +
+    PageAttributes -- never assumed, since the file may already have been
+    edited. Self-verifying: replays `design_ideas_source_layout_landscape`
+    against the inferred list and raises ValueError if it doesn't reproduce
+    the file's own real positions exactly -- same discipline as
+    `design_ideas_read_footer_groups`, and for the same reason (a source
+    layout that doesn't match this module's model is not safe to write
+    blind changes into).
+
+    `Source_{name}_Sync`/`_NoSync` are recognized and excluded by suffix --
+    only the real `Source_{name}` BUTTON contributes an entry."""
+    _preamble, sections = _read_sections(sources_path)
+    by_name = {name: content for name, _h, content in sections}
+    css_text = by_name.get("Css", "")
+    attrs_text = by_name.get("PageAttributes", "")
+
+    name_by_id: dict[str, str] = {}
+    for _s, _e, block in _split_top_components(attrs_text):
+        cname, cid = _component_name_and_id(block)
+        if cname and cid:
+            name_by_id[cid] = cname
+
+    positions = layout.parse_all_position_rules(css_text, layout.CATCH_ALL_QUERY)
+    entries: list[tuple[int, str]] = []
+    for eid, pos in positions.items():
+        cname = name_by_id.get(eid)
+        if cname is None or pos["left"] is None or not cname.startswith("Source_"):
+            continue
+        if cname.endswith("_Sync") or cname.endswith("_NoSync"):
+            continue
+        entries.append((pos["left"], cname[len("Source_"):]))
+    entries.sort(key=lambda e: e[0])
+    sources = [name for _x, name in entries]
+
+    replay = {name: x for name, x, _y in design_ideas_source_layout_landscape(sources)}
+    for x, name in entries:
+        if replay.get(name) != x:
+            raise ValueError(
+                f"design_ideas_read_sources: inferred sources {sources} do not "
+                f"reproduce {sources_path}'s own real position for {name!r} (file has "
+                f"{x}px, replaying computes {replay.get(name)}px) -- this file's "
+                f"layout doesn't match the expected rhythm; refusing to write changes "
+                f"to it blind"
+            )
+    return sources
+
+
+def design_ideas_write_sources(
+    sources_path: Path,
+    sdk: UiSdk,
+    new_sources: list[str],
+    *,
+    icon_classes: dict[str, str] | None = None,
+    icon_library: str = "FA Classic Solid",
+    active_font: str = DEFAULT_FONT,
+) -> dict[str, list[str]]:
+    """Rewrite a real `Sources - Center.cuiw` so its `Source_*`/`_Sync`/
+    `_NoSync` triplets match `new_sources` -- adding brand-new triplets,
+    removing ones no longer present, and repositioning everything else, in
+    BOTH landscape and portrait CSS, using `design_ideas_source_layout_
+    landscape`/`_portrait`. Diffs against `design_ideas_read_sources`'s OWN
+    read of the file's current state, not any assumed default -- safe to
+    call again on a file it (or a human) already edited. User's own
+    framing, 2026-09-18: "account for 3 objects per source for removal and
+    also addition/re-centering/reflow" -- this is that: every add/remove
+    handles all 3 real elements together and recomputes every OTHER
+    source's position too (the grid re-centers), not just the one being
+    touched.
+
+    `icon_classes`: `{name: "fa-solid fa-..."}` for every NEWLY ADDED
+    source (required for each one -- there is no default icon to fall back
+    to; raises if missing). Not needed for a source that already exists
+    (repositioning never touches its icon).
+
+    Explicitly OUT OF SCOPE: the `Instructions` text element's own
+    position, and anything about a source's optional `Controls - <name>`
+    widget (a separate concern -- see this module's own README notes) --
+    neither is touched here.
+
+    A newly ADDED source's 3 elements are appended at the very end of the
+    file (its own real DOM/list position, per this module's own front-to-
+    back z-order rule -- see design_ideas_build_subsystem_page's note),
+    NOT re-inserted into the real file's own role-grouped ordering
+    convention (every source's Sync bars together, then every NoSync bar,
+    then Instructions, then every button). That grouping is purely
+    cosmetic for a new source: its Sync/NoSync bars only ever overlap ITS
+    OWN button (confirmed via the real measured geometry above), never
+    another source's, so ending up placed after other sources' buttons in
+    the list has no visible or functional effect -- documented as a known,
+    harmless structural difference from a hand-authored file, not silently
+    glossed over.
+
+    Returns `{"added": [...], "removed": [...], "repositioned": [...]}`
+    (display names). Marks the project's contract stale on success, same
+    as every other structural write in this project.
+    """
+    icon_classes = icon_classes or {}
+    current_sources = design_ideas_read_sources(sources_path)
+
+    preamble, sections = _read_sections(sources_path)
+    index_by_name = {name: i for i, (name, _h, _c) in enumerate(sections)}
+    html_i, css_i, attrs_i = index_by_name["Html"], index_by_name["Css"], index_by_name["PageAttributes"]
+    html_text = sections[html_i][2]
+    css_text = sections[css_i][2]
+    attrs_text = sections[attrs_i][2]
+
+    id_by_name: dict[str, str] = {}
+    for _s, _e, block in _split_top_components(attrs_text):
+        cname, cid = _component_name_and_id(block)
+        if cname and cid:
+            id_by_name[cname] = cid
+
+    old_landscape = {n: x for n, x, _y in design_ideas_source_layout_landscape(current_sources)}
+    new_landscape = {n: x for n, x, _y in design_ideas_source_layout_landscape(new_sources)}
+    old_portrait = {n: (x, y) for n, x, y in design_ideas_source_layout_portrait(current_sources)}
+    new_portrait = {n: (x, y) for n, x, y in design_ideas_source_layout_portrait(new_sources)}
+
+    old_names, new_names = set(old_landscape), set(new_landscape)
+    to_remove = old_names - new_names
+    to_add = new_names - old_names
+    to_reposition = old_names & new_names
+
+    all_queries = _all_media_queries(css_text)
+    landscape_extra = [q for q, _s, _e in all_queries if "orientation: landscape" in q]
+    portrait_queries = [q for q, _s, _e in all_queries if "orientation: portrait" in q]
+    if len(portrait_queries) != 1:
+        raise ValueError(
+            f"expected exactly one portrait @media block in {sources_path.name}, found "
+            f"{len(portrait_queries)} -- refusing to guess which one to write into"
+        )
+    portrait_query = portrait_queries[0]
+
+    removed: list[str] = []
+    added: list[str] = []
+    repositioned: list[str] = []
+
+    for name in sorted(to_remove):
+        for suffix in ("", "_Sync", "_NoSync"):
+            cname = f"Source_{name}{suffix}"
+            eid = id_by_name.get(cname)
+            if eid is None:
+                raise ValueError(f"{cname!r} is in the file's inferred sources but has no element id")
+            html_text = _remove_html_element(html_text, eid)
+            attrs_text = _remove_toml_component(attrs_text, eid)
+            css_text = _remove_css_rules(css_text, eid)
+        removed.append(name)
+
+    for name in sorted(to_reposition, key=lambda n: new_landscape[n]):
+        new_x = new_landscape[name]
+        old_x = old_landscape[name]
+        new_py, old_py = new_portrait[name][1], old_portrait[name][1]
+        new_px, old_px = new_portrait[name][0], old_portrait[name][0]
+        if new_x == old_x and new_px == old_px and new_py == old_py:
+            continue
+        for suffix, dx in (("", 0), ("_Sync", SOURCE_SYNC_OFFSET_X), ("_NoSync", SOURCE_SYNC_OFFSET_X)):
+            cname = f"Source_{name}{suffix}"
+            eid = id_by_name.get(cname)
+            if eid is None:
+                raise ValueError(f"{cname!r} is in the file's inferred sources but has no element id")
+            if new_x != old_x:
+                css_text, _n = layout.update_element_declarations(
+                    css_text, eid, {"left": f"{new_x + dx}px"}, extra_queries=tuple(landscape_extra))
+            if new_px != old_px or new_py != old_py:
+                # Real bug, found live 2026-09-18 (user screenshot: portrait
+                # sync bars rendered at the wrong spot): this wrote the
+                # BUTTON's own `top` to the Sync/NoSync bars too, instead of
+                # offsetting by SOURCE_SYNC_OFFSET_Y like the ADD path
+                # (below) already correctly does -- a real inconsistency
+                # between the two code paths, not just a typo in one.
+                p_dx = SOURCE_PORTRAIT_SYNC_OFFSET_X if suffix else 0
+                p_top = new_py + (SOURCE_SYNC_OFFSET_Y if suffix else 0)
+                css_text = _upsert_rule_in_block(
+                    css_text, portrait_query, eid, {"left": f"{new_px + p_dx}px", "top": f"{p_top}px"})
+        repositioned.append(name)
+
+    existing_positions = layout.parse_all_position_rules(css_text, layout.CATCH_ALL_QUERY)
+    z_indices = [p["z_index"] for p in existing_positions.values() if p["z_index"] is not None]
+    next_z = (max(z_indices) + 1) if z_indices else 1
+
+    for name in sorted(to_add, key=lambda n: new_landscape[n]):
+        icon_class = icon_classes.get(name)
+        if not icon_class:
+            raise ValueError(
+                f"no icon_class given for new source {name!r} -- "
+                f"pass icon_classes={{{name!r}: '<fa class>'}}")
+        x = new_landscape[name]
+        y = SOURCE_LANDSCAPE_TOP
+        content = _source_content(
+            sdk, name=name, x=x, y=y, sync_offset_x=SOURCE_SYNC_OFFSET_X, icon_class=icon_class,
+            icon_library=icon_library, active_font=active_font, z_index=next_z, resolution=None)
+        next_z += 10
+
+        html_stripped = html_text.rstrip("\r\n")
+        html_trailing = html_text[len(html_stripped):]
+        addition_html = "".join(h for h, _c, _e in content)
+        html_text = html_stripped + addition_html + html_trailing
+
+        for part_html, part_css, part_element in content:
+            catch_all_inner = layout.find_media_block(part_css, layout.CATCH_ALL_QUERY)
+            if catch_all_inner is None:
+                raise ValueError(f"newly built element for {name!r} has no catch-all CSS block")
+            css_text = _insert_into_block(css_text, layout.CATCH_ALL_QUERY, catch_all_inner)
+
+            eid = dict(part_element.attributes)["id"]
+            cname = dict(part_element.attributes)["componentName"]
+            is_button = cname == f"Source_{name}"
+            px, py = new_portrait[name]
+            p_left = px if is_button else px + SOURCE_PORTRAIT_SYNC_OFFSET_X
+            p_top = py if is_button else py + SOURCE_SYNC_OFFSET_Y
+            p_decls = {"left": f"{p_left}px", "top": f"{p_top}px"}
+            css_text = _upsert_rule_in_block(css_text, portrait_query, eid, p_decls)
+
+        attrs_stripped = attrs_text.rstrip("\r\n")
+        attrs_trailing = attrs_text[len(attrs_stripped):]
+        new_blocks = "\n".join(
+            "\n".join(part_element.to_toml_lines("Elements.Components"))
+            for _h, _c, part_element in content
+        )
+        attrs_text = attrs_stripped + "\n" + new_blocks + "\n" + attrs_trailing
+        added.append(name)
+
+    sections[html_i][2] = html_text
+    sections[css_i][2] = css_text
+    sections[attrs_i][2] = attrs_text
+    _write_sections(sources_path, preamble, sections)
+    contracts.mark_project_stale_for(sources_path)
+
+    return {"added": added, "removed": removed, "repositioned": repositioned}
+
+
+# --- Source Controls -- a source's own optional control-panel widget -----------------
+# `Controls - <name>.cuiw` is STRUCTURALLY IDENTICAL to a subsystem popup -- confirmed
+# directly, 2026-09-18: `Controls - Template.cuiw` (the real scaffold) has the exact
+# same component names/geometry as `Popup - SubsystemTemplate.cuiw` (icon 68x72, title
+# left=67 width=333, Group_Container/Group_Title at the same offsets, close at 84x72 --
+# already this module's own CLOSE_SIZE_DEVICE, named for exactly this use case).
+# design_ideas_build_subsystem_popup(..., device_controls=True) is the SAME builder,
+# reused as-is -- no new widget-building code needed here.
+#
+# What IS new: wiring that widget's reference onto the real Presentation page.
+# Confirmed directly against the real `Presentation.cuig`: every `Controls - <name>`
+# ref sits at the EXACT SAME position as `Sources - Center`'s own ref in every one of
+# the page's 4 real @media blocks (catch-all 168,248,z=99; a landscape-extra block
+# that's `display:block` only, a delta; a SECOND landscape-extra block with its OWN
+# distinct override, display:none + 116,121; portrait 120,142,display:none) -- they
+# overlay exactly, only one visible/interactive at a time via the project's own
+# runtime contract, so a new Controls ref's own declarations are copied VERBATIM from
+# Sources - Center's real ones in each block (not a shared formula -- the blocks
+# genuinely differ from each other), with only the catch-all z-index bumped above it
+# (the only block that carries z-index at all) so the widget list front-to-back order
+# this module already enforces everywhere else stays correct. Controls refs are
+# listed BEFORE Sources - Center in the real file (frontmost, matching every other
+# confirmed z-order rule in this module).
+SOURCE_CONTROL_REF_ANCHOR = "Sources - Center"
+
+
+def design_ideas_add_source_control_ref(
+    page_path: Path, sdk: UiSdk, control_widget_id: str, control_widget_name: str,
+) -> bool:
+    """Add a `Controls - <name>` widget's reference to a real Presentation-
+    style page (Header-Center-Source pattern), positioned/behaved exactly
+    like `Sources - Center`'s own ref -- see this section's own module note
+    for why that's the correct real mechanism, not a guess. Idempotent:
+    returns False (no-op) if a ref with this widget name is already
+    present; True if it was added. Raises ValueError if the page has no
+    real `Sources - Center` ref to anchor against (not a Header-Center-
+    Source page, or the anchor's own real name has changed).
+
+    Marks the project's contract stale on an actual addition, same as
+    every other structural write in this project.
+    """
+    preamble, sections = _read_sections(page_path)
+    index_by_name = {name: i for i, (name, _h, _c) in enumerate(sections)}
+    html_i, css_i, attrs_i = index_by_name["Html"], index_by_name["Css"], index_by_name["PageAttributes"]
+    html_text = sections[html_i][2]
+    css_text = sections[css_i][2]
+    attrs_text = sections[attrs_i][2]
+
+    if f'ccid_WidgetName="{control_widget_name}"' in html_text:
+        return False
+
+    id_by_name: dict[str, str] = {}
+    for _s, _e, block in _split_top_page_elements(attrs_text):
+        cname, cid = _component_name_and_id(block)
+        if cname and cid:
+            id_by_name[cname] = cid
+    anchor_id = id_by_name.get(SOURCE_CONTROL_REF_ANCHOR)
+    if anchor_id is None:
+        raise ValueError(
+            f"{page_path} has no real {SOURCE_CONTROL_REF_ANCHOR!r} ref to anchor a "
+            f"Controls widget's position/behavior against"
+        )
+
+    new_id = generate_element_id()
+    ref_html, ref_element = make_widget_reference(sdk, control_widget_id, control_widget_name, element_id=new_id)
+
+    # HTML: insert immediately BEFORE the anchor's own tag (frontmost of the two,
+    # matching the real file's own Controls-before-Sources-Center order).
+    anchor_needle = f'id="{anchor_id}"'
+    anchor_idx = html_text.find(anchor_needle)
+    if anchor_idx == -1:
+        raise ValueError(f"anchor id {anchor_id!r} not found in {page_path}'s own Html section")
+    tag_start = html_text.rfind("<", 0, anchor_idx)
+    html_text = html_text[:tag_start] + ref_html + html_text[tag_start:]
+
+    # PageAttributes: insert immediately BEFORE the anchor's own top-level [[Elements]].
+    inserted_attrs = False
+    for start, _end, block in _split_top_page_elements(attrs_text):
+        _cname, cid = _component_name_and_id(block)
+        if cid == anchor_id:
+            new_block = "\n".join(ref_element.to_toml_lines("Elements")) + "\n"
+            attrs_text = attrs_text[:start] + new_block + attrs_text[start:]
+            inserted_attrs = True
+            break
+    if not inserted_attrs:
+        raise ValueError(f"anchor id {anchor_id!r} not found in {page_path}'s own PageAttributes section")
+
+    # Css: copy the anchor's own real declarations VERBATIM into every @media block it
+    # has one in (see this section's module note -- the blocks genuinely differ from
+    # each other, not a shared formula), bumping z-index (only present in catch-all)
+    # so the new ref stays frontmost of the two.
+    for query, _s, _e in _all_media_queries(css_text):
+        span = layout.find_media_block_span(css_text, query)
+        if span is None:
+            continue
+        block_start, block_end = span
+        anchor_m = re.search(r"#" + re.escape(anchor_id) + r"\s*\{[^{}]*\}", css_text[block_start:block_end])
+        if anchor_m is None:
+            continue
+        decls_text = re.search(r"\{([^{}]*)\}", anchor_m.group(0)).group(1)
+        decl_pairs: list[list[str]] = []
+        for decl in decls_text.split(";"):
+            decl = decl.strip()
+            if not decl or ":" not in decl:
+                continue
+            key, _, value = decl.partition(":")
+            decl_pairs.append([key.strip(), value.strip()])
+        for pair in decl_pairs:
+            if pair[0] == "z-index":
+                pair[1] = str(int(pair[1]) + 1)
+        new_rule = f"#{new_id}{{" + "; ".join(f"{k}: {v}" for k, v in decl_pairs) + ";}"
+        css_text = _insert_into_block(css_text, query, new_rule)
+
+    sections[html_i][2] = html_text
+    sections[css_i][2] = css_text
+    sections[attrs_i][2] = attrs_text
+    _write_sections(page_path, preamble, sections)
+    contracts.mark_project_stale_for(page_path)
+    return True

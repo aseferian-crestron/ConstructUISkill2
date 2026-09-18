@@ -9,6 +9,135 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Source Controls built: a source's own optional control panel, closing
+the gap flagged as "explicitly out of scope" in the previous entry.**
+User: "now i want to add a new source. and with that statement the skill
+should always ask if controls for the new source are required and if so,
+you need to create a new source controls widget for the control and add
+it to the presentation page." Updated `skills/construct-ui-skill/SKILL.md`
+with that as a standing rule (ask every time, never skip even if the
+request sounds complete without it) before building anything.
+
+Grounded directly, per the user's own pointer ("there is a Controls -
+Template widget"): `Controls - Template.cuiw` is STRUCTURALLY IDENTICAL to
+`Popup - SubsystemTemplate.cuiw` (same icon/title/close/group geometry --
+confirmed by reading both) -- `design_ideas_build_subsystem_popup(...,
+device_controls=True)` (already built earlier this session) is the SAME
+builder, reused as-is for a Controls widget with zero new widget-building
+code needed.
+
+What WAS new: `design_ideas_add_source_control_ref`, wiring that widget's
+reference onto a real `Presentation.cuig`. Read the real file first rather
+than assuming: every `Controls - <name>` ref sits at the EXACT SAME
+position as `Sources - Center`'s own ref in all 4 real `@media` blocks --
+but the 4 blocks genuinely differ from each other (one's a plain delta,
+one has its own distinct `display:none` + different position), so the new
+function copies the anchor's declarations VERBATIM per-block rather than
+assuming one shared formula, bumping only the catch-all z-index (the one
+block that carries it) to stay frontmost of the two. Confirmed real
+list-order rule again: Controls refs are listed BEFORE `Sources - Center`.
+
+**Found and fixed a real parsing bug while building this**, before it
+could write anything wrong: `_split_top_components` (built earlier this
+session for WIDGET files, which nest children as `[[Elements.Components]]`
+under one root `[[Elements]]`) found only 1 "component" in the real
+`Presentation.cuig` -- a PAGE's own top-level elements are each their OWN
+`[[Elements]]` block instead (confirmed: 12 of them, matching `page.py::
+write_cuig`'s own `el.to_toml_lines("Elements")` call for page elements).
+Added a sibling helper, `_split_top_page_elements`, for this second real
+TOML shape -- caught by testing against the real file immediately, not
+assumed to just work by analogy with the footer/subsystem-page code.
+
+7 new tests (device_controls widget round-trips; ref added/positioned/
+ordered correctly; idempotent re-add is a no-op). Full suite reverified
+(86 files now, only the 2 known pre-existing unrelated failures).
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**Real live bug in the new Presentation Sources code, found from a
+screenshot within minutes of the first live test: portrait reposition
+wrote the button's own `top` to its Sync/NoSync bars too.**
+
+User removed Cable TV + Apple TV from the live `DesignIdeasCopy` (leaving
+Laptop/PC/AirMedia) -- landscape looked right, but a portrait screenshot
+showed AirMedia's sync indicator rendered at the wrong height. Root
+cause: `design_ideas_write_sources`'s REPOSITION loop wrote `{"top":
+f"{new_py}px"}` for the button AND its Sync/NoSync bars alike -- the ADD
+path (building a brand-new source) already correctly offsets by
+`SOURCE_SYNC_OFFSET_Y` for the bars, but the reposition path, written
+separately, didn't. A real inconsistency between two code paths doing the
+same conceptual thing, not a single typo.
+
+**Why the existing test suite didn't catch it**: the earlier "remove one
+source" test removes ONLY "5" from the real 5, leaving "1"-"4" in
+positions that don't change at all (portrait rows for the first 4 sources
+are identical whether there are 4 or 5 total) -- so that scenario never
+actually exercises a REAL reposition. Added a new, more probing case
+(remove "3"+"4", leaving ["1","2","5"] -- the exact live scenario) that
+does force "5" to move to a new portrait row, and asserts its Sync bar's
+`top` equals the button's own `top` plus `SOURCE_SYNC_OFFSET_Y`, not the
+same value -- would have caught this before it ever reached a screenshot.
+Fixed the reposition loop to match the ADD path's own (already correct)
+formula. Directly repaired the live file's already-wrong Sync/NoSync
+`top`/`left` values (the normal `design_ideas_write_sources` diff-based
+call is a no-op here since the source LIST hasn't changed -- the bad
+values were already baked in from before the fix). Full suite reverified
+(only the 2 known pre-existing unrelated failures).
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**New capability: Presentation source-selection buttons (add/remove/
+reflow), the first work in this area for v2.** User: "presentation
+sources in Design Ideas are composed of 3 elements: Button with text/
+icon, a horizontal line for video sync detected (green) and a horizontal
+line for video sync not detected (red). When users add/remove
+presentation sources, you need to account for 3 objects per source for
+removal and also addition/re-centering/reflow."
+
+Grounded directly against the real `Sources - Center.cuiw`
+(`C:\Solutions\CrestronDesignIdeas\BasicTemplate_v1_0_2`, 2026-09-18),
+read fresh rather than trusting old v1 memory notes: confirmed the
+3-element-per-source shape (`Source_<name>` button, custom mode, `186x177`,
+`iconposition="top"`; `Source_<name>_Sync`/`_NoSync`, `122x3` bars, same
+position, green `#52a911cc`/red `#ed1919b3`, toggled by contract). Real
+measured layout: landscape is a SINGLE ROW centered in the widget's own
+1048px canvas (5 real buttons: 15/223/431/639/847, exact column step
+208px = 186px button + 22px gap); portrait wraps 2 per row, each row
+independently centered in the 650px canvas, 201px row step, a trailing
+partial row getting a confirmed extra 8px gap (mirrors the footer's own
+"first gap is different" quirk, but from only one real example here).
+Same z-order-matters-for-real discipline as the rest of this module
+(applied correctly from the start this time, no rework needed): real file
+order confirmed as Sync bars, then NoSync bars, then Instructions, then
+buttons dead last -- reproduced exactly, not "corrected."
+
+New `design_ideas_read_sources`/`design_ideas_write_sources` (added to
+`design_ideas_subsystem.py`, reusing the SAME generic file-editing
+helpers already built for the footer -- `_read_sections`/
+`_split_top_components`/`_upsert_rule_in_block`/etc. generalized cleanly
+to a second, unrelated real file with zero changes needed). Self-
+verifying read (replays the layout math against the file's own real
+positions, refuses to write blind if they don't match, same as the
+footer). 6 new tests, all round-trip byte-identical: layout math exact
+against the real 5-source file, read reproduces it, remove deletes all 3
+elements per source and re-centers the rest, add builds all 3 elements
+and re-centers, adding with no `icon_classes` entry raises, and 10
+sources correctly refuses (landscape multi-row wrapping has no real
+example to ground yet, explicitly flagged rather than guessed at).
+`skills/construct-ui-skill/SKILL.md` updated with a new "Editing
+Presentation Sources" section. Full suite reverified (85 files now, only
+the 2 known pre-existing unrelated failures). Source CONTROLS (the
+optional per-source `Controls - <name>` panel widget) remain explicitly
+out of scope, flagged plainly in both the code and the skill doc.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
 **Same live-test session, continued: a MUCH bigger real bug found and
 fixed -- every backdrop/container element in this module was built in
 BACKWARDS z-order, letting the biggest one (the whole popup's own

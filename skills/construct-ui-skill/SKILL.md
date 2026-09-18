@@ -350,6 +350,94 @@ mechanism this document doesn't cover yet.
 
 ---
 
+## Editing Presentation Sources (Design Ideas projects only)
+
+Gate on `IS_DESIGN_IDEAS_TEMPLATE`. Adds/removes source-selection buttons on
+the real `Sources - Center.cuiw`. Each source is 3 real elements (`Source_
+<name>` button + `Source_<name>_Sync` green bar + `Source_<name>_NoSync`
+red bar) -- adding or removing a source always means all 3 together, and
+every OTHER source's position is recomputed too (the grid re-centers).
+
+```python
+from design_ideas_subsystem import design_ideas_read_sources, design_ideas_write_sources
+
+sources_path = PROJECT_DIR / "Sources - Center.cuiw"
+current_sources = design_ideas_read_sources(sources_path)
+new_sources = [...]  # current_sources with the requested name added/removed
+report = design_ideas_write_sources(
+    sources_path, ui_sdk, new_sources, icon_classes={NAME: ICON_CLASS})
+assert compare.round_trip_check(sources_path)
+# report == {"added": [...], "removed": [...], "repositioned": [...]}
+```
+
+`icon_classes` is REQUIRED for every newly added source (no default icon --
+suggest a Font Awesome class, confirm rather than silently picking one, same
+rule as everywhere else in this document). Landscape is a SINGLE ROW,
+centered -- a set of sources that doesn't fit in the widget's own 1048px
+width raises `ValueError` rather than guessing at a wrap rule (landscape
+multi-row wrapping has no real reference file to ground yet -- say so
+plainly if a request needs more sources than fit). Portrait wraps 2 per
+row and IS grounded (real reference confirmed).
+
+**Adding a new source: ALWAYS ask whether it needs a control panel** --
+never assume either way, and never skip this question even if the user's
+request sounds complete without it (e.g. "add a Roku source" -- still
+ask). If yes, see "Source Controls" below; build and wire the `Controls -
+<name>` widget as part of the SAME request, don't treat it as a follow-up
+someone has to remember to ask for separately.
+
+Explicitly out of scope: the `Instructions` text element's own position
+(never moved).
+
+---
+
+## Source Controls (a source's own optional control panel)
+
+Gate on `IS_DESIGN_IDEAS_TEMPLATE`. `Controls - <name>.cuiw` is
+STRUCTURALLY IDENTICAL to a subsystem popup (confirmed directly against
+the real `Controls - Template.cuiw`/`Popup - SubsystemTemplate.cuiw` --
+same geometry) -- reuse `design_ideas_build_subsystem_popup(...,
+device_controls=True)` for the widget itself, no separate builder. What's
+new here is wiring that widget's reference onto the real Presentation
+page.
+
+```python
+from design_ideas_subsystem import (
+    design_ideas_build_subsystem_popup, design_ideas_add_source_control_ref,
+)
+from page import write_cuig
+import compare
+
+widget_id, w_attrs, w_html, w_css, w_elements = design_ideas_build_subsystem_popup(
+    ui_sdk, widget_name=f"Controls - {SOURCE_NAME}", title=SOURCE_NAME, icon_class=ICON_CLASS,
+    groups=GROUPS, panel_width=1048, panel_height=590, device_controls=True,
+)
+widget_path = PROJECT_DIR / f"Controls - {SOURCE_NAME}.cuiw"
+write_cuig(widget_path, w_attrs, html=w_html, css=w_css, elements=w_elements)
+assert compare.round_trip_check(widget_path)
+
+presentation_path = PROJECT_DIR / "Presentation.cuig"  # confirm the real page name first
+design_ideas_add_source_control_ref(presentation_path, ui_sdk, widget_id, f"Controls - {SOURCE_NAME}")
+assert compare.round_trip_check(presentation_path)
+```
+
+`design_ideas_add_source_control_ref` positions the new ref EXACTLY where
+`Sources - Center`'s own ref sits (both overlay; the project's own
+runtime contract shows only the currently-selected source's Controls
+widget) and lists it BEFORE `Sources - Center` (frontmost, same real
+z-order rule as everywhere else in this document). Idempotent -- a no-op
+if a ref with that widget name is already present. Raises `ValueError` if
+the page has no real `Sources - Center` ref to anchor against (not a
+Header-Center-Source style page).
+
+**Reuse-before-build**: if the project already has a matching
+`Controls - <name>.cuiw` (e.g. re-adding a source that was removed
+earlier -- removing a subsystem/source never deletes its own widget
+file), reuse it and just re-add the page ref -- don't rebuild it from
+scratch.
+
+---
+
 ## Icon/library consistency (carried over from v1, still applies)
 
 A subsystem's footer-button icon and its popup-header icon must match
