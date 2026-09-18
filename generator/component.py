@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 
 import contracts
 import fonts
+import style
 from ch5_button import build_sync_attributes
 from elements import Element
 from layout import build_position_css
@@ -429,12 +430,22 @@ def build_component_attributes(
         # path knows nothing about. Delegate rather than reimplement it worse.
         from ch5_button import build_default_button_attributes
 
-        return build_default_button_attributes(
+        button_attributes = build_default_button_attributes(
             sdk, component_name=component_name, element_id=element_id,
             devices_visited=devices_visited, active_font=active_font, label=label,
             icon_class=icon_class, icon_library=icon_library,
             **({} if contract_signals is None else {"contract_signals": contract_signals}),
         )
+        # FIXED 2026-09-18 -- real bug, found while building design_ideas_
+        # subsystem.py: `overrides` was silently dropped for every ch5-button
+        # ever built through this function (build_default_button_attributes
+        # has no `overrides` parameter at all) -- confirmed directly, an
+        # `overrides={"type": "info"}` call had zero effect. Applied here,
+        # after the button's own real attribute set exists, same "set in
+        # place or append" semantics as the generic path below.
+        for key, value in (overrides or {}).items():
+            _set(button_attributes, key, value)
+        return button_attributes
     profile = PROFILES.get(tag_name)
     if profile is None:
         raise KeyError(
@@ -443,8 +454,6 @@ def build_component_attributes(
             f"be transcribed from a real instance; see PROFILES")
 
     attributes = base_attributes(sdk, tag_name)
-    for key, value in (overrides or {}).items():
-        _set(attributes, key, value)
 
     # An explicit width/height is only honoured when `size` says "custom". "custom" is
     # not in the schema's own enum of presets -- it is a Construct-level mode, and the
@@ -475,6 +484,18 @@ def build_component_attributes(
         _set(attributes, key, value)
     _set(attributes, "ccid_ComponentType", profile.component_type)
     _set(attributes, "devicesVisited", devices_visited)
+
+    # FIXED 2026-09-18 -- real bug, found twice (first for ch5-button's
+    # `customvstheme`, now for ch5-image's `assetid` via `profile.extras`):
+    # `overrides` used to apply BEFORE all of the above profile-driven
+    # defaults, so any key this function also sets afterward silently
+    # clobbered a caller's explicit override. Moved to run LAST, after every
+    # profile default but BEFORE sync-attribute computation below (so sync
+    # attributes reflect the actually-final, overridden state) -- matches
+    # this function's own docstring: "overrides sets or adds any attribute
+    # after the base layer."
+    for key, value in (overrides or {}).items():
+        _set(attributes, key, value)
 
     if tag_name in SYNC_TAGS:
         attributes.extend(build_sync_attributes(sdk, tag_name, dict(attributes)))
@@ -585,6 +606,36 @@ def _set(attributes: list[tuple[str, str]], key: str, value: str) -> None:
     attributes.append((key, value))
 
 
+def _font_family_selectors(sdk: UiSdk, tag_name: str, context: dict) -> list[str]:
+    """Real CSS selector(s) layout.py::build_position_css should target with a
+    `font-family` rule for `tag_name` -- normally `component-context.json`'s
+    own `customThemeRequiredSelectors` (confirmed real for ch5-button/ch5-
+    tab-button/ch5-button-list/ch5-toggle/ch5-textinput/ch5-keypad/ch5-media-
+    player). ROOT-CAUSED 2026-09-17 (a real bug reported live: the splash
+    headline/room-name/date-time rendered in a fallback serif font despite a
+    correctly-set `ccid_ActiveFont`): `customThemeRequiredSelectors` is simply
+    ABSENT from the schema for ch5-text/ch5-datetime/ch5-video-switcher
+    (confirmed directly against the SDK: `None`, not an empty list by
+    omission) -- so `build_position_css` was silently never writing ANY font-
+    family rule at all for those 3 types, not a font-loading or Construct-
+    install-specific issue as first suspected.
+
+    Falls back to `style.style_property_catalog`'s own `color`-property
+    selector(s) -- the same real, schema-confirmed class Stage 1 already uses
+    to color that type's text (`.ch5-text`/`.ch5-datetime`/`.ch5-video-
+    switcher--source-list-label`+`.ch5-video-switcher--screen-list-label`,
+    verified directly against the real SDK) -- on the reasoning that
+    font-family belongs on the same element as text color, not a new guess.
+    """
+    required = (context.get("componentProperties") or {}).get("customThemeRequiredSelectors")
+    if required:
+        return required
+    return sorted({
+        entry["class_name"] for entry in style.style_property_catalog(sdk, tag_name)
+        if entry["source_property"] == "color"
+    })
+
+
 def build_component(
     sdk: UiSdk,
     tag_name: str,
@@ -650,8 +701,7 @@ def build_component(
     context = sdk.component_context.get(tag_name) or {}
     css = build_position_css(
         element_id, x=x, y=y, width=width, height=height, z_index=z_index,
-        theme_selectors=(context.get("componentProperties") or {}).get(
-            "customThemeRequiredSelectors", []),
+        theme_selectors=_font_family_selectors(sdk, tag_name, context),
         active_font=dict(attributes).get("ccid_ActiveFont", "'Roboto'").strip("'"),
         resolution=resolution,
         extra_vars=size_css_vars(sdk, tag_name, width=width, height=height,

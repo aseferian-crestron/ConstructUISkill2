@@ -30,20 +30,34 @@ from uuid import uuid4
 import component
 import palette
 import spacing
+import styleguide
 from elements import Element
 from html_div import build_html_div
 from page import build_widget_attributes, default_widget_html_css, generate_element_id
 from sdk import UiSdk
 
-#: Judgment calls (not a Construct spec), consistent with every other named
-#: constant in this project's layout-pattern modules.
-TITLE_BAR_HEIGHT = 56
-CARD_PADDING = spacing.EDGE_PADDING
-CLOSE_BUTTON_SIZE = spacing.MIN_TOUCH_TARGET
+#: Sizing/radius/padding from docs/ConstructUISkill_Tabbed-Layout-Styleguide.md
+#: §5's "Modal sheet" row (max-width 640px, max-height 82vh, radius 22px,
+#: padding 18px 20px 26px) and §5's "Modal close button" row (32x32 circle).
+#: TITLE_BAR_HEIGHT itself isn't a directly given number -- derived from the
+#: doc's own top padding (18px) plus the close button it has to vertically fit
+#: (32px), a judgment call in the same spirit as every other derived constant
+#: in this project's layout-pattern modules, but now grounded in 2 real
+#: measured numbers instead of an unrelated guess (the previous 56px).
+TITLE_BAR_HEIGHT = styleguide.MODAL_PADDING_TOP + styleguide.MODAL_CLOSE_SIZE
+#: Gap between the title bar and the content area below it -- not itself in
+#: the doc (which only gives the card's own outer padding), so this reuses
+#: the project's standard spacing unit rather than inventing a new number.
+CONTENT_TOP_GAP = spacing.SPACING_UNIT
+CARD_PADDING_X = styleguide.MODAL_PADDING_X
+CARD_PADDING_BOTTOM = styleguide.MODAL_PADDING_BOTTOM
+CLOSE_BUTTON_SIZE = styleguide.MODAL_CLOSE_SIZE
 BACKDROP_COLOR = "rgba(0, 0, 0, 0.5)"
-CARD_BACKGROUND_COLOR = "#ffffff"
-CARD_TEXT_COLOR = "#1a1a1a"
-CARD_RADIUS = 12
+CARD_BACKGROUND_COLOR = styleguide.SURFACE
+CARD_TEXT_COLOR = styleguide.TEXT_PRIMARY
+CARD_RADIUS = styleguide.MODAL_RADIUS
+MAX_WIDTH = styleguide.MODAL_MAX_WIDTH
+MAX_HEIGHT_VH_FRACTION = styleguide.MODAL_MAX_HEIGHT_VH_FRACTION
 
 #: (x, y, width, height, z_index) -> (html, css, list[Element]), called once
 #: with the content area already computed inside the card.
@@ -53,17 +67,20 @@ ContentBuilder = Callable[[int, int, int, int, int], "tuple[str, str, list[Eleme
 def content_area(card_width: int, card_height: int) -> tuple[int, int, int, int]:
     """(x, y, width, height) of the content region INSIDE a card_width x
     card_height card, relative to the card's own top-left corner -- below the
-    title bar, inset by CARD_PADDING on every side. Raises ValueError if the
-    card is too small to leave a positive content area."""
-    content_x = CARD_PADDING
-    content_y = TITLE_BAR_HEIGHT + CARD_PADDING
-    content_width = card_width - 2 * CARD_PADDING
-    content_height = card_height - TITLE_BAR_HEIGHT - 2 * CARD_PADDING
+    title bar, inset by CARD_PADDING_X on the sides and CARD_PADDING_BOTTOM
+    at the bottom (styleguide §5's asymmetric "18px 20px 26px" card padding;
+    the top inset is already spent by TITLE_BAR_HEIGHT + CONTENT_TOP_GAP, not
+    a separate padding value). Raises ValueError if the card is too small to
+    leave a positive content area."""
+    content_x = CARD_PADDING_X
+    content_y = TITLE_BAR_HEIGHT + CONTENT_TOP_GAP
+    content_width = card_width - 2 * CARD_PADDING_X
+    content_height = card_height - content_y - CARD_PADDING_BOTTOM
     if content_width <= 0 or content_height <= 0:
         raise ValueError(
             f"a {card_width}x{card_height} card leaves no room for content below "
-            f"the {TITLE_BAR_HEIGHT}px title bar and {CARD_PADDING}px padding on "
-            f"every side -- use a larger card_width/card_height"
+            f"the {content_y}px title-bar+gap and {CARD_PADDING_BOTTOM}px bottom "
+            f"padding -- use a larger card_width/card_height"
         )
     return content_x, content_y, content_width, content_height
 
@@ -156,11 +173,14 @@ def build_modal_widget(
     )
     parts.append((card_html, card_css, card_element))
 
-    title_width = card_width - 2 * CARD_PADDING - (CLOSE_BUTTON_SIZE + CARD_PADDING if closable else 0)
+    title_width = (
+        card_width - 2 * CARD_PADDING_X
+        - (CLOSE_BUTTON_SIZE + CONTENT_TOP_GAP if closable else 0)
+    )
     title_html, title_css, title_element = component.build_component(
         sdk, "ch5-text", component_name=f"{widget_name} Title",
-        element_id=generate_element_id(), x=card_x + CARD_PADDING, y=card_y + CARD_PADDING,
-        width=title_width, height=TITLE_BAR_HEIGHT - 2 * CARD_PADDING, z_index=4,
+        element_id=generate_element_id(), x=card_x + CARD_PADDING_X, y=card_y + styleguide.MODAL_PADDING_TOP,
+        width=title_width, height=CLOSE_BUTTON_SIZE, z_index=4,
         resolution=resolution, active_font=active_font, label=title,
         overrides={"labelinnerhtml": title},
     )
@@ -175,7 +195,8 @@ def build_modal_widget(
         close_html, close_css, close_element = component.build_component(
             sdk, "ch5-button", component_name=f"{widget_name} Close",
             element_id=generate_element_id(),
-            x=card_x + card_width - CARD_PADDING - CLOSE_BUTTON_SIZE, y=card_y + CARD_PADDING,
+            x=card_x + card_width - CARD_PADDING_X - CLOSE_BUTTON_SIZE,
+            y=card_y + styleguide.MODAL_PADDING_TOP,
             width=CLOSE_BUTTON_SIZE, height=CLOSE_BUTTON_SIZE, z_index=4,
             resolution=resolution, active_font=active_font, label="",
             icon_class="fa-solid fa-xmark", icon_library="FA Classic Solid",

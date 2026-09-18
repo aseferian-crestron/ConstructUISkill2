@@ -29,8 +29,12 @@ See docs/superpowers/specs/2026-09-17-tabbed-layout-commercial-design.md.
 from __future__ import annotations
 
 import component
+import palette
+import shape
 import spacing
 import style
+import styleguide
+import typography
 from elements import Element
 from page import generate_element_id
 from sdk import UiSdk
@@ -77,6 +81,27 @@ def build_camera_control(
         height=presets_h, z_index=z_index, resolution=resolution, active_font=active_font,
         overrides={"numberofitems": str(len(presets)), "orientation": "horizontal"},
     )
+    presets_id = dict(presets_element.attributes)["id"]
+    # Styleguide §6 "Tile (single-select grid)" row: surface/divider/muted
+    # icon normal state, amber border + amber-dim fill + amber icon/text when
+    # selected -- Camera Presets is exactly this "single-select tile group"
+    # (§5 of the layout spec itself).
+    presets_css = palette.apply_palette(
+        presets_css, presets_id, sdk, "ch5-button-list",
+        palette.applicable_subset("ch5-button-list", palette.derive_states({
+            "background_color": styleguide.SURFACE,
+            "border_color": styleguide.DIVIDER,
+            "border_width": "1px",
+            "border_style": "solid",
+            "text_color": styleguide.TEXT_MUTED,
+            "icon_color": styleguide.TEXT_MUTED,
+            "selected_background_color": styleguide.ACCENT_AMBER_DIM,
+            "selected_border_color": styleguide.ACCENT_AMBER,
+            "selected_text_color": styleguide.ACCENT_AMBER,
+            "selected_icon_color": styleguide.ACCENT_AMBER,
+        })),
+    )
+    presets_css = typography.apply_font_size(presets_css, presets_id, sdk, "ch5-button-list", styleguide.TILE_FONT_SIZE)
     child_ids = [dict(child.attributes)["id"] for child in presets_element.components]
     for child_id, preset_label in zip(child_ids, presets):
         presets_html = style.set_html_attribute(presets_html, child_id, "labelinnerhtml", preset_label)
@@ -91,7 +116,9 @@ def build_camera_control(
     # Modal" page): the §1 UX persona's judgment here is to follow an already-
     # reviewed/approved mockup closely rather than invent a different arrangement,
     # same as it would for any other reference a client has already signed off on.
-    zoom_row_height = spacing.MIN_TOUCH_TARGET
+    # Zoom row height is styleguide §5's real "btn-group button" measurement
+    # (37px), not the generic touch-target floor.
+    zoom_row_height = styleguide.BTN_GROUP_HEIGHT
     dpad_size = min(position_h - gap - zoom_row_height, inner_width)
     if dpad_size < spacing.MIN_TOUCH_TARGET:
         raise ValueError(
@@ -105,6 +132,19 @@ def build_camera_control(
         x=dpad_x, y=y_cursor, width=dpad_size, height=dpad_size, z_index=z_index,
         resolution=resolution, active_font=active_font,
     )
+    dpad_id = dict(dpad_element.attributes)["id"]
+    # No dedicated dpad row in styleguide §6 -- a neutral surface-alt/primary-
+    # text treatment (the doc's own generic "not otherwise colored control"
+    # look, e.g. the dropdown menu panel) rather than leaving it fully
+    # unstyled, a judgment call like every other unspeced choice in this
+    # module.
+    dpad_css = palette.apply_palette(
+        dpad_css, dpad_id, sdk, "ch5-dpad",
+        palette.applicable_subset("ch5-dpad", palette.derive_states({
+            "background_color": styleguide.SURFACE_ALT,
+            "text_color": styleguide.TEXT_PRIMARY,
+        })),
+    )
     elements.append(dpad_element)
     html_parts.append(dpad_html)
     css_parts.append(dpad_css)
@@ -116,6 +156,17 @@ def build_camera_control(
             f"a {inner_width}px wide box leaves only {zoom_width}px per zoom button "
             f"side by side -- build_camera_control needs a wider box"
         )
+    # Styleguide §6 "Outlined/secondary button (Cancel, No)" row -- Zoom
+    # Out/In are momentary secondary actions, not the primary in-call/
+    # confirmation treatment.
+    zoom_palette = palette.applicable_subset("ch5-button", palette.derive_states({
+        "background_color": styleguide.SURFACE_ALT,
+        "border_color": styleguide.DIVIDER,
+        "border_width": "1px",
+        "border_style": "solid",
+        "text_color": styleguide.TEXT_PRIMARY,
+        "icon_color": styleguide.TEXT_PRIMARY,
+    }))
     for label, icon, dx in (
         ("Zoom Out", "fa-solid fa-magnifying-glass-minus", 0),
         ("Zoom In", "fa-solid fa-magnifying-glass-plus", zoom_width + gap),
@@ -126,6 +177,11 @@ def build_camera_control(
             resolution=resolution, active_font=active_font, label=label,
             icon_class=icon, icon_library="FA Classic Solid",
         )
+        zoom_id = dict(zoom_element.attributes)["id"]
+        zoom_html, zoom_css = shape.apply_radius_px(
+            zoom_html, zoom_css, zoom_id, sdk, "ch5-button", styleguide.BTN_GROUP_RADIUS)
+        zoom_css = palette.apply_palette(zoom_css, zoom_id, sdk, "ch5-button", zoom_palette)
+        zoom_css = typography.apply_font_size(zoom_css, zoom_id, sdk, "ch5-button", styleguide.BTN_GROUP_FONT_SIZE)
         elements.append(zoom_element)
         html_parts.append(zoom_html)
         css_parts.append(zoom_css)
@@ -136,6 +192,21 @@ def build_camera_control(
         sdk, "ch5-toggle", component_name="Camera Power", element_id=generate_element_id(),
         x=inner_x, y=y_cursor, width=inner_width, height=power_h, z_index=z_index,
         resolution=resolution, active_font=active_font, label="Power",
+    )
+    power_id = dict(power_element.attributes)["id"]
+    # Styleguide §6 "Toggle switch" row: "amber for device power... match the
+    # token to what the switch represents" -- camera power is exactly that
+    # case. Track/knob geometry (42x24 track, 18x18 knob) isn't wired here:
+    # ch5-toggle's box width/height drives layout position, not the
+    # component's own internal track/knob render size, which this project's
+    # style mechanism doesn't expose a property for (confirmed absent from
+    # palette.py's _TOGGLE_PALETTE -- label/icon color only, no fill/size).
+    power_css = palette.apply_palette(
+        power_css, power_id, sdk, "ch5-toggle",
+        palette.applicable_subset("ch5-toggle", palette.derive_states({
+            "text_color": styleguide.TEXT_PRIMARY,
+            "icon_color": styleguide.ACCENT_AMBER,
+        })),
     )
     elements.append(power_element)
     html_parts.append(power_html)

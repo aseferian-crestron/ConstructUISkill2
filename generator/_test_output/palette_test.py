@@ -111,8 +111,10 @@ print("the rewritten .cuig still round-trips section-for-section: OK")
 normal_only = {"background_color": "#204060", "border_color": "#80c0ff",
               "border_width": "2px", "text_color": "#ffffff", "icon_color": "#ffcc00"}
 derived = palette.derive_states(normal_only)
-assert derived["pressed_background_color"] == color_words_module.adjust_lightness("#204060", -0.15)
-assert derived["selected_background_color"] == color_words_module.adjust_lightness("#204060", 0.12)
+assert derived["pressed_background_color"] == color_words_module.adjust_lightness(
+    "#204060", palette.PRESSED_LIGHTNESS_DELTA)
+assert derived["selected_background_color"] == color_words_module.adjust_lightness(
+    "#204060", palette.SELECTED_LIGHTNESS_DELTA)
 # border/text/icon carry over UNCHANGED to both states -- standard button practice
 assert derived["pressed_border_color"] == derived["selected_border_color"] == "#80c0ff"
 assert derived["pressed_border_width"] == derived["selected_border_width"] == "2px"
@@ -124,7 +126,8 @@ print("derive_states: pressed darkens, selected lightens, everything else carrie
 explicit = {"background_color": "#204060", "pressed_background_color": "#000000"}
 derived2 = palette.derive_states(explicit)
 assert derived2["pressed_background_color"] == "#000000"  # honored, not overwritten
-assert derived2["selected_background_color"] == color_words_module.adjust_lightness("#204060", 0.12)  # still derived
+assert derived2["selected_background_color"] == color_words_module.adjust_lightness(
+    "#204060", palette.SELECTED_LIGHTNESS_DELTA)  # still derived
 print("derive_states never overwrites an explicitly-set pressed_/selected_ key: OK")
 
 # --- end-to-end: a derived 3-state palette applied to a real button -------------------

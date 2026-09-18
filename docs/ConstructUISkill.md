@@ -175,8 +175,10 @@ re-litigated per pattern.
 
 For the commercial Tabbed layout (`ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`
 is the current reference spec — a generic structural plan, not a finished
-implementation target), content the user must supply before the skill can build
-the project includes, at minimum:
+implementation target — paired with `ConstructUISkill_Tabbed-Layout-Styleguide.md`
+for concrete sizing/radii/interaction states at the 1280×800 target viewport),
+content the user must supply before the skill can build the project includes,
+at minimum:
 
 * The system modes / top-level tabs actually present in this room (the spec's
   Power/Video Call/Audio Call are one example, not a fixed set).

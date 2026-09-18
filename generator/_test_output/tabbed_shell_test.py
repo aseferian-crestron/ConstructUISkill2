@@ -97,13 +97,15 @@ modal_ref_ids = [dict(main_elements[2 + n_tabs + i].attributes)["id"] for i in r
 assert main_rects[header_ref_id]["top"] == 0
 print("build_tabbed_shell: Main Panel's header widget reference is positioned at top=0: OK")
 
-DEFAULT_FOOTER_HEIGHT = 120
+import styleguide  # noqa: E402
+
+DEFAULT_FOOTER_HEIGHT = styleguide.FOOTER_HEIGHT
 DEFAULT_PANEL_HEIGHT = 800
 assert main_rects[footer_ref_id]["top"] == DEFAULT_PANEL_HEIGHT - DEFAULT_FOOTER_HEIGHT
 print("build_tabbed_shell: Main Panel's footer widget reference is positioned at "
       "top=panel_height-footer_height: OK")
 
-DEFAULT_HEADER_HEIGHT = 160
+DEFAULT_HEADER_HEIGHT = styleguide.HEADER_HEIGHT_WITH_TABS
 for tab_ref_id in tab_ref_ids:
     assert main_rects[tab_ref_id]["top"] == DEFAULT_HEADER_HEIGHT
 print("build_tabbed_shell: every tab-content widget reference is positioned at "

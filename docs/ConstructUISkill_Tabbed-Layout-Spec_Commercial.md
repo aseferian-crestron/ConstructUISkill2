@@ -6,26 +6,7 @@ Implementation handoff for the boardroom control panel's tabbed shell — a diff
 
 This panel shares its visual design system (colors, type, the coral "live/urgent" accent) with the residential and boardroom bento panels — see those specs for the full token table. Anything not restated here should be assumed identical.
 
-## Generic Specifications
-While the below specification defines actual controls and dialogs, the tabbed layout is generic that should follow this pattern:
-
-### Splash Page
-This layout will always have a splash page that can support "What do you want to do" with selections like "Presentation", "Enter Video Call", "Enter Audio Call", "Audio-Only" .. the user should be asked if they want anything on the Splash page.
-
-### Header
-Header should support two rows. The top row is the room name on the left with the date/time directly underneath the room name.
-
-The bottom row can contain systems modes is the user specifies: System Power (always included by default), Presentation, Video Call, Audio Call
-
-The company logo should span both rows and be anchored to the right side of the header.
-
-### Footer
-The footer will contain sub-system controls. I.E. Environment (Lights, Shades, HVAC), Security, Cameras, Audio. It can also contain Privacy Mute and room volume.
-
-The controls will always open a full screen modal dialog.
-
-### Center Content
-The center content area will show controls based on the system mode selected.
+**Concrete sizing note:** this document originally shipped without pixel dimensions, radii, or button-interaction states, which left Claude Code guessing on exactly the details that matter most for a touch-panel build. That gap is fixed in `ConstructUISkill_Tabbed-Layout-Styleguide.md` (1280×800 target viewport) — read it alongside this document; §7 below points to the specific sections that matter for this panel.
 
 ---
 
@@ -111,7 +92,13 @@ Three-part layout, present and identical on every tab:
 
 ## 7. Visual design intent
 
-Reuses the shared token set from the bento specs in full (background/surface/text roles, amber = on/active, sky = reserved for climate/comfort if ever reintroduced, sage = secure/safe state, coral = live/urgent/call-related). No new tokens are needed for this layout — the same coral used for an active call in the bento panel should be reused here for: the header's live-call status indicator, in-call action emphasis on the Video Call tab, and the muted state on individual Audio-modal mics and the footer's mute toggles.
+**Concrete sizing, radii, font sizes, and button states now live in a separate document: `ConstructUISkill_Tabbed-Layout-Styleguide.md`, measured at the 1280×800 target viewport.** This section previously gave only color/type intent with no dimensions — that was a gap, since Claude Code can't size a header, footer, tab, tile, or button without real numbers, and can't build correct interactive components without normal/pressed/selected states defined. Read the styleguide alongside this spec; it is not optional supplementary material.
+
+Boardroom-specific numbers worth calling out directly (also in the styleguide, §2 and §5):
+- Full header height **99px** (identity row + tab row) — taller than the Residential panel's 62px specifically because of the tab row; if a future revision drops tabs here too, the header should shrink the same way Residential's did.
+- The company logo mark is 26×26px at 7px radius; treat the logo as a fixed-size slot next to the status text, not a flexible one.
+- The camera modal's PTZ direction pad uses **rounded-square** buttons (14px radius) deliberately distinct from the **circular** call-action buttons (mute/camera/end-call), so navigation controls and call actions never look interchangeable at a glance.
+- Coral is reserved for live/urgent state — the header's in-call status, the in-call action buttons, and any muted-mic indicator — per the styleguide's token table.
 
 Typography, radii, and card/surface treatment should match the bento panels as well — the intent is that someone moving between the bento overview and this tabbed control surface reads them as one product, not two.
 

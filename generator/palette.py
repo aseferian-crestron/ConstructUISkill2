@@ -182,14 +182,24 @@ _WIFI_SIGNAL_LEVEL_GAUGE_PALETTE: dict[str, tuple[str, str]] = {
 
 # Three real, distinct parts (track/filled-portion/handle) -- mapped to the
 # FILLED "connect" portion, the part most associated with "the slider's color".
-# Track and handle are real but not exposed under these generic keys -- a
-# deliberate initial scope limit (see module docstring), not an oversight.
+# The unfilled "target" track is real but not exposed under these generic
+# keys -- a deliberate initial scope limit (see module docstring), not an
+# oversight. handle_* keys ADDED 2026-09-18 (confirmed real via style.
+# style_property_catalog -- `.noUi-handle` has its own background-color/
+# border-color/border-width/border-style, no width/height/radius entry) after
+# a live pixel-comparison against a reviewed PDF showed the handle needs its
+# own distinct white-fill + accent-colored-ring treatment, not the connect
+# portion's fill color.
 _SLIDER_PALETTE: dict[str, tuple[str, str]] = {
     "background_color": (".ch5-slider .noUi-connect", "background-color"),
     "border_color": (".ch5-slider .noUi-connect", "border-color"),
     "border_width": (".ch5-slider .noUi-connect", "border-width"),
     "border_style": (".ch5-slider .noUi-connect", "border-style"),
     "text_color": (".ch5-slider.ch5-advanced-slider-container .ch5-title-container .ch5-label", "color"),
+    "handle_background_color": (".ch5-slider .noUi-handle", "background-color"),
+    "handle_border_color": (".ch5-slider .noUi-handle", "border-color"),
+    "handle_border_width": (".ch5-slider .noUi-handle", "border-width"),
+    "handle_border_style": (".ch5-slider .noUi-handle", "border-style"),
 }
 
 _DPAD_PALETTE: dict[str, tuple[str, str]] = {
@@ -319,7 +329,22 @@ def applicable_subset(tag_name: str, resolved_palette: dict[str, str]) -> dict[s
 #: practice) for deriving pressed/selected looks from a normal-state color when the
 #: caller hasn't set one explicitly: pressed recedes (darker, "pushed in"), selected
 #: stands out (lighter, "highlighted"). See derive_states.
-PRESSED_LIGHTNESS_DELTA = -0.15
+#:
+#: PRESSED_LIGHTNESS_DELTA updated 2026-09-17 from -0.15 to -0.08 to match
+#: docs/ConstructUISkill_Tabbed-Layout-Styleguide.md §6's measured rule ("pressed =
+#: an 8% black... overlay on top of whatever the control's current background is"
+#: -- this module's flat-color derive_states can't layer a real overlay, so it
+#: applies the doc's own named fallback, "a discrete color swap using the same
+#: 'darken 8%' value... as a fixed color rather than a computed overlay"). Global,
+#: not Tabbed-scoped, since a pressed state receding 15% vs. 8% is the same generic
+#: web/native convention this constant already claimed to follow -- the styleguide
+#: is just a more precisely measured source for a number that was always a
+#: judgment call. SELECTED_LIGHTNESS_DELTA is intentionally left unchanged: §6's
+#: selected treatment is genuinely per-component (a filled button has no selected
+#: state at all, a tile gets a fill+border+icon change, a tab gets a border only),
+#: not a single reusable lighten fraction -- applied directly at each Tabbed call
+#: site in layout_patterns.py/camera_control.py instead of centralized here.
+PRESSED_LIGHTNESS_DELTA = -0.08
 SELECTED_LIGHTNESS_DELTA = 0.12
 
 #: normal-state key -> its pressed_/selected_ counterparts, and whether that

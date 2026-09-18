@@ -9,6 +9,1068 @@ built on (see **Approach** below).
 
 ## Current phase
 
+**Same live-test session, continued: a MUCH bigger real bug found and
+fixed -- every backdrop/container element in this module was built in
+BACKWARDS z-order, letting the biggest one (the whole popup's own
+Container_Controls) block clicks on literally everything.**
+
+User: "the group container div needs to be added before you add the
+controls. otherwise it blocks the pressing of the controls underneath."
+Checked the live file first rather than assuming -- z-index values AND
+component-list order both already looked correct by ordinary CSS logic
+(container z=2 < buttons z=3, container listed first). User then supplied
+the real proof: a screenshot of Construct's own Layer Manager, showing
+`Container_Controls` (this project's OUTER popup backdrop, not just a
+per-group one) as the HIGHEST layer -- and asked directly: "did you not
+analyze the Lights Popup for z-order?" Root-caused properly by reading two
+real files' own actual `[[Elements.Components]]` order (not guessed):
+
+- `Popup - SubsystemTemplate.cuiw`: `Control, Group_Title, Group_Container,
+  Controls_Close, Subsystem_Title, Subsystem_Icon, Container_Controls` --
+  content BEFORE its own group's container, Container_Controls dead LAST.
+- `Lights.cuig` (page level): `Popup(-More)/Popup, Footer-Volume, Footer,
+  CenterDIV, Header, Background` -- Background dead LAST.
+
+Confirmed: Construct's Layer Manager (and its real click hit-testing) is
+driven by **component list ORDER**, FIRST = frontmost, LAST = backmost --
+not solely the z-index CSS value, which this module's own scheme already
+had directionally right but which apparently isn't what Construct's own
+UI/runtime keys off for stacking. Every prior popup/page this module built
+had backdrops FIRST (backwards) -- `_header_and_container` now returns
+its Container_Controls SEPARATELY so the caller can place it dead last;
+`design_ideas_build_subsystem_popup` assembles group content, then header
+pieces, then Container_Controls last; each group's own Group_Container is
+now appended after its title/content, not before; `design_ideas_build_
+subsystem_page` rebuilt to the exact real order (Popup ref first,
+Background last). 2 new regression tests (one per file) lock in the real
+order against both reference files. Live `Popup - Pool.cuiw`/`Pool.cuig`
+rebuilt with the corrected order. Full suite reverified (only the 2 known
+pre-existing unrelated failures).
+
+**Lesson for this module going forward, stated plainly since it was missed
+initially: any layering/stacking claim needs to be checked against a REAL
+file's actual order, the same discipline already applied to geometry and
+CSS values everywhere else here -- not inferred from generic CSS z-index
+reasoning alone, which this specific platform does not fully follow.**
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**The icon-offset approach from the previous entry was tested live and
+DISPROVEN -- corrected to a simpler, now-confirmed mechanism.**
+
+A real screenshot of the rebuilt "Pool" popup showed the icon flush against
+the button's left edge AND the label no longer centered -- the opposite of
+the intent ("leave the text centered"). Root cause: `apply_icon_offset`'s
+own assumption (icon and label are independently positioned, so moving the
+icon's `margin-left` alone would leave the label's own centered position
+untouched) was WRONG -- they are one flowing inline unit under
+`halignlabel`, so a large negative margin-left on the icon dragged the
+label along with it. `typography.py::apply_icon_offset` itself is kept
+(the underlying `margin-left` property IS real, confirmed via Construct's
+own property panel) but its docstring now says plainly that it is NOT a
+safe independent-position knob, falsified live, not merely theorized.
+`design_ideas_subsystem.py`'s control-icon layout now uses
+`apply_icon_gap` instead (icon-to-label spacing only, `margin-right`,
+already a real tested helper used elsewhere in this project) with
+`halignlabel` left at its schema default -- the icon+label pair centers
+together as one readable unit, which is what actually renders correctly.
+Regression test updated to check for the real written property
+(`icon-margin-right`, not the `Icon_margin-right`/`Icon_margin-left` alias
+names that don't exist for this specific property -- confirmed by reading
+the actual generated CSS instead of assuming the naming pattern from
+other properties). Live "Pool" popup rebuilt again with the corrected
+mechanism. Full suite reverified (only the 2 known pre-existing unrelated
+failures).
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**2 more real fixes from more Construct screenshots of the rebuilt "Pool"
+popup -- buttons now expand to fill their group with a symmetric margin,
+and plain-list controls can carry a left-side icon.**
+
+1. **Plain-list buttons now EXPAND to fill their group's own width** --
+   user, from a screenshot: fixed-width buttons left a large, uneven gap on
+   the RIGHT only ("the left side gap is a good margin"). `button_w` is no
+   longer `DEFAULT_BUTTON_SIZE`/`LARGE_BUTTON_SIZE`'s own fixed width --
+   computed per-group instead (`width - 2 * CONTROL_INSET`, symmetric on
+   both sides). `large_buttons` now only affects height (both presets are
+   75px anyway, so currently a no-op -- kept for API stability, documented
+   as such rather than removed).
+2. **New `control_icons=` param: a plain-list control can carry a left-side
+   icon** -- user: "you can add icons to the left side of the control
+   buttons if you can find icons that make sense... you can check Popup -
+   Lights for layout rules." Read the real `Popup - Lights.cuiw` first: its
+   own real pattern is TWO fully-overlaid `ch5-button`s per control (a
+   57px-wide custom-mode icon-only button + the full-width theme-mode
+   label button, both at the identical box) -- then told directly to
+   IGNORE that real pattern: "with support for icon and text offsets, you
+   can handle this in a single component." First attempt used
+   `halignlabel="left"` to move icon+label together -- corrected live from
+   a SECOND screenshot (Construct's own real "Icon Styles > Horizontal
+   Offset" property panel field): the label must stay centered, unchanged;
+   only the ICON moves, via its own real `margin-left` (new
+   `typography.py::apply_icon_offset`, confirmed real via
+   `style.style_property_catalog` -- the SAME property `apply_icon_gap`
+   already uses on the same selector, but for the icon's OWN position, not
+   the icon-to-label gap). Offset magnitude is a documented judgment call
+   (button-width-proportional, ignoring the icon glyph's own unmeasurable
+   half-width) pending live visual confirmation, not a measured constant.
+   Live "Pool" popup rebuilt with real, sensible per-control icons (toggle-
+   on/off for Pump/Heater, play/stop for Start/Stop Cycle).
+
+Full suite reverified (only the 2 known pre-existing unrelated failures)
+after each fix. New regression tests for both in `design_ideas_subsystem_
+test.py`.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**Same live-test session, continued: 2 more real bugs found from actual
+Construct screenshots of the rebuilt "Pool" popup, both fixed.**
+
+1. **Group_Container was stretched to the popup's full available height for
+   EVERY group, regardless of actual control count** -- user, from a
+   screenshot: a 4-button "Pool" group and a 2-button "Filter" group both
+   rendered with identical, oversized boxes, leaving a large empty band
+   below the real content in both. Root cause: `Group_Container`'s height
+   was always `group_height` (the full space below the header), never
+   computed from the group's own content. Fixed: refactored the existing
+   `needed_height` validation helper into a shared `content_height(labels)`
+   used for BOTH the too-tall check and the actual container height
+   (`GROUP_PAD_TOP + content + GROUP_BOTTOM_PAD`, new symmetric-margin
+   constant) -- so a group's box now fits ONLY its own content. Deliberately
+   NOT applied to `ButtonListGroup`: a scrollable `ch5-button-list` genuinely
+   benefits from filling the available box (more visible rows before a
+   scroll is needed), unlike a fixed stack of individual buttons -- kept
+   filling the full height there on purpose, not an oversight. New
+   regression test locks in the real numbers (4-button group = 367px,
+   2-button = 195px, confirmed different).
+2. **Rebuilding an already-referenced popup with the fix silently orphaned
+   its own page's widget reference** -- `design_ideas_build_subsystem_popup`
+   always generated a brand-new random widget Id on every call, with no way
+   to reuse an existing one. Regenerating the real `Popup - Pool.cuiw` to
+   apply bug #1's fix gave it a FRESH Id, while `Pool.cuig`'s own
+   `templateid="w<old-id>"` reference still pointed at the OLD one -- caught
+   by directly comparing the two real files' Ids before trusting the fix was
+   complete, not assumed clean because it round-tripped (round-trip-checking
+   only confirms a file parses/serializes correctly, not that OTHER files
+   still reference it correctly). Fixed: new optional `widget_id=` parameter
+   reuses a given Id instead of generating one; live `Popup - Pool.cuiw`
+   repaired with its own real original Id, reference confirmed matching
+   again.
+
+Full suite reverified (only the 2 known pre-existing unrelated failures)
+after each fix, not batched. `Popup - Pool.cuiw`/`Pool.cuig`/`Footer -
+Main.cuiw` on the real `DesignIdeasCopy` project are all now consistent and
+correct.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**Live-tested remove/add on the real `DesignIdeasCopy` project (user's own
+request: "can i test the new features: remove a sub-system, add a new sub
+system that you dont know about?") -- found and fixed 2 real bugs in the
+footer-reflow mechanism that only surfaced from driving it live, plus one
+confirmed real 1px cosmetic gap the user explicitly accepted.**
+
+1. Removed Shades (footer `Phone`/`Shades`/etc.-style removal, standard
+   path) -- clean, `Shades.cuig` deleted, `Popup - Shades.cuiw`/`- More`
+   kept, round-trips.
+2. Added a brand-new "Pool" subsystem (popup with 2 groups of plain
+   buttons, page, Font Awesome `fa-solid fa-water`) as a 5th, standalone
+   footer group -- hit a real bug: `design_ideas_write_footer_groups`
+   unconditionally refused ANY 5th group, citing a `DividerGroup4` name
+   collision with Privacy_Mute's own fixed divider. User pushed back with a
+   live screenshot showing real, visible freed footer space (from the
+   Shades removal) and asked directly why there wasn't room. Root cause:
+   purely a NAMING artifact in this module's own sequential divider-naming
+   (`DividerGroup{gi}`), not a physical limit -- fixed via
+   `_internal_divider_name` (skips the literal number 4, permanently
+   reserved for Privacy_Mute's real divider) and removed the outright
+   refusal, since the REAL physical-fit question is already answered by the
+   `overflow` report.
+3. Retried Pool as a 5th group -- WROTE successfully (`DividerGroup5`
+   added) with `overflow: []`, but a second live screenshot showed the new
+   icon rendered flush against/overlapping the fixed divider. Investigated
+   rather than assumed: `Menu_Pool` (636-723px) genuinely overlapped
+   `DividerGroup4` (715-718px) and left only 5px before Privacy_Mute
+   (728px) -- a SECOND real bug, this one in the overflow check itself: it
+   compared the new layout's last item only against Privacy_Mute's own raw
+   left edge, never against `DividerGroup4`'s own real position (which
+   sits `FOOTER_GROUP_GAP` + its own 3px width further LEFT of Privacy_Mute
+   -- the actual binding constraint). Fixed: overflow now checks against
+   `DividerGroup4`'s real left edge minus `FOOTER_GROUP_GAP`, falling back
+   to Privacy_Mute only if `DividerGroup4` isn't present. Reverted the
+   broken live edit (`delete_pages=False`, since Pool's page/widget are
+   still good, just not fitting as their own group), confirmed the fix
+   correctly flags this exact scenario via `overflow` now.
+4. Asked the user where Pool should actually go (a required SKILL.md step
+   this session added earlier) -- chose the Lights group (alone since
+   Shades left, plenty of room). Writing it there is real but leaves Audio
+   ending exactly 1px past the clean 705px boundary (9px gap instead of the
+   canonical 10px before DividerGroup4) -- surfaced this plainly rather
+   than silently accepting or silently reverting; user confirmed 1px is
+   fine to leave as-is. **Final live state of `DesignIdeasCopy`'s footer:**
+   `[Power] [Lights, Pool] [Camera, Phone, VideoCall] [Audio]` -- `Pool.cuig`
+   and `Popup - Pool.cuiw` both real, on disk, referenced, round-trip
+   clean. Popup's `Visibility=Contract` wiring to its new footer button is
+   still the one documented manual-in-Construct step.
+
+2 new regression tests added to `design_ideas_footer_write_test.py`
+(fixture source also switched from the live, now-permanently-mutated
+`DesignIdeasCopy` to the untouched master `BasicTemplate_v1_0_2` -- the
+live project is real user workspace, not a safe "pristine" fixture
+anymore) covering both bugs: a 5th group that DOES fit (reproduces the
+`DividerGroup5` naming fix), and one that does NOT (reproduces the
+`overflow`-detection fix, asserting a real report instead of a silent
+`overflow: []`). Full suite reverified (only the 2 known pre-existing
+unrelated failures).
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+
+**Subsystem popup WIDGET content shapes done: D-pad cross, scrollable
+button-list, numeric keypad, and warning-dialog message -- the 4 gaps
+`design_ideas_subsystem.py`'s own module docstring had flagged as "NOT yet
+built" since the footer add/remove work finished.** User, mid-turn: "now we
+need to finish the widget and pages part" of the subsystem-add workflow,
+plus new standing guidance -- when adding a subsystem, always ask
+existing-group-vs-new-group explicitly, and use the real `Popup -
+SubsystemTemplate.cuiw` (in the Design Ideas project) to ground widget
+size/layout, not just v1's own already-learned constants.
+
+Reading that real file caught 2 genuine bugs in ALREADY-shipped, already-
+tested code, found by cross-checking rather than assuming the existing
+constants were still right: the header's `Subsystem_Title` was stretched to
+fill the gap up to the close button (`panel_width - icon_w - close_w`) --
+the real file has a FIXED 333px width instead (now `TITLE_WIDTH`); and
+`Group_Title` was placed at the container's own top edge (`y=GROUP_TOP`,
+overlapping it) -- the real file has it sitting entirely ABOVE the
+container (top=78, ending 2px before the container starts at 119, now
+`GROUP_TITLE_TOP`/`GROUP_TITLE_HEIGHT`). Both fixed; full `design_ideas_
+subsystem_test.py` (existing + new assertions) still round-trips byte-
+identical against real `.cuiw` output.
+
+New group-content markers (`DpadGroup`/`ButtonListGroup`/`KeypadGroup`,
+built via `design_ideas_dpad_group()`/`_button_list_group()`/
+`_keypad_group()`), passed as a group's control value in place of a plain
+label list, dispatched in `design_ideas_build_subsystem_popup`'s per-group
+loop (reworked from a fixed-GROUP_WIDTH slot loop to a variable-slot-width
+one, since KeypadGroup needs its own wider real slot, `KEYPAD_SLOT_WIDTH`
+=267, not the standard 291px group):
+- **D-pad**: NOT the native `<ch5-dpad>` component (confirmed a DIFFERENT
+  thing -- DesignIdeasTemplate.md §5 names this "a collection of individual
+  button objects", and this template's own bespoke version is 5 separate
+  custom-styled ch5-buttons in a cross + a 6th decorative theme-mode
+  background circle). Geometry/CSS transcribed VERBATIM from v1's own
+  already-learned real measurement (`Controls - Apple TV.cuiw`) rather than
+  re-measuring -- same "transcribe v1's already-learned constants" precedent
+  already used for the footer rhythm. `shape.apply_radius_px` gives each
+  button/background its real circular shape.
+- **Button-list**: one native `ch5-button-list`, already fully schema-
+  covered by `component.py` (theme mode by default, no override needed --
+  unlike ch5-button, which needed a real fix earlier this project for
+  `overrides` to reach it at all).
+- **Keypad**: one native `ch5-keypad` (its real 13-button child set is
+  already free from `component.py`'s own `KEYPAD_KEYS`/`build_children`,
+  and `writes_css_size` already emits `height: auto` for it since it's
+  aspect-locked from width alone -- no per-key geometry to hand-author,
+  unlike the D-pad) + an optional contract-driven digits-readout row above
+  it (`display=True`).
+- **Message**: an optional second `ch5-text` on the popup builder
+  (`message=`), enabling a `groups=[]` warning/alert-dialog shape --
+  `pd-receivestatescriptlabelhtml="Contract Enabled"` comes for free the
+  same way the title's already does.
+
+7 new test assertions in `design_ideas_subsystem_test.py` (all 4 new group
+shapes present + build correctly, 2 real `.cuiw` round-trip writes covering
+a D-pad popup and a warning-dialog popup, TITLE_WIDTH regression check).
+Full suite reverified (only the 2 known pre-existing unrelated failures,
+`page_background_color_test.py`/`phase5_smoke_test.py`).
+
+`skills/construct-ui-skill/SKILL.md`'s "Adding a Subsystem" section updated
+to match: documents all 4 new group shapes, adds the explicit "existing
+group or new one?" question as a required step (reading the footer's real
+current groups first, before asking, so the options offered are real), and
+names `Popup - SubsystemTemplate.cuiw` as the reference for a new
+subsystem's own widget size/layout. Still not built: wiring the popup's
+`Visibility=Contract` toggle to the footer button (manual in Construct for
+now, unchanged), and the "-More" secondary popup shape.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**First v2 skill file written: `skills/construct-ui-skill/SKILL.md`.** User
+asked to switch from deep implementation to building the actual skill
+workflow so they can start testing live and adjusting code as real gaps
+surface. Found something important first: the skill the user actually has
+INSTALLED and uses day to day (`construct-ui-skill:construct-ui-skill`,
+resolves to `C:\Users\<user>\.claude\plugins\marketplaces\crestron-
+construct-skills`) is v1's own donor-cloning codebase (`design_ideas_
+subsystem.py`, `generate-project.py`, `skeletons/*.skel`) published as a
+real plugin -- NOT anything from this session's work. That plugin's own
+`SKILL.md` (739 lines) is "the original markdown document" the user meant --
+an already-proven, detailed, step-by-step workflow (context detection,
+cloning, custom-subsystem authoring, source controls, global modals,
+branding) built around v1's API surface.
+
+Rather than design a new workflow from scratch, adapted that PROVEN
+structure to v2's actual, narrower, currently-real capability surface --
+explicitly NOT claiming v1 parity. New `skills/construct-ui-skill/SKILL.md`
+covers exactly two workflows, both grounded in real, already-tested v2
+code:
+- **Copying an existing project** -- fully real, maps directly to
+  `project_copy.copy_project_as` (validated against the real Design Ideas
+  Basic Template earlier this session).
+- **Adding a subsystem** (Design Ideas only) -- explicitly marked PARTIAL:
+  covers the popup+page building (real, tested), but tells whoever's
+  following it that the footer button still needs manual placement in
+  Construct for now, since that file-editing piece isn't built yet -- not
+  glossed over.
+
+A "Status of this document" section up front tells whoever follows it (a
+future me, or the user) not to assume any v1 capability this doc doesn't
+explicitly restate exists in v2 yet (no from-scratch project generation, no
+source controls, no global modals, no branding). Asked the user how they
+want to test it (formal plugin packaging vs. just following the file
+directly) -- confirmed: just follow it directly, no packaging yet, fastest
+to iterate.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Portrait footer reflow: confirmed structurally different from landscape,
+not just different numbers, and built/proven exact.** User asked directly:
+"will the reflow logic handle adjustment off the primary resolution?" --
+checked rather than assumed, and the honest answer was no. Real portrait CSS
+in `Footer - Main.cuiw` shows: buttons stack VERTICALLY (fixed x, varying
+y) instead of horizontally; each divider ROTATES from a 3x60 vertical bar
+to an 80x3 horizontal one; the gap constant is 12px, not landscape's 6px.
+
+Found a second real wrinkle investigating `Privacy_Mute`: it flows with the
+rhythm perfectly in landscape (matches exactly), but in portrait it sits at
+a position (y=728, ~376px of empty space below it in a 1174px-tall widget)
+that no discoverable formula reaches -- not bottom-pinned, not rhythm-
+extended. Read as a one-time manual placement in the original template, not
+a rule. Asked the user rather than guess: confirmed -- leave it fixed,
+never reflow it, in portrait specifically (it already correctly flows with
+the rhythm in landscape, that behavior is kept).
+
+Built `design_ideas_footer_layout_portrait(groups)` -- same shape as the
+landscape function, direction-flipped, its own gap constants (including a
+confirmed real quirk: the very first gap, Power->DividerGroup1, measures
+10px while every other gap measures 12px -- not noise, every downstream
+position was off by exactly 2px until this was special-cased). Reproduces
+all 10 real measured portrait positions exactly. 3 new tests (exact
+reproduction, Privacy_Mute/DividerGroup4 correctly never produced, removal
+correctly closes the gap in the vertical direction too). Full suite
+reverified (only the 2 known pre-existing unrelated failures).
+
+Also answered a design question directly: "do we need a custom reflow class
+for Design Ideas?" -- yes, domain-specific logic (named groups + orientation-
+flipped direction has no equivalent in this project's existing generic
+`reflow.py`, which solves a different problem: auto-reflowing arbitrary
+existing elements to fit a new resolution, no group-membership concept).
+Built as plain functions in `design_ideas_subsystem.py`, not a class --
+matches this entire codebase's consistent functional style, nothing else
+here uses classes.
+
+Landscape + portrait reflow MATH is now done and proven exact for both
+breakpoints. Still not built: splicing either into the real `Footer - Main.
+cuiw` file, and creating/deleting the actual `Menu_*` elements.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**"Add a subsystem" (the first modification workflow after copying a
+Design Ideas project) -- page-creation piece DONE and round-trip tested
+against the real copied template; footer icon-group reflow math DONE and
+proven exact; splicing the reflow into the real Footer widget file is the
+clear next step, not yet built.**
+
+Fixed a THIRD instance of the same `overrides`-clobbering class of bug (see
+"Current phase" below for the first two) while building the page: `ch5-
+image`'s `ComponentProfile.extras=(("assetid", "0"),)` was applied AFTER
+`overrides` in the GENERIC (non-button) path too, so `overrides={"assetid":
+...}` silently did nothing for any type with profile extras. Root-caused
+properly this time instead of patching around it again: moved the entire
+`overrides` loop to run LAST in `build_component_attributes` (after every
+profile-driven default, before sync-attribute computation) -- matches the
+function's own docstring ("sets or adds any attribute after the base
+layer") and fixes both the ch5-button and ch5-image cases (and any future
+type) with one change. Full suite reverified, no regressions.
+
+**`design_ideas_learn_project_shared` + `design_ideas_build_subsystem_page`**
+(new, in `design_ideas_subsystem.py`): read the real `Lights.cuig` in full
+(not just the widget refs already known) to find a subsystem page is NOT
+just Header/Footer/Popup references -- it also carries its own per-page
+Background `ch5-image` (contract-driven URL, each page its own instance
+pointed at the same shared asset) and a "CenterDIV" semi-transparent
+backdrop confined to the header-to-footer band only (real z-order confirmed:
+Background(60) < Header(62) < CenterDIV(64) < Footer(66) < Volume(98) <
+the popup itself(113+) -- header and footer stay undimmed, only the content
+strip behind an open popup darkens). Built and tested against the REAL
+`DesignIdeasCopy` project: all 4 widget refs (learned Header/Footer/Volume +
+a newly-built Popup) present with Visibility=Contract, Background image
+carries the real learned assetid + Url contract signal, full round-trip.
+Explicitly deferred: the "-More" secondary popup shape, and the actual
+footer nav button (see below).
+
+**Footer icon-group reflow math** (`design_ideas_footer_layout`, new): user
+gave the real default grouping directly (Power / Environment={Lights,
+Shades} / Call={Camera, Phone, VideoCall} / Settings={Audio}, divided by
+vertical-line dividers) and flagged that removing a subsystem must reflow
+the spacing, not leave a gap. Pulled the REAL measured rhythm straight from
+`Footer - Main.cuiw`'s own catch-all CSS rather than guessing: 87x70
+buttons, 3x60 dividers, 6px gap between buttons in the SAME group, 10px gap
+on both sides of every divider. `design_ideas_footer_layout(groups)`
+reproduces the real file's own 10 measured x-positions EXACTLY (not
+approximately) from the default grouping alone. Tested 4 additional real
+scenarios: removing one item from a group (gap closes, later groups shift),
+removing an entire group (no orphan divider, divider count correctly drops),
+adding an item (extends with the same rhythm), and a single-group case (zero
+dividers).
+
+**Not yet built**: actually splicing the recomputed positions into the real
+`Footer - Main.cuiw` file (a genuinely different, riskier operation than
+anything built so far this session -- editing an existing 139KB real file
+across 4 real media-query blocks, vs. every prior deliverable writing brand
+new files from scratch), and building/removing the actual `Menu_*` button
+elements themselves (add) or deleting them (remove). The reflow MATH this
+work needed is done and proven; the file-editing layer on top of it is the
+next concrete step.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**`project_copy.py` validated against the REAL Design Ideas Basic Template**
+(`C:\Solutions\CrestronDesignIdeas\BasicTemplate_v1_0_2`, user-supplied
+location, as promised) -- copied it into the existing `ClaudeGenTest`
+solution as `DesignIdeasCopy` and verified thoroughly, not just re-run the
+small synthetic test:
+
+- Found 2 new file types this real template has that `GenTestProject`
+  didn't: `.cca` (33MB, a ZIP archive of asset files already present
+  individually as `.cuia` siblings) and `.cuic` (17MB, a JSON index
+  carrying the project's own GUIDs). Confirmed BOTH are Construct-
+  regenerated caches, not real content, via direct ground truth: the SAME
+  template, already copied by the user through Construct's own real UI into
+  `ClaudeGenTest\BasicTemplate_v1_0_2`, has NEITHER file; independently,
+  `TabbedCommercial` (this project's own generated project, never given a
+  `.cuic`) has one now because Construct created it on first open. Excluded
+  both from the copy (`SKIP_EXTENSIONS`) to match Construct's real behavior
+  exactly.
+- 123 files copied (matches source minus the 2 skipped types exactly), 71
+  owned GUIDs all replaced with none leaked, all 8 sampled real pages/
+  widgets round-trip byte-identical (up to 450K chars).
+- Investigated an initial "12 GUIDs still present in both source and copy"
+  finding rather than assuming it was a bug: 11 are icon references into
+  Crestron's own shared static-asset CDN (`StaticFiles/<library-guid>/
+  <icon-guid>/...`) -- external, shared across every Crestron project, never
+  owned by this one; the 12th is a custom device-resolution config id
+  embedded in the `.cuip`'s own resolution list, self-contained, nothing
+  else references it. Both correctly left unchanged, confirmed not a bug.
+- Ran a full referential-integrity sweep (not just "GUIDs differ"): every
+  `templateid`/`assetid` cross-reference in the copy (67 checked, widgets
+  AND assets both) resolves to a real, present Id in the SAME copy -- zero
+  dangling references. New project correctly registered in `ClaudeGenTest.
+  csln` alongside the existing 4 projects.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**New module: `generator/project_copy.py` -- "Add existing project as a
+copy," the real Construct action for starting a new project from an
+existing one (e.g. the Design Ideas template), grounded directly in
+Construct's own source, not guessed.** User described the intended skill
+workflow: user says they want to use a Design Ideas Template (giving its
+location -- never hardcoded), skill creates a NEW solution and adds that
+existing project into it AS A COPY.
+
+Traced the real mechanism through 4 layers of `C:\Git\CCIDE` source
+(`AddProjectCopyEffect.cs` -> `Solution.Server`'s `AddProjectCopyHandler.cs`
+-> `UiEditor.Server`'s own `AddProjectCopyHandler.cs` -> `ProjectSaveAsHandler.cs`)
+to the actual operation: `uiEditorProject.DeepCopy(newGuids: true)` -- EVERY
+entity in the whole project (the project itself, every page, every widget,
+every asset) gets a brand-new GUID, not just the top-level project Id, with
+every cross-reference updated consistently, then the whole thing is re-saved
+under the new name.
+
+Reproduced this at the file level without a running Construct server:
+`copy_project_as(source_project_dir, dest_solution_dir, new_project_name)`
+collects every GUID a file in the source project declares as its own
+identity (`Id = "..."` in its own `[Attributes]`/`[AssetAttributes]` block --
+confirmed via a real project that this is the ONLY place a GUID is
+"declared owned," vs. e.g. `templateid="w<guid>"`, which is a REFERENCE
+using the same raw substring, not a separate declaration), maps each to a
+fresh uuid4, copies the whole project directory, then does a global old->new
+GUID text substitution across every Construct text file in the copy
+(`.cuip`/`.cuib`/`.cuig`/`.cuiw`/`.cuia`) -- correctly rewrites both an
+entity's own declaration and every reference to it in one pass, without
+needing to separately enumerate every reference attribute name. Binary
+asset files (jpg/png/gif/svg) copy byte-for-byte, untouched.
+
+New test (`generator/_test_output/project_copy_test.py`), run against a real
+project (`C:\Solutions\ClaudeGenTest\GenTestProject`) copied into a fresh
+throwaway solution: every source file present in the copy, all 6 source
+GUIDs replaced with none leaked, every widget reference in a copied page
+resolves to a real widget Id THAT EXISTS in the copy (referential integrity,
+not just "GUIDs changed"), 3 copied files round-trip byte-identical, new
+project registers correctly in the target solution's `.csln`, both error
+cases (name already used in target, source has no `.cuip`) raise. Full suite
+reverified (only the 2 known pre-existing unrelated failures) -- confirmed
+`C:\Solutions\ClaudeGenTest\GenTestProject\GenTestProject.cuip` changed on
+disk mid-session (the user's own live Construct edit, unrelated -- this
+module only ever READS from a source project, never writes to it).
+
+Not yet built: the skill-level conversational flow itself (asking the user
+for the template location, the new solution name, the new project name) --
+`copy_project_as` is the file-operation primitive that flow will call, not
+the flow. User said they'll provide a real Design Ideas template location
+to test against next.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**New module: `generator/design_ideas_subsystem.py` -- the Design Ideas
+template's subsystem-popup pattern, built from scratch against v2's own
+schema-grounded primitives, replacing v1's donor-cloning implementation of
+the same name.** User referenced the old v1 skill (`C:\ClaudeProjects\
+ConstructUISkill\design_ideas_subsystem.py`) and, after confirming it cloned
+from donor skeleton files, asked directly for a NEW v2 file using this
+project's own existing library instead -- not a port of v1's code.
+
+Read v1's file (1584 lines) and `docs/DesignIdeasTemplate.md` (the template's
+own documented design values -- icon/close button sizes, container-div fill/
+border/radius, button sizes, title/group-title font sizes and color) to
+separate what's genuinely template-SPECIFIC (those values) from what's
+already template-INDEPENDENT machinery this project has (component.py/
+html_div.py/palette.py/typography.py/page.py). Built `design_ideas_build_
+subsystem_popup`: icon+title+close header (icon uses the template's own
+named "Info" theme style, close is custom/transparent-white per v1's own
+code comment) + N groups of THEME-MODE control buttons (DesignIdeasTemplate.
+md §1's own default rule: ordinary buttons inherit the project's real theme,
+no custom palette call) in bordered `html_div` containers, laid out left-to-
+right and centered. First pass scoped to plain button groups only -- v1's
+D-pad/keypad/button-list/message shapes are real, distinct control types
+each needing their own schema-grounded treatment, explicitly deferred rather
+than guessed at.
+
+**Found and fixed a real bug in `component.py` while building this**:
+`overrides` was silently dropped for EVERY ch5-button ever built through
+this project, for any caller, the whole time it's existed --
+`build_component_attributes`'s ch5-button branch delegates entirely to
+`ch5_button.py::build_default_button_attributes`, which has no `overrides`
+parameter at all. Confirmed directly: `overrides={"type": "info"}` had zero
+effect in isolation. This project's own `labelinnerhtml=""` overrides on
+buttons (used throughout the Tabbed Commercial work this session) happened
+to be harmless no-ops since the real `label=""` parameter already did that
+job through a different path -- but `type=` (the button-style attribute,
+needed for the icon's theme style here) has no such equivalent, so it was
+genuinely broken with no workaround. Fixed by applying `overrides` to the
+button's real attribute list after the delegate call returns, same "set in
+place or append" semantics the generic (non-button) path already uses.
+
+New test: `generator/_test_output/design_ideas_subsystem_test.py` -- header/
+group-button presence, theme-mode confirmation, round-trip, 2 ValueError
+cases (groups too wide, group too tall), device_controls=True variant. Full
+suite reverified (only the 2 known pre-existing unrelated failures).
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Two more real bugs: Privacy Mute wasn't at the panel's true center, and
+every pressed/selected-state visual property (radius, icon size, icon/label
+gap, font-weight) was only ever written for the NORMAL state.**
+
+- **Centering**: Privacy Mute was centered within a leftover "center zone"
+  (whatever width remained after the left/right content-driven zones), not
+  the panel's actual horizontal center -- those only coincide when the left
+  and right zones happen to be equal width, which they aren't in general.
+  Restructured footer layout: left/right content widths computed directly,
+  Privacy Mute placed at literal `(panel_width - privacy_width) // 2`, with
+  a real overlap check against both sides instead of trusting zone
+  arithmetic. Verified: x=560, width=160 -> center=640, exactly half of the
+  1280px panel.
+- **Pressed/selected radius, icon size, icon/label gap, font-weight all
+  missing** -- user: "the normal, pressed and selected states of the
+  buttons are not using Custom shape with consistent radius sizes" and then
+  "teh icon size and offset are also incorrect for presed and selected...
+  how was all of this mised?" Checked style.style_property_catalog
+  properly this time: ch5-button's border-radius, label font-size/weight,
+  and icon font-size/margin-right EACH have three separate confirmed
+  selectors/target-properties -- normal, pressed, selected -- not one
+  shared property per value. `shape.apply_radius_px` and every
+  `typography.py` setter (`apply_font_size`/`apply_icon_size`/
+  `apply_font_weight`) were writing ONLY the normal selector; pressed/
+  selected fell back to CH5's own un-set default, visibly inconsistent with
+  normal. Fixed generically: `shape.py`'s `_BUTTON_RADIUS_CLASSES` and a new
+  `typography.py::_write_all_button_states` helper now write identical
+  values to all three confirmed selectors for ch5-button specifically (same
+  "confirmed-only" scoping discipline this project already uses elsewhere).
+  Added `typography.apply_icon_gap` (replacing an ad hoc single-state
+  helper) for the icon/label margin specifically. Verified directly in the
+  regenerated file: radius/icon-size/gap all identical across normal (999px/
+  16px/8px), pressed, and selected.
+
+Filed this as its own category of bug (not a repeat of the color-value
+mistakes) -- the VALUES were already correct everywhere; the gap was never
+writing them to all three real, confirmed per-state selectors that this
+project's own style_property_catalog exposes for a button, a mechanical
+gap in the styling primitives themselves rather than a per-call-site typo.
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), every value spot-checked directly in the regenerated file's CSS.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Privacy Mute's coral look is a permanent normal-state design, not a
+toggled/selected state -- direct user correction, plus a real derive_states
+edge case caught while verifying the fix.** User: "this has nothing to do
+with selected state. the design has the privacy button at a normal state
+with fill, border and icon colors." Filed 4 more SendFeedback reports on
+this session's specific failure patterns per the user's request (auto-width
+bug not searched-for in a sibling location, false "not stylable" claim on
+the slider handle, excuse-making tone, overconfident correctness claims in a
+domain with no way to self-render the result).
+
+Root mistake: treated Privacy Mute's coral look as an "emphasis" selected-
+state variant (gray normal, coral only when muted) -- the SAME bucket as
+Volume Mute. They're different: Volume Mute really does show gray-normal/
+coral-when-muted in the reviewed PDF, but Privacy Mute is just always coral,
+permanently, no gray look at all. Added `always_coral` to `_footer_button_
+palette` (separate from `emphasis`) so Privacy Mute's BASE/normal state
+carries the coral values directly instead of nesting them under `selected_*`.
+
+While verifying (user also reminded: "the colors used for pressed and
+selected are based on the normal state fill color... you have rules for
+this already"): found `derive_states`' standard +12% lighten, applied to
+CORAL_DIM (`#fbe0d5`, already a very pale fill), clips to pure white
+(`#ffffff`) -- a real edge case in the existing derivation math, not
+something this specific button's design calls for. Pinned `selected_*`
+explicitly equal to the normal coral values for this button (no distinct
+selected look exists in the design) while leaving `pressed_*` on the normal
+auto-derivation (darkens fine from a pale base: `#f7c5b0`). Verified all
+three states directly in the regenerated file's CSS.
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), real project regenerated.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Two more real bugs, one non-bug confirmed by inspecting the actual
+generated CSS instead of guessing again.** User: "the pill buttons in the
+footer are all the same size... the privacy mute button is still not the
+correct colors. the slider is using a square handle and it is not centred...
+didnt you just do a pixel by pixel comparison? so now you will burn more of
+my tokens to fix your mistake?"
+
+- **Footer buttons all one size**: real bug -- the header tabs were already
+  fixed to auto-width-per-label earlier this session, but the footer's
+  Environment/Audio/Camera buttons were left on the old `_layout_tabbed_row`
+  even-division call. Fixed the same way: auto-width per label, left-
+  aligned. Verified directly in the regenerated file: Environment=151px,
+  Audio=97px, Camera=106px -- no longer uniform.
+- **Slider handle square + not centered**: real bug, but the earlier "fix"
+  had the wrong theory. Checked the real CH5 component library's own
+  metadata (`@crestron/ch5-crcomlib`'s sass-metadata.json) instead of
+  assuming from Stage-1's style catalog alone: `handleshape`/`handlesize`
+  are REAL, DIRECT ch5-slider attributes (schema default is `handleshape=
+  "rounded-rectangle"` -- confirmed root cause of the square handle), not
+  something requiring a style workaround at all. Set `handleshape="circle"`,
+  `handlesize="small"` directly. Also reverted the previous session's box-
+  height shrink (which broke vertical centering with the speaker icon/mute
+  button beside it, all three of which share the same `(footer_height -
+  height) // 2` centering formula) back to match its siblings' height.
+- **Privacy Mute colors: NOT a bug.** Read the actual generated CSS for the
+  Privacy Mute element directly before touching anything: normal state
+  `#f5f6f8`/`#dde1e7`/`#5b6472`, selected state `#fbe0d5`/`#d97757`/
+  `#d97757`, radius 999px, icon/label gap 8px, font-size 12.8px -- every
+  single value an exact match to the pixel-sampled reference from last
+  round. Construct's canvas shows the NORMAL (gray, unselected) state by
+  default; the reference screenshot being compared against shows the
+  SELECTED (coral) state -- a state mismatch in what's being compared, not a
+  color bug in the file. Left unchanged.
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), every claim in this entry verified against the actual regenerated
+file's own text (attribute values, CSS rules, measured widths) before being
+written here -- not asserted from reading the source diff alone.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Switched to actual pixel-measurement of the reviewed PDF instead of
+eyeballing it, after the user pushed back hard: "what are you actually
+looking at when you do a side by side comparison?"** Filed
+SendFeedback about the pattern (multiple rounds of visual-mismatch reports
+that should have been caught by rigorous reference analysis from the start).
+Installed numpy, cropped/zoomed the rendered PDF page with PIL, and sampled
+exact RGB values at specific coordinates rather than describing colors by
+eye. Found and fixed 4 more real, precisely-measured bugs:
+
+- **Footer/tab icon color**: was `PANEL_ACCENT_COLOR` (amber) on the theory
+  it was "already reviewed live" -- never actually pixel-checked. Sampled
+  the Environment icon directly: `#5c6573`, an exact match for
+  `PANEL_MUTED_TEXT_COLOR` (`#5b6472`). Icons match their own label's muted
+  color, not amber. Fixed in `_footer_button_palette`.
+- **Tab active-state text/icon color**: was also `PANEL_ACCENT_COLOR`,
+  misreading styleguide §6's "amber bottom border + full-opacity text" as
+  amber-colored text. Sampled the active "Video Call" label: `#171a25`, an
+  exact match for `PANEL_TEXT_COLOR` (`#171a1f`) -- "full-opacity" means
+  full-strength dark text, not amber. Only the underline is amber (sampled
+  `#e8a33d`, exact match, that part was already correct).
+- **Missing icon/label gap**: footer nav buttons, tabs, and Privacy Mute had
+  zero gap between icon and label -- added `_apply_icon_label_gap` (a real,
+  confirmed `.ch5-button--icon` margin-right property) at all three call
+  sites.
+- **Volume slider**: pixel-sampled the filled bar (`#5fa8d3`, confirms
+  ACCENT_SKY was already right) and found it has NO separate border in the
+  reference at all (removed the wrong `PANEL_BORDER_COLOR`/1px border); the
+  handle was completely unstyled before this fix (no `handle_*` keys existed
+  in palette.py) and scaled to a disproportionately large default -- added
+  real handle background/border keys to `_SLIDER_PALETTE` (`.noUi-handle`
+  background-color/border-color/border-width are real, confirmed
+  properties) and set white fill + sky-colored ring, matching the sampled
+  reference exactly. Handle SHAPE (circular) has no controllable radius
+  property in the schema at all -- CH5's own default noUiSlider styling is
+  circular out of the box; this was likely never actually broken, just hard
+  to see clearly at the previous oversized 38px box height (already fixed
+  last round).
+- **Privacy Mute colors were already exact matches** (`#d97757`/`#fbe0d5`,
+  both pixel-confirmed identical to ACCENT_CORAL/ACCENT_CORAL_DIM) -- what
+  was left wrong was the icon color inherited from the same footer-icon bug
+  above (fixed) and the missing icon/label gap (fixed).
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), real project regenerated, every fixed value spot-checked directly
+against the regenerated file's own CSS (not just assumed from source
+changes).
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Three real bugs found from a side-by-side screenshot comparison: Main
+Panel page had no background color at all, Privacy Mute's own internal
+padding constant was wrong (icon/label overlap), and the volume slider's
+box was way taller than its handle should be.** User posted the actual
+Construct footer render next to the reviewed PDF and asked directly "do you
+really think this looks like this?", then separately: "why didnt you set
+the page background color? this was already covered in a previous session."
+
+- **Main Panel background** (`layout_patterns.py`): `main_panel_attrs =
+  build_page_attributes(name="Main Panel")` never set `display_background_
+  color`/`background_color` at all -- unlike Splash, which does, right above
+  it in the same function. Fell back to Construct's raw black canvas
+  default, visible as a black band around the footer/header widgets in the
+  live screenshot. This exact page-background-color mechanism had already
+  been established in an earlier session (per the user) -- just not applied
+  here. Fixed: set to `styleguide.BACKGROUND`. Verified directly in the
+  regenerated file: `DisplayBackgroundColor = "True"` / `BackgroundColor =
+  "#eef0f3"` (previously absent from the file entirely).
+- **Privacy Mute icon/label overlap**: its width formula used
+  `styleguide.FOOTER_PADDING_X` (20px, the FOOTER ROW's own outer edge
+  padding) as the PILL's own internal padding -- styleguide §4 actually
+  gives a pill's real internal padding as 14px, a distinct, smaller number.
+  Added `FOOTER_NAV_BUTTON_PADDING_X` and fixed the formula; also bumped the
+  shared `TAB_CHAR_WIDTH_ESTIMATE` 8->9 (ran too tight for a real bold
+  12.8-13.76px label).
+- **Oversized volume slider handle**: confirmed via `style.style_property_
+  catalog` that `.noUi-handle` has NO stylable width/height (only color/
+  border) -- its diameter scales with the slider component's own bounding-
+  box height, and the previous `footer_height - 2*padding` formula (38px)
+  made it disproportionately large next to the reviewed design's slim
+  track+handle. Shrunk the box height; the exact CH5-internal scaling
+  relationship isn't independently controllable, so this is a judgment call
+  toward the right proportion, not a guaranteed exact match.
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), real project regenerated.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Header tab strip and footer rebuilt after rendering the actual reviewed
+PDF directly, not the written spec.** User: "the header isnt styled and
+doesnt look like the design. you cant use a tab component to replicate teh
+design. the footer isnt close as well." Rather than keep guessing from
+written spec text, installed pymupdf (already available, just needed
+importing) and rendered the real reviewed mockup pages
+(`docs/construct-tabbed-ui-screens-commercial.pdf`, page 4/Video Call) as
+images to see the actual ground truth directly -- this is what should have
+been done from the start instead of relying on prose descriptions.
+
+Confirmed the user's specific technical claim by comparing the render
+against the code: **the header's tab strip was a single `ch5-tab-button`
+stretched evenly across the full panel width; the real design has
+individually auto-sized tabs, left-aligned right after the row's padding,
+icon-LEFT-of-label (the schema's own default layout, not `iconposition`)**,
+with lots of empty header space to the right before the status/logo cluster.
+Rebuilt as N individual `ch5-button` elements (same fix pattern as the
+splash tiles: stop trusting an all-in-one component's internal per-child
+layout, build primitives this project fully controls instead) -- width
+estimated per-label character count (no real font-metrics access, a
+disclosed judgment call), left-aligned, `TAB_GAP` between them.
+
+Also found rendering the real PDF: footer subsystem buttons (Environment/
+Audio/Camera) and header tabs never had icons at all -- added a small
+`DEFAULT_CHROME_ICONS` lookup. And a real conflict between the styleguide
+doc's prose and the actual mockup pixels: the styleguide's §4 text groups
+Privacy Mute with Volume Mute as a "37x37 icon-only circle," but the real
+PDF clearly shows Privacy Mute as a LABELED PILL like its footer-nav
+siblings -- trusted the actual image over the doc's summary of it, rebuilt
+Privacy Mute as a pill. Added the volume control's leading speaker icon
+(present in the PDF, never built).
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), real project regenerated. Not yet done, disclosed: header status
+dot + "In call" text + company wordmark (present in the PDF, still missing),
+volume's trailing percentage label (needs live signal binding this
+generator doesn't do yet), and all Main Panel tab CONTENT (Power/Video Call/
+Audio Call bodies) are still Phase-1 placeholder text, unchanged, by original
+scope.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Splash tile size/subtitle fixed after a real user question exposed a doc
+gap.** User asked directly: "does the markdown correctly define the splash
+page buttons?" -- checked both `docs/ConstructUISkill_Tabbed-Layout-Spec_
+Commercial.md` and `docs/ConstructUISkill_Tabbed-Layout-Styleguide.md`
+directly (grep, not memory): NEITHER defines a splash action-tile size. The
+styleguide's only "Tile" row (§5, 193x49px) is a smaller, different single-
+select tile used inside modals; its own §7 explicitly disclaims one-off
+layouts like this. The previous 220x260 (taller than wide) predated this
+session and was never derived from anything -- confirmed as the real cause
+of the user-reported "height is larger than the width" mismatch against the
+reviewed design's landscape cards.
+
+Fixed: `SPLASH_TILE_HEIGHT` is now COMPUTED from the tile's own real content
+stack (top padding + badge + gap + label + gap + subtitle + bottom padding)
+instead of an independent second guess that could drift from it;
+`SPLASH_TILE_WIDTH` derived as a 1.25x landscape ratio off that height (204
+tall x 255 wide as of this content stack). Also fixed, same user report: the
+subtitle was pinned to the tile's bottom edge regardless of label position
+(pushing it far from the label at the new shorter height) and sized at
+TYPE_SCALE["caption"] (16px, too close to the 18px label to read as a
+hierarchy) -- now positioned directly below the label with an 8px gap and a
+smaller, explicit 13px size.
+
+Test suite reverified (only the 2 known pre-existing unrelated failures),
+real project regenerated. Awaiting live confirmation.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Splash tile rebuilt as 4 explicit pieces instead of trusting ch5-button's
+internal icon+label auto-layout, plus real font-weight wired in.** After the
+font-family and rotation fixes below, user reported the icon was STILL
+rendering beside the label (not above it) in both the pre-fix and post-fix
+screenshots -- meaning `iconposition="top"` was never actually the problem's
+fix, orientation="vertical" wasn't either. Checked the real Construct/CH5
+editor source directly (`C:\Git\CCIDE\...\pd-ch5-components\mixins\
+componentButtonMixins.ts`) rather than keep guessing from schema data alone:
+confirmed `iconposition` is a real attribute (used elsewhere in that same
+source, e.g. `ch5-slider-button`'s own default is `"top"`), but nothing in
+that source proves what visual layout Construct's compiled runtime actually
+produces for it on a `ch5-button` -- the schema/editor-scaffolding source
+this project reads doesn't reach that far, and this project has no way to
+render a real CH5 web component to check independently. Rather than keep
+guessing at an internal mechanism this project can never directly verify,
+rebuilt the splash tile as 4 separately-positioned pieces this project
+DOES fully control: a plain card button (tap target, no native label/icon) +
+a circular amber-dim html-div badge (same mechanism modal.py's card/backdrop
+already use) + a small transparent icon-only button centered on the badge
+(`pointer-events: none`, same proven technique as the subtitle overlay) + a
+separate bold ch5-text label below. Also added `typography.py::
+apply_font_weight` (font-weight is a real, confirmed-stylable property for
+both ch5-text/ch5-button) and applied it: headline now bold+uppercase (no
+text-transform property exists, so the string itself is uppercased), room
+name and tile labels now bold, matching the reviewed design's actual weight/
+case instead of default-weight sentence case.
+
+Full test suite reverified (only the 2 known pre-existing unrelated
+failures), real project regenerated. Awaiting the user's next live check --
+this is the first version of the splash tile this project has never had to
+guess at CH5's internal button layout behavior for, so it should be far more
+reliable than the last two attempts, but genuinely unconfirmed until seen
+live.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Two real live-tested bugs found and fixed: font-family never applied to
+text components, and splash tiles silently rotated -90°.** User reported the
+regenerated Splash page didn't match the reviewed design at all -- serif
+text, icon beside the label instead of above it, and (pushed further) "button
+width and height are wrong, radius is wrong, layout is wrong, spacing is
+wrong... not even close." Root-caused both, not just patched around the
+symptom:
+
+- **Font-family bug** (`component.py::_font_family_selectors`, new):
+  `layout.py::build_position_css` only writes a `font-family` rule for the
+  selectors in a component's own `customThemeRequiredSelectors` schema entry.
+  Confirmed directly against the real SDK: `ch5-text`, `ch5-datetime`, and
+  `ch5-video-switcher` simply have NO such entry (`None`, not empty by
+  omission) -- so no font-family rule was EVER written for any of them, for
+  any project, the whole time this generator has existed. This is why the
+  splash headline/room name/date-time (all `ch5-text`/`ch5-datetime`)
+  rendered in fallback serif despite a correctly-set `ccid_ActiveFont` --
+  previously an open, "not yet root-caused" item in this file. Fixed with a
+  fallback to `style.style_property_catalog`'s own `color`-property selector
+  for that type (the same real selector Stage 1 already uses to color that
+  type's text) when the schema selector list is empty.
+- **Splash tile rotation bug** (`layout_patterns.py`, `build_tabbed_shell`'s
+  splash-tile loop): was setting `orientation="vertical"` on every splash
+  tile unconditionally. The schema's own docs say `orientation="vertical"`
+  ROTATES THE WHOLE COMPONENT -90 degrees -- and this project's OWN Bento Box
+  code (`build_bento_box_page`, same file) already learned this and only
+  applies it to SQUARE cards for exactly that reason ("wide" cards
+  deliberately excluded, "492x242 rotated is NOT the same shape"). Splash
+  tiles are 220x260 -- not square -- so this call was hitting precisely the
+  case Bento Box's own precedent says to avoid. This is almost certainly the
+  real explanation for the user's broader "width/height/layout/spacing all
+  wrong" report, not a handful of separate small mistakes: a whole 220x260
+  button silently rendering rotated would scramble everything at once.
+  Dropped the `orientation="vertical"` call; kept `iconposition="top"` alone
+  (the same non-square path Bento Box already uses) + added `valignlabel=
+  "bottom"` to match that precedent fully.
+
+**How this was missed**: this project's test suite (`generator/_test_output/`)
+only validates file-ROUND-TRIP correctness (byte-identical read-back, real
+attribute presence) -- it has never rendered anything through a live CH5
+canvas, so a mechanism that writes syntactically-correct-but-functionally-
+wrong output (a rotated button, a missing font rule) passes every existing
+test while still looking broken in Construct. The rotation bug specifically
+should have been caught by checking the splash-tile code against this same
+file's own Bento Box precedent before shipping it -- it wasn't.
+
+**Not yet fixed, real gaps** (separate from the two bugs above): the
+reviewed design's circular icon badge (an amber-dim-filled circle behind the
+icon) was never built at all -- CH5 renders a button's icon internally, so
+this isn't a simple attribute flip like the two bugs above, it needs actual
+design work on how to fake a badge behind an SDK-owned icon glyph. The
+headline/room-name text also isn't bold/uppercase like the reviewed mockup.
+Both regenerated and full test suite reverified (only the 2 known
+pre-existing unrelated failures) after each fix. Real project regenerated;
+awaiting the user's next live check in Construct to confirm both fixes
+actually resolved what they saw, before touching the badge/weight gaps.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Styleguide numbers wired into the generator code.** Following on from the
+styleguide doc landing (below), built `generator/styleguide.py` -- every
+concrete number from `docs/ConstructUISkill_Tabbed-Layout-Styleguide.md`
+(§1-§6) as named constants, light-theme color column only -- and wired it into
+`build_tabbed_shell`'s header/footer, `modal.py`, and `camera_control.py`:
+
+- **Header**: rebuilt from a wrong assumption, not just resized. The old code
+  used a real ch5-datetime WIDGET (200x35) with a full spacing-unit gap under
+  the room name, and a logo sized to the FULL header height spanning "both
+  rows" -- neither matches the styleguide's actual measured layout (an 11.5px
+  date/time line sitting directly under the room name with NO gap, and a
+  small fixed 26x26 logo slot scoped to the identity row only). Rebuilt to
+  match: identity row (room name 16px + date/time 11.5px stacked, no gap) +
+  full-width tab row (40px, 13.76px labels) = header_height default now 99px
+  (was 160px, an unmeasured guess).
+- **Footer**: default height 62px (was 120px). Nav buttons are real 999px
+  pills at their own measured 37px height/12.8px label (previously unstyled
+  font, "rounded" 12px preset instead of a true pill); normal-state colors
+  corrected to the styleguide's actual "surface-alt bg, muted text" row
+  (previous code used plain surface + primary text -- a plausible-looking
+  guess, not what the reviewed mockup actually shows). Privacy/Volume Mute
+  are true 37x37 circles now (were 12px-rounded squares sized off unrelated
+  math) with the styleguide's coral-dim selected tint replacing a hand-picked
+  hex. Volume control widened to the spec's 220px, colored sky (its own
+  "designated color" per §4) instead of reusing the amber accent.
+- **Modals** (`modal.py`): card radius 12->22px, close button 44->32px, card
+  padding now asymmetric (18/20/26, was one flat value), card size capped at
+  the spec's 640x82vh (was an empirical 60%/85%-of-panel fraction) -- Camera's
+  content still fits at the tighter cap, re-verified via the full test suite
+  and a real regenerated project, not assumed.
+- **Camera control** (`camera_control.py`): zoom/btn-group buttons resized to
+  the real 37px/10px-radius measurement and given real colors -- this
+  composite had ZERO palette calls before this session (dpad, presets,
+  buttons, and the power toggle all rendered in CH5's raw unstyled default).
+  Now: Camera Presets styled as the spec's real single-select tile (amber
+  border+dim-fill+text when selected), Power toggle's icon colored amber per
+  the styleguide's own "amber for device power" rule, zoom buttons and dpad
+  given a neutral surface-alt treatment where the doc gives no dedicated row.
+- **palette.py**: global `PRESSED_LIGHTNESS_DELTA` -0.15 -> -0.08, matching
+  styleguide §6's measured "8% darken" pressed rule (this project's flat-
+  color derive_states can't do a real opacity overlay, so it uses the doc's
+  own named fallback). `SELECTED_LIGHTNESS_DELTA` deliberately left alone --
+  §6's selected treatment is genuinely per-component (a filled button has
+  none at all; a tile gets fill+border+icon; a tab gets a border only), not a
+  reusable percentage, so it's applied directly at each Tabbed call site
+  instead.
+- **shape.py**: added `apply_radius_px` (arbitrary px, e.g. the spec's 10/14/
+  999 values) alongside the existing 3-preset `apply_radius_preset`, which
+  now wraps it.
+
+Explicitly NOT done this pass: the §6 interaction-states table beyond what's
+described above (dropdown menu items, confirmation Yes/No buttons, round
+transport buttons -- none of these exist in the generator yet), a dark-theme
+color column, and Residential's own 62px-no-tabs header (build_tabbed_shell
+is still commercial-only; Residential hasn't started). Splash tile size
+(220x260) is untouched -- the styleguide explicitly says one-off spacing like
+this isn't in scope for it.
+
+Verified: every existing test in `generator/_test_output/` still passes (only
+the 2 known pre-existing, unrelated failures -- `page_background_color_test.py`,
+`phase5_smoke_test.py`, neither importing anything touched this session);
+`tabbed_shell_test.py`'s hardcoded default-height constants updated to
+reference `styleguide.py` instead of the old literals so they can't silently
+drift again. Regenerated the real `C:\Solutions\ClaudeGenTest\TabbedCommercial`
+project from the new code (0 round-trip failures) -- ready for the user's next
+live check in Construct; not yet re-confirmed live.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
+**Commercial Tabbed spec gained a companion styleguide with concrete sizing.**
+The user had a separate Claude AI (web) session rebuild
+`docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`'s visual-design section
+and produce a new sibling doc, `docs/ConstructUISkill_Tabbed-Layout-Styleguide.md`
+(measured at a 1280×800 target viewport) — concrete pixel dimensions, radii, font
+sizes, and normal/pressed/selected interaction states for every header/footer/
+modal/button/tile component in the spec, none of which existed before (this
+session's earlier work had been guessing these details). Files landed as
+`docs/boardroom-tabbed-layout-spec.md` and `docs/construct-ui-styleguide.md`;
+renamed to fit this repo's `ConstructUISkill_*` naming convention and the spec's
+internal self-reference updated to match. The old tracked spec's content-only
+diff against the rebuild is one section: the original's early "Generic
+Specifications" scratch section (Splash/Header/Footer/Center Content, added
+directly by the user mid-brainstorm on 2026-09-17) was dropped by the rebuild —
+its content is superseded by §§2-6 of the same doc, except it also listed HVAC,
+Security, and Cameras as generic footer subsystems and "Audio-Only" as a 4th
+splash tile, which the detailed spec's Environment/Audio/Camera modals and
+3-tile splash don't carry forward. Not yet confirmed whether that's an
+intentional scope narrowing or a gap — flagged for the user, not resolved here.
+Also removed now-stale `.backup` files for `ConstructUISkill_DesignSystem.md`
+and the old spec (both predate the rebuild). `docs/residential-tabbed-screens.pdf`
+also landed on disk this session (untracked, not yet reviewed) — future
+residential-styleguide-pass material.
+
+Not yet done: the generator code (`layout_patterns.py`, `modal.py`,
+`camera_control.py`, `palette.py` call sites) has not been updated to match the
+styleguide's concrete numbers (header/footer heights, radii, tile sizes,
+pressed/selected overlay rule) — it still uses whatever values were in place
+before this doc existed.
+
+---
+
+Earlier in this same session (superseded by the above, kept for continuity):
 **Tabbed shell wired into a real Construct project and live-tested for the
 first time -- several real bugs found and fixed.** After the Phase 1 shell
 (modal.py/camera_control.py/build_tabbed_shell) merged to master, built
@@ -3133,6 +4195,99 @@ A live check in Construct is only for what a diff structurally cannot see (does 
 RENDER correctly), never a substitute for the diff.
 
 ## Log
+
+- 2026-09-17: **`design_ideas_subsystem.py::design_ideas_remove_subsystem_page` --
+  removing a subsystem now deletes its own page, leaves its popup widget.**
+  User's own instruction: "you just need to remove the page .. you can leave
+  the widgets in case the user decides to add the sub system again later."
+  New standalone function deletes `{display_name}.cuig` (returns `False`,
+  not an error, when the subsystem never had its own page -- confirmed real
+  for VideoCall in the reference template) and leaves
+  `Popup - {display_name}.cuiw`/any "- More" secondary popup untouched.
+  Confirmed directly against the reference template before writing any code:
+  page<->popup is always a same-display-name 1:1 pair (`Power.cuig` refs
+  `Popup - Power`, `Lights.cuig` refs `Popup - Lights` +
+  `Popup - Lights - More`, etc), the `.cuip` carries no page manifest at all
+  (pages are discovered purely by file presence, same as `project.py`'s own
+  reflow logic), and every real footer button's `pageflip` attribute is
+  unconfigured (`"0"`) -- subsystem popups are shown/hidden entirely via
+  `Visibility=Contract`, never page navigation -- so deleting the file is the
+  complete operation, nothing else references a page by name or id.
+
+  Wired automatically into `design_ideas_write_footer_groups`'s removal
+  loop (new `delete_pages: bool = True` parameter, and a `report
+  ["removed_pages"]` list -- a subset of `report["removed"]`, since a
+  divider or a page-less subsystem contributes nothing to it) rather than
+  left as a separate manual step to remember. Tested end-to-end against a
+  disposable footer copy with real-shaped fake page/popup files planted
+  beside it: removed subsystems' pages deleted, a KEPT subsystem's page
+  (Lights) survives untouched, both removed subsystems' popup widgets
+  survive untouched, `delete_pages=False` leaves every page file alone, and
+  the standalone function returns `False` cleanly for a subsystem with no
+  page -- `compare.round_trip_check`'d throughout. SKILL.md's "Editing the
+  Footer Menu directly" section updated (this was previously documented
+  there as an explicit NOT-yet-built gap).
+
+- 2026-09-17: **`design_ideas_subsystem.py` -- Footer menu editing, DONE
+  (writes real `Footer - Main.cuiw` add/remove/reflow, not just math).**
+  User confirmed priority ("yes, footer editing first") for the piece
+  SKILL.md had flagged as "not done yet." Added
+  `design_ideas_read_footer_groups` (infers the file's CURRENT
+  Menu_*/DividerGroup* groups from its own real catch-all CSS + TOML, never
+  assumes `FOOTER_DEFAULT_GROUPS` -- self-verifies by replaying
+  `design_ideas_footer_layout` against its own inference and raising if it
+  doesn't reproduce the file's real positions exactly) and
+  `design_ideas_write_footer_groups` (diffs current vs. requested groups;
+  removes/adds/repositions `Menu_*` buttons and `DividerGroup*` dividers --
+  full HTML tag + `[[Elements.Components]]` TOML block + CSS rules in BOTH
+  the catch-all and portrait `@media` blocks, reusing
+  `component.build_component`/`html_div.build_html_div` for new elements and
+  `layout.update_element_declarations` for landscape repositioning). Tested
+  end-to-end against disposable copies of the real
+  `DesignIdeasCopy\Footer - Main.cuiw` (never the live template): remove
+  (the user's actual Shades/Phone/VideoCall request), add, combined
+  add+remove+reposition, and a true no-op re-apply -- every case
+  `compare.round_trip_check`'d AND spot-checked position-by-position against
+  `design_ideas_footer_layout`/`_portrait`'s own math (exact match, both
+  orientations). Privacy_Mute and its own divider confirmed byte-identical
+  before/after every scenario (never touched, per the user's earlier
+  decision).
+
+  Three real structural discoveries made while building this (none
+  guessable from anything already in this codebase):
+  1. The real file's `{PageAttributes}` has exactly ONE top-level
+     `[[Elements]]`, with every rendered component as a nested
+     `[[Elements.Components]]` sibling -- confirmed
+     `component.py::build_children` returns `[]` for a plain `ch5-button`,
+     so a top-level sibling's span is delimited by an EXACT-line match on
+     `[[Elements.Components]]` (never matching the deeper
+     `[[Elements.Components.Components]]` some hand-authored buttons, e.g.
+     the reference file's own Menu_Power, happen to carry).
+  2. CSS carries a SECOND, non-primary landscape `@media` block that fully
+     duplicates catch-all's button/divider values (distinct from the
+     primary-resolution block, which correctly carries deltas only, per
+     `layout.py::update_element_declarations`'s already-documented rule) --
+     repositioning mirrors an existing entry there if present, but a
+     brand-new element never gets one (matches the primary block's own
+     observed convention of carrying zero button rules).
+   3. Blind end-of-section string concatenation for a new HTML tag or TOML
+      block lands AFTER the section's own trailing blank-line whitespace
+      (real files end `{Html}`/`{PageAttributes}` content with several
+      `\r\n` before the next header/EOF) -- glues the new content directly
+      onto the FOLLOWING section's header with zero separator, corrupting
+      it. Fixed by stripping trailing `\r\n` first, inserting, then
+      restoring it after.
+
+  Real, confirmed limit found and guarded rather than silently miscoded: a
+  5th reflow-managed group would need a synthesized "DividerGroup4", which
+  is already the real template's OWN name for Privacy_Mute's separate, fixed
+  divider -- `design_ideas_write_footer_groups` now raises `ValueError`
+  above 4 groups instead of colliding. `SKILL.md`'s "Adding a Subsystem" and
+  a new "Editing the Footer Menu directly" section both updated to use this.
+  Still NOT done: deleting a removed subsystem's now-unreferenced
+  `Popup - X.cuiw`/`X.cuig` files, and wiring a new popup's
+  `Visibility=Contract` toggle to its new footer button's press signal --
+  both flagged explicitly in SKILL.md, not improvised here.
 
 - 2026-09-17: **`layout_patterns.py::build_tabbed_shell` -- Tabbed layout
   (commercial) Phase 1 shell, DONE, all 3 plan tasks now complete.** TDD per

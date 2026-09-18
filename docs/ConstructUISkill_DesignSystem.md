@@ -28,9 +28,11 @@ actually running.
 If the user does not provide a design, the §1 persona recommends the best-fitting pattern below per "Choosing a Layout" rather than listing every option and asking the user to pick blind — it still separately confirms whether this is a **Commercial** or **Residential** interface (and, per §1, the more specific context: luxury residence, yacht, boardroom, event space, nightclub, etc.), since audience/context is information only the user can supply, not a design judgment call. Audience changes which header content and footer/menu items are conventional (see each pattern), not the underlying mechanics.
 
 **Current focus (2026-09-17):** Tabbed is the active pattern under development —
-commercial first (see `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`),
-then residential. Header-Content-Footer and Left-Side Menu remain in scope as
-already-built/available patterns; Bento Box and Card-Based do not (see below).
+commercial first (see `docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md`,
+paired with `docs/ConstructUISkill_Tabbed-Layout-Styleguide.md` for concrete
+sizing/radii/states at the 1280×800 target viewport), then residential.
+Header-Content-Footer and Left-Side Menu remain in scope as already-built/available
+patterns; Bento Box and Card-Based do not (see below).
 
 Every pattern is built from the same primitives already established in `ConstructUISkill.md` §5: a page-based structure where each top-level selection opens its own page, with header/footer as widgets added to every page. §5's hard requirement applies to every pattern below without exception: any widget a pattern adds to every page (header, footer, tab strip, left-side menu rail) must be built with its Global Contract property set true (`page.py::default_widget_html_css(..., is_global=True)`) — it is programmed once, not once per page instance. Each pattern below specifies what varies: its component/widget composition, how it reflows across resolutions and orientations, and which §§3–9 rules constrain it most.
 
@@ -48,7 +50,8 @@ The default, safest pattern for control-panel UIs — closest to how nearly ever
 
 Both patterns are no longer part of the skill's required layout-pattern set. Focus
 has narrowed to **Tabbed** (commercial first, then residential) — see
-`docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md` for the current
+`docs/ConstructUISkill_Tabbed-Layout-Spec_Commercial.md` (structure) and
+`docs/ConstructUISkill_Tabbed-Layout-Styleguide.md` (sizing) for the current
 commercial reference spec. This does not undo the Bento Box generator code
 already built (`layout_patterns.py::build_bento_box_page` and friends, plus the
 Room Card composite work) — that code stays on disk and in git history — it is

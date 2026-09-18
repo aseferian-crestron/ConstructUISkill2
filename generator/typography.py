@@ -48,6 +48,47 @@ import palette
 import style
 from sdk import UiSdk
 
+#: ch5-button's label/icon font-size, font-weight, and margin properties each
+#: have THREE separate selectors/target-properties -- normal, pressed, and
+#: selected (confirmed via style.style_property_catalog) -- not one shared
+#: property. ADDED 2026-09-18 after a live report that icon SIZE and the
+#: icon/label GAP looked wrong specifically in the pressed/selected states:
+#: every call below was writing only the normal selector, so pressed/
+#: selected fell back to CH5's own un-set default (visibly inconsistent),
+#: exactly the same class of gap already found and fixed for border-radius
+#: (shape.py::apply_radius_px). Scoped to ch5-button only, same discipline
+#: as shape.py -- other types' pressed/selected label/icon selectors are not
+#: yet confirmed to exist or share this shape.
+_BUTTON_LABEL_SELECTORS = (
+    ".ch5-button--default .ch5-button--label",
+    '[pressed="true"] .ch5-button--default.ch5-button--pressed .ch5-button--label,'
+    '.ch5-button--default.ch5-button--pressed .ch5-button--label',
+    '[selected="true"] .ch5-button--default.ch5-button--selected .ch5-button--label,'
+    '.ch5-button--default.ch5-button--selected .ch5-button--label',
+)
+_BUTTON_ICON_SELECTORS = (
+    ".ch5-button--default .ch5-button--icon",
+    '[pressed="true"] .ch5-button--default.ch5-button--pressed .ch5-button--icon,'
+    '.ch5-button--default.ch5-button--pressed .ch5-button--icon',
+    '[selected="true"] .ch5-button--default.ch5-button--selected .ch5-button--icon,'
+    '.ch5-button--default.ch5-button--selected .ch5-button--icon',
+)
+
+
+def _write_all_button_states(
+    css_text: str, element_id: str, sdk: UiSdk, tag_name: str, fallback_class_name: str,
+    selectors: tuple[str, ...], prop: str, value: str, *, primary_query: str | None = None,
+) -> str:
+    """Write `prop: value` to `fallback_class_name` for any type, OR -- when
+    `tag_name` is ch5-button, whose pressed/selected variants are confirmed
+    real -- to all of `selectors` (normal + pressed + selected) so the value
+    stays consistent across every interaction state."""
+    targets = selectors if tag_name == "ch5-button" else (fallback_class_name,)
+    return style.set_component_style(
+        css_text, element_id, sdk, tag_name, [(t, prop, value) for t in targets],
+        primary_query=primary_query)
+
+
 TYPE_SCALE: dict[str, int] = {
     "caption": 16,
     "label": 18,
@@ -83,9 +124,9 @@ def apply_font_size(
     if mapping is None or "text_color" not in mapping:
         raise KeyError(f"No text-bearing selector known for {tag_name!r} -- see palette.PALETTE_MAPPING")
     class_name, _ = mapping["text_color"]
-    return style.set_component_style(
-        css_text, element_id, sdk, tag_name, [(class_name, "font-size", f"{size_px}px")],
-        primary_query=primary_query)
+    return _write_all_button_states(
+        css_text, element_id, sdk, tag_name, class_name, _BUTTON_LABEL_SELECTORS,
+        "font-size", f"{size_px}px", primary_query=primary_query)
 
 
 def apply_icon_size(
@@ -103,8 +144,78 @@ def apply_icon_size(
     if mapping is None or "icon_color" not in mapping:
         raise KeyError(f"No icon-bearing selector known for {tag_name!r} -- see palette.PALETTE_MAPPING")
     class_name, _ = mapping["icon_color"]
-    return style.set_component_style(
-        css_text, element_id, sdk, tag_name, [(class_name, "font-size", f"{size_px}px")],
+    return _write_all_button_states(
+        css_text, element_id, sdk, tag_name, class_name, _BUTTON_ICON_SELECTORS,
+        "font-size", f"{size_px}px", primary_query=primary_query)
+
+
+def apply_icon_gap(
+    css_text: str, element_id: str, sdk: UiSdk, tag_name: str, gap_px: int,
+    *, primary_query: str | None = None,
+) -> str:
+    """Apply the gap between an icon and its label (icon-LEFT-of-label
+    layout) via the icon's own `margin-right` -- a real, confirmed property,
+    with its own separate pressed/selected variants for ch5-button (see
+    module comment above _BUTTON_LABEL_SELECTORS). Replaces layout_
+    patterns.py's earlier ad hoc `_apply_icon_label_gap`, which only wrote
+    the normal-state margin."""
+    mapping = palette.PALETTE_MAPPING.get(tag_name)
+    if mapping is None or "icon_color" not in mapping:
+        raise KeyError(f"No icon-bearing selector known for {tag_name!r} -- see palette.PALETTE_MAPPING")
+    class_name, _ = mapping["icon_color"]
+    return _write_all_button_states(
+        css_text, element_id, sdk, tag_name, class_name, _BUTTON_ICON_SELECTORS,
+        "margin-right", f"{gap_px}px", primary_query=primary_query)
+
+
+def apply_icon_offset(
+    css_text: str, element_id: str, sdk: UiSdk, tag_name: str, offset_px: int,
+    *, primary_query: str | None = None,
+) -> str:
+    """Write the icon's `margin-left` -- this IS the real property behind
+    Construct's own "Icon Styles > Horizontal Offset" panel field (confirmed
+    live, 2026-09-18, from a screenshot of that exact panel).
+
+    **NOT an independent icon-only position knob -- tested live and
+    falsified, 2026-09-18.** The icon and label are one flowing inline unit
+    under `halignlabel`, not two independently-positioned elements: a large
+    negative offset here (tried in `design_ideas_subsystem.py`, since
+    reverted) dragged the LABEL along with the icon, flush against the
+    button's left edge -- not "icon moves, label stays centered" as the
+    property panel's own section grouping (separate "Label Styles" /"Icon
+    Styles" blocks) suggested it might. A SMALL value may still be usable
+    for a minor visual nudge without noticeably displacing the label, but
+    that hasn't been confirmed either -- `design_ideas_subsystem.py`'s own
+    control-icon layout uses `apply_icon_gap` instead (icon-to-label
+    spacing, leaving `halignlabel` at its default so the pair centers
+    together), not this function. Do not reach for this expecting the label
+    to stay put -- verify live before trusting any specific offset here."""
+    mapping = palette.PALETTE_MAPPING.get(tag_name)
+    if mapping is None or "icon_color" not in mapping:
+        raise KeyError(f"No icon-bearing selector known for {tag_name!r} -- see palette.PALETTE_MAPPING")
+    class_name, _ = mapping["icon_color"]
+    return _write_all_button_states(
+        css_text, element_id, sdk, tag_name, class_name, _BUTTON_ICON_SELECTORS,
+        "margin-left", f"{offset_px}px", primary_query=primary_query)
+
+
+def apply_font_weight(
+    css_text: str, element_id: str, sdk: UiSdk, tag_name: str, weight: int | str,
+    *, primary_query: str | None = None,
+) -> str:
+    """Apply an EXPLICIT font-weight to `tag_name`'s text-bearing element.
+    `font-weight` is a real, confirmed-stylable property for both ch5-text
+    and ch5-button (style.style_property_catalog), sharing the SAME selector
+    `apply_font_size` already uses for that type's text_color/font-size --
+    added 2026-09-18 after a live design-fidelity report (headline/labels
+    rendering at default weight when the reviewed design calls for bold)."""
+    mapping = palette.PALETTE_MAPPING.get(tag_name)
+    if mapping is None or "text_color" not in mapping:
+        raise KeyError(f"No text-bearing selector known for {tag_name!r} -- see palette.PALETTE_MAPPING")
+    class_name, _ = mapping["text_color"]
+    return _write_all_button_states(
+        css_text, element_id, sdk, tag_name, class_name, _BUTTON_LABEL_SELECTORS,
+        "font-weight", str(weight),
         primary_query=primary_query)
 
 
