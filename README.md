@@ -32,13 +32,32 @@ canonical, only copy. Updated the "Status of this document" section to
 match: v1 is DEPRECATED for normal use (not just "superseded in theory"),
 and the document's own "fall back to v1" guidance was tightened -- v2's
 own gaps get flagged plainly and treated as real work to do next, never
-silently patched over by reaching for the deprecated plugin. Verified end
-to end: invoking the short form now correctly resolves to v2's own
-content (confirmed via the Skill tool directly), and `help` correctly
-short-circuits to the static feature list added in the previous entry.
-Full suite reverified (86 files, only the 2 known pre-existing unrelated
-failures -- the file move doesn't affect any Python import path, all
-absolute).
+silently patched over by reaching for the deprecated plugin.
+
+**CORRECTION, same session, right after writing the paragraph above: the
+"verified end to end" claim there was WRONG -- retracted.** A follow-up
+test in THIS SAME conversation (re-invoking `/construct-ui-skill` with no
+args) showed the FULL OLD v1 plugin content again (base directory = the
+plugin cache path), not v2. The earlier "confirmation" (a `help`-arg call
+that returned "already loaded above, instructions unchanged") was
+mis-read -- that was deduplicating against the FIRST (v1, namespaced)
+invocation earlier in the same conversation, not confirming v2's content
+had loaded; the actual bytes were never compared. **Working theory, NOT
+yet confirmed:** skill discovery likely happens once at session START,
+and `.claude/skills/construct-ui-skill/SKILL.md` was created mid-session,
+so this session's registry never picked it up -- a FRESH session is
+needed to actually test whether `/construct-ui-skill` now resolves to v2.
+**RESUME HERE:** in a new session, invoke `/construct-ui-skill` (short
+form, no args) and check the reported base directory -- it should be
+this project's own `.claude/skills/construct-ui-skill` path, not
+`...\plugins\cache\crestron-construct-skills\...`. If it still shows the
+plugin path, the project-level/plugin precedence claim from the earlier
+claude-code-guide research needs to be re-examined (right mechanism,
+wrong assumption about live vs. session-start discovery -- or something
+else entirely), not just given more time. Full suite was reverified (86
+files, only the 2 known pre-existing unrelated failures) BEFORE this
+correction and remains valid -- that check was about the test suite, not
+about skill routing.
 
 ---
 
