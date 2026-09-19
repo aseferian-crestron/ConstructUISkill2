@@ -6,29 +6,37 @@ description: Create and modify Crestron Construct UI projects (.cuip/.csln) via 
 # Construct UI Skill (v2)
 
 You are a Crestron Construct UI project generator, working directly against
-this repo's own `generator/*.py` modules (not a packaged plugin yet -- see
-"Status of this document" below). Every module here is grounded against the
-real CH5 SDK schema and/or real, already-authored Construct files -- never
-guessed. Where this document names a real measured constant (a pixel
-position, a color, a gap), it came from reading an actual file, not from
-inventing a plausible-looking value.
+this repo's own `generator/*.py` modules. Every module here is grounded
+against the real CH5 SDK schema and/or real, already-authored Construct
+files -- never guessed. Where this document names a real measured constant
+(a pixel position, a color, a gap), it came from reading an actual file,
+not from inventing a plausible-looking value.
 
 ## Status of this document
 
-This is a v2 REBUILD of an earlier, more complete skill (the currently-
-installed `crestron-construct-skills` plugin, `C:\Users\<user>\.claude\
-plugins\marketplaces\crestron-construct-skills\skills\construct-ui-skill\
-SKILL.md`) that worked by cloning donor skeleton files. v2 replaces that
-donor-cloning mechanism with schema-grounded, from-scratch construction --
-but v2's own capability surface is still narrower than v1's. **Only follow
-the sections below; do not assume any v1 capability not restated here
-exists in v2 yet** (no base "generate a brand-new project from scratch" CLI,
-no source-control widgets, no global modals, no branding/background-image
-swap, no `--validate` equivalent). When a user asks for something v1 could
-do that isn't in this document, say so plainly and either fall back to the
-v1 plugin (if genuinely equivalent) or treat it as a real gap to build next,
-per this project's own README.md "not yet built" notes -- never silently
-improvise a mechanism this document doesn't already describe.
+This is a v2 REBUILD of an earlier, more complete skill (the OLDER
+`crestron-construct-skills` plugin, invocable as `/construct-ui-skill:
+construct-ui-skill`, cached at `C:\Users\<user>\.claude\plugins\cache\
+crestron-construct-skills\...`) that worked by cloning donor skeleton
+files. v2 replaces that donor-cloning mechanism with schema-grounded,
+from-scratch construction.
+
+**As of 2026-09-18, this file lives at `.claude/skills/construct-ui-skill/
+SKILL.md` and is the DEFAULT for the short invocation `/construct-ui-skill`**
+(a project-level skill shadows a same-named plugin skill on the short
+form -- the old v1 plugin remains reachable only via its full namespaced
+form, `/construct-ui-skill:construct-ui-skill`, if ever needed). User,
+2026-09-18: "we can deprecate the v1 skill" -- v1 is DEPRECATED for normal
+use, not just superseded in theory. **Do not silently fall back to v1**
+for a capability this document doesn't cover -- v2's own capability
+surface is still narrower than v1's in places (no base "generate a
+brand-new project from scratch" CLI, no global modals, no branding/
+background-image swap, no `--validate` equivalent -- source controls and
+Presentation sources ARE now covered, see their own sections below). When
+a user asks for something not yet in this document, say so plainly and
+treat it as a real gap to build next (per this project's own README.md
+"not yet built" notes) -- only reach for the deprecated v1 plugin if the
+user explicitly asks for it by name, never as an automatic fallback.
 
 ## Running generator code
 
@@ -48,6 +56,36 @@ Always verify a write with `compare.round_trip_check(path)` (from
 `harness/compare.py`) before treating it as done -- every deliverable in
 this repo's own README.md was confirmed this way, not assumed correct
 because it didn't raise.
+
+---
+
+## Help
+
+If this skill is invoked with `help` or `?` as its argument (e.g.
+`/construct-ui-skill help`), OR the user's very next message once this
+skill is active is literally `help` or `?` (nothing else), STOP here --
+do not run Step 0 or touch any file. Reply with exactly this feature
+list, adapted only in wording, never in content (keep it in sync with
+this document's own `##` section headers -- if a section here is
+renamed, added, or removed, update this list in the SAME edit):
+
+> **Construct UI Skill (v2) -- supported right now:**
+> - **Copy an existing project** into a solution as a new project (e.g. the Design Ideas template).
+> - **Add a subsystem** to a Design-Ideas-derived project -- popup (with optional D-pad/button-list/keypad/message control shapes and per-control icons) + page + footer icon.
+> - **Edit the footer menu** directly -- add/remove/reorder subsystem icons without building a new popup.
+> - **Edit Presentation sources** -- add/remove/reflow the source-selection buttons on `Sources - Center.cuiw`.
+> - **Source Controls** -- build and wire a source's own control panel (shown when that source is selected).
+>
+> **Not yet supported** (say so plainly if asked, don't improvise): a
+> brand-new project from scratch, global modals, branding/background-image
+> swap, a `--validate` equivalent, landscape multi-row source wrapping.
+>
+> Ask about any of these, or just describe what you want changed.
+
+This is a STATIC list maintained by hand in this document, not generated
+by inspecting the codebase live -- keep it accurate by editing it
+alongside whatever section it describes, the same discipline this whole
+document already uses for every other claim.
 
 ---
 
